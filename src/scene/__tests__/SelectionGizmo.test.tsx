@@ -1,0 +1,69 @@
+import { describe, expect, it } from 'vitest'
+import ReactThreeTestRenderer from '@react-three/test-renderer'
+import * as THREE from 'three'
+import { SelectionGizmo } from '../SelectionGizmo'
+
+function makeTarget() {
+  return new THREE.Group()
+}
+
+/**
+ * `TransformControls` (drei) attaches its gizmo imperatively, so it doesn't
+ * show up as a findable typed/named node in the rendered THREE scene graph.
+ * `toTree()` reflects the React element tree instead, where the props
+ * actually passed to `<TransformControls>` are reliably inspectable.
+ */
+function findControlsProps(renderer: Awaited<ReturnType<typeof ReactThreeTestRenderer.create>>) {
+  const [node] = renderer.toTree() ?? []
+  if (!node || !('mode' in (node.props ?? {}))) {
+    throw new Error('TransformControls node not found in tree')
+  }
+  return node.props
+}
+
+describe('SelectionGizmo — gizmo mode and axis restriction', () => {
+  it('uses translate mode showing all three axes (X/Y/Z) for the root joint, so the figure can be lifted off the ground', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <SelectionGizmo figureId="f1" jointName="root" target={makeTarget()} />,
+    )
+
+    const props = findControlsProps(renderer)
+    expect(props.mode).toBe('translate')
+    expect(props.showX).toBe(true)
+    expect(props.showY).toBe(true)
+    expect(props.showZ).toBe(true)
+  })
+
+  it('uses rotate mode restricted to the single DOF of a hinge joint (knee)', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <SelectionGizmo figureId="f1" jointName="knee.L" target={makeTarget()} />,
+    )
+
+    const props = findControlsProps(renderer)
+    expect(props.mode).toBe('rotate')
+    expect(props.showX).toBe(true)
+    expect(props.showY).toBe(false)
+    expect(props.showZ).toBe(false)
+  })
+
+  it('uses rotate mode showing all three axes for a ball-joint (shoulder)', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <SelectionGizmo figureId="f1" jointName="shoulder.L" target={makeTarget()} />,
+    )
+
+    const props = findControlsProps(renderer)
+    expect(props.mode).toBe('rotate')
+    expect(props.showX).toBe(true)
+    expect(props.showY).toBe(true)
+    expect(props.showZ).toBe(true)
+  })
+
+  it('rotates in local space, matching the Euler axes tracked by the pose model', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <SelectionGizmo figureId="f1" jointName="elbow.L" target={makeTarget()} />,
+    )
+
+    const props = findControlsProps(renderer)
+    expect(props.space).toBe('local')
+  })
+})

@@ -1,0 +1,178 @@
+/**
+ * Mapa central de atalhos de teclado (ver PLANO.md > "Observação: uso do
+ * teclado"). `matchShortcut` é puro — recebe um evento de teclado (real ou
+ * um objeto compatível, para facilitar testes) e devolve uma ação
+ * abstrata, sem conhecer o estado da aplicação (qual boneco/junta está
+ * selecionado etc.) — quem interpreta a ação no contexto atual é o
+ * consumidor (`useKeyboardShortcuts`).
+ */
+
+import type { OrthoPresetName } from '../scene/cameraPresets'
+
+export type Step = 'normal' | 'large' | 'fine'
+export type ArrowDirection = 'up' | 'down' | 'left' | 'right'
+
+export type ShortcutAction =
+  | { type: 'arrow'; direction: ArrowDirection; step: Step }
+  | { type: 'cycleJoint'; direction: 1 | -1 }
+  | { type: 'selectFigureByIndex'; index: number }
+  | { type: 'undo' }
+  | { type: 'redo' }
+  | { type: 'duplicateFigure' }
+  | { type: 'clearSelection' }
+  | { type: 'deleteFigure' }
+  | { type: 'toggleVisibility' }
+  | { type: 'cameraPreset'; preset: OrthoPresetName }
+  | { type: 'applyCameraBookmarkByIndex'; index: number }
+  | { type: 'captureKeyframe' }
+  | { type: 'toggleIK' }
+  | { type: 'toggleHelp' }
+
+export interface EventTargetLike {
+  tagName?: string
+  isContentEditable?: boolean
+}
+
+/** Formato mínimo de `KeyboardEvent` necessário para o matching — real ou simulado em teste. */
+export interface ShortcutKeyEvent {
+  key: string
+  /** Tecla física (`event.code`) — necessário para distinguir o numpad (`Numpad1`) do dígito comum (`Digit1`), que já tem outro significado. */
+  code: string
+  ctrlKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+  altKey: boolean
+  target: EventTargetLike | null
+}
+
+const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
+
+/** Atalhos são ignorados quando o foco está num campo de texto (ou editável). */
+export function isTypingTarget(target: EventTargetLike | null): boolean {
+  if (!target) return false
+  if (target.isContentEditable) return true
+  return !!target.tagName && TYPING_TAGS.has(target.tagName)
+}
+
+const ARROW_DIRECTIONS: Record<string, ArrowDirection> = {
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+}
+
+/**
+ * Presets ortográficos por tecla física do numpad, convenção Blender —
+ * `event.code` (não `event.key`) porque com NumLock ligado o `key` do
+ * numpad é indistinguível dos dígitos comuns (já usados para selecionar
+ * boneco). Ctrl+Numpad1/3 dá a vista oposta (costas/esquerda).
+ */
+const NUMPAD_PRESET_CODES: Record<string, { plain: OrthoPresetName; ctrl?: OrthoPresetName }> = {
+  Numpad1: { plain: 'front', ctrl: 'back' },
+  Numpad3: { plain: 'right', ctrl: 'left' },
+  Numpad7: { plain: 'top' },
+}
+
+/** Ctrl (ou Cmd no Mac) é o modificador de plataforma para atalhos com "Ctrl" no mapa. */
+function isPlatformModifier(event: ShortcutKeyEvent): boolean {
+  return event.ctrlKey || event.metaKey
+}
+
+export function matchShortcut(event: ShortcutKeyEvent): ShortcutAction | null {
+  if (isTypingTarget(event.target)) return null
+  if (event.altKey) return null // Alt+setas é reservado pelo navegador (voltar/avançar).
+
+  const direction = ARROW_DIRECTIONS[event.key]
+  if (direction) {
+    const step: Step = isPlatformModifier(event) ? 'fine' : event.shiftKey ? 'large' : 'normal'
+    return { type: 'arrow', direction, step }
+  }
+
+  if (event.key === 'Tab' && !isPlatformModifier(event)) {
+    return { type: 'cycleJoint', direction: event.shiftKey ? -1 : 1 }
+  }
+
+  if (event.key === ' ' && !isPlatformModifier(event) && !event.shiftKey) {
+    return { type: 'captureKeyframe' }
+  }
+
+  const numpadPreset = NUMPAD_PRESET_CODES[event.code]
+  if (numpadPreset && !event.shiftKey) {
+    const preset = isPlatformModifier(event) ? numpadPreset.ctrl : numpadPreset.plain
+    return preset ? { type: 'cameraPreset', preset } : null
+  }
+
+  if (/^[1-5]$/.test(event.key) && !isPlatformModifier(event) && event.shiftKey) {
+    return { type: 'applyCameraBookmarkByIndex', index: Number(event.key) - 1 }
+  }
+
+  if (/^[1-5]$/.test(event.key) && !isPlatformModifier(event) && !event.shiftKey) {
+    return { type: 'selectFigureByIndex', index: Number(event.key) - 1 }
+  }
+
+  const key = event.key.toLowerCase()
+
+  if (isPlatformModifier(event) && key === 'z') {
+    return event.shiftKey ? { type: 'redo' } : { type: 'undo' }
+  }
+
+  if (isPlatformModifier(event) && key === 'y' && !event.shiftKey) {
+    return { type: 'redo' }
+  }
+
+  if (isPlatformModifier(event) && key === 'd' && !event.shiftKey) {
+    return { type: 'duplicateFigure' }
+  }
+
+  if (event.key === 'Escape' && !isPlatformModifier(event) && !event.shiftKey) {
+    return { type: 'clearSelection' }
+  }
+
+  if (event.key === 'Delete' && !isPlatformModifier(event) && !event.shiftKey) {
+    return { type: 'deleteFigure' }
+  }
+
+  if (key === 'h' && !isPlatformModifier(event) && !event.shiftKey) {
+    return { type: 'toggleVisibility' }
+  }
+
+  if (key === 'r' && !isPlatformModifier(event) && !event.shiftKey) {
+    return { type: 'toggleIK' }
+  }
+
+  if (event.key === '?' && !isPlatformModifier(event)) {
+    return { type: 'toggleHelp' }
+  }
+
+  return null
+}
+
+/**
+ * Catálogo declarativo dos atalhos realmente implementados (não inclui
+ * itens do mapa do plano ainda não construídos, ex.: Q/W/E/R de modo de
+ * ferramenta, Ctrl+S) — fonte única para o painel de ajuda (`?`), em vez de
+ * uma segunda lista mantida à mão e sujeita a ficar desatualizada.
+ */
+export interface ShortcutCatalogEntry {
+  keys: string
+  descriptionKey: string
+}
+
+export const SHORTCUT_CATALOG: readonly ShortcutCatalogEntry[] = [
+  { keys: '↑ ↓ ← →', descriptionKey: 'help.arrows' },
+  { keys: 'Shift + ↑ ↓ ← →', descriptionKey: 'help.arrowsLarge' },
+  { keys: 'Ctrl + ↑ ↓ ← →', descriptionKey: 'help.arrowsFine' },
+  { keys: 'Tab / Shift+Tab', descriptionKey: 'help.cycleJoint' },
+  { keys: '1–5', descriptionKey: 'help.selectFigure' },
+  { keys: 'R', descriptionKey: 'help.toggleIK' },
+  { keys: 'Espaço', descriptionKey: 'help.captureKeyframe' },
+  { keys: 'Ctrl+Z / Ctrl+Shift+Z', descriptionKey: 'help.undoRedo' },
+  { keys: 'Ctrl+D', descriptionKey: 'help.duplicateFigure' },
+  { keys: 'Delete', descriptionKey: 'help.deleteFigure' },
+  { keys: 'H', descriptionKey: 'help.toggleVisibility' },
+  { keys: 'Esc', descriptionKey: 'help.clearSelection' },
+  { keys: 'Numpad 1 / 3 / 7', descriptionKey: 'help.orthoPresets' },
+  { keys: 'Ctrl+Numpad 1 / 3', descriptionKey: 'help.orthoPresetsBack' },
+  { keys: 'Shift+1..5', descriptionKey: 'help.applyCameraBookmark' },
+  { keys: '?', descriptionKey: 'help.toggleHelp' },
+]
