@@ -17,7 +17,8 @@
     "autosaveSaving": "Salvando…",
     "autosaveSaved": "Salvo às {{time}}",
     "autosaveError": "Falha ao salvar",
-    "ruler": "Régua"
+    "ruler": "Régua",
+    "rulerHint": "Régua de altura no boneco selecionado"
   },
   "panels": {
     "figures": {
@@ -183,7 +184,10 @@
     "orthoPresets": "Vistas ortográficas (frente/direita/topo)",
     "orthoPresetsBack": "Vistas ortográficas (costas/esquerda)",
     "applyCameraBookmark": "Ir para um bookmark de câmera salvo",
-    "toggleHelp": "Abrir/fechar este painel de ajuda"
+    "toggleHelp": "Abrir/fechar este painel de ajuda",
+    "frameFigure": "Enquadrar a câmera no boneco selecionado",
+    "saveScene": "Salvar a cena atual no catálogo",
+    "rootGizmoMode": "Gizmo da raiz: mover / girar"
   },
   "errors": {
     "importUnreadable": "Arquivo não pôde ser lido — o .glb parece corrompido ou não é um glTF válido.",

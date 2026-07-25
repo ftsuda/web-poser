@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { useCameraStore } from '../store/cameraStore'
 import { useFiguresStore } from '../store/figuresStore'
-import { computeOrthographicZoom, computePresetView } from './cameraPresets'
+import { computeFrameDistance, computeOrthographicZoom, computePresetView } from './cameraPresets'
 import { CAMERA_DEFAULTS } from './constants'
 
 export interface CameraRigProps {
@@ -33,6 +33,7 @@ const DEFAULT_ORBIT_DISTANCE = CAMERA_DEFAULTS.position[2]
 export function CameraRig({ controlsRef }: CameraRigProps) {
   const set = useThree((state) => state.set)
   const size = useThree((state) => state.size)
+  const scene = useThree((state) => state.scene)
 
   const perspectiveCameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const orthographicCameraRef = useRef<THREE.OrthographicCamera | null>(null)
@@ -159,6 +160,35 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
         break
       }
 
+      case 'frameFigure': {
+        // A caixa é medida no objeto REAL da cena, não estimada pela altura:
+        // assim o enquadramento acompanha a pose (Superman deitado ocupa uma
+        // caixa bem diferente de um boneco em pé).
+        const figureObject = scene.getObjectByName(`figure-${pendingCommand.figureId}`)
+        if (!figureObject) break
+
+        const box = new THREE.Box3().setFromObject(figureObject)
+        if (box.isEmpty()) break
+
+        const sphere = box.getBoundingSphere(new THREE.Sphere())
+        const distance = computeFrameDistance(sphere.radius, fov, size.width / size.height)
+        // Mantém a direção de onde a câmera já olha — enquadrar aproxima, não
+        // reposiciona o ângulo escolhido pelo usuário.
+        const direction = camera.position.clone().sub(controls.target)
+        if (direction.lengthSq() < 1e-8) direction.set(...CAMERA_DEFAULTS.position)
+        direction.normalize()
+
+        controls.target.copy(sphere.center)
+        camera.position.copy(sphere.center).addScaledVector(direction, distance)
+        camera.lookAt(controls.target)
+        if (camera instanceof THREE.OrthographicCamera) {
+          camera.zoom = computeOrthographicZoom(distance, fov, size.height)
+          camera.updateProjectionMatrix()
+        }
+        controls.update()
+        break
+      }
+
       case 'toPerspective':
         // A troca de pose já foi feita pelo efeito de projeção acima.
         break
@@ -174,6 +204,8 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
     cameraBookmarks,
     addCameraBookmark,
     clearPendingCommand,
+    scene,
+    size.width,
   ])
 
   return null

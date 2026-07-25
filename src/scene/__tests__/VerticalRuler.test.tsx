@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import ReactThreeTestRenderer from '@react-three/test-renderer'
+import type * as THREE from 'three'
 import {
   GRID_SPACING_M,
   OVERLAY_NAMES,
@@ -10,9 +11,11 @@ import {
 import { GridAlignmentIndicator } from '../GridAlignmentIndicator'
 import { VerticalRuler } from '../VerticalRuler'
 
+const AT_ORIGIN: readonly [number, number, number] = [0, 0, 0]
+
 describe('VerticalRuler (fase 9, item 11)', () => {
   it('marca os metros da grade com traços maiores e subdivide entre eles', async () => {
-    const renderer = await ReactThreeTestRenderer.create(<VerticalRuler />)
+    const renderer = await ReactThreeTestRenderer.create(<VerticalRuler position={AT_ORIGIN} />)
 
     const major = renderer.scene.findAllByProps({ name: 'vertical-ruler-tick-major' })
     const minor = renderer.scene.findAllByProps({ name: 'vertical-ruler-tick-minor' })
@@ -24,7 +27,7 @@ describe('VerticalRuler (fase 9, item 11)', () => {
   })
 
   it('sobe do chão até a altura declarada', async () => {
-    const renderer = await ReactThreeTestRenderer.create(<VerticalRuler />)
+    const renderer = await ReactThreeTestRenderer.create(<VerticalRuler position={AT_ORIGIN} />)
 
     const post = renderer.scene.findByProps({ name: 'vertical-ruler-post' })
     // A haste é centrada na metade da altura, logo cobre de 0 a RULER_HEIGHT_M.
@@ -32,9 +35,39 @@ describe('VerticalRuler (fase 9, item 11)', () => {
   })
 
   it('é um overlay: some da captura quando "ocultar grade/gizmos" está ligado', async () => {
-    const renderer = await ReactThreeTestRenderer.create(<VerticalRuler />)
+    const renderer = await ReactThreeTestRenderer.create(<VerticalRuler position={AT_ORIGIN} />)
     expect(renderer.scene.findByProps({ name: OVERLAY_NAMES.verticalRuler })).toBeDefined()
     expect(OVERLAY_NAME_LIST).toContain(OVERLAY_NAMES.verticalRuler)
+  })
+
+  it('fica centrada no boneco selecionado, onde está o gizmo de translação', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<VerticalRuler position={[1.4, 0, -0.8]} />)
+
+    const group = renderer.scene.findByProps({ name: OVERLAY_NAMES.verticalRuler })
+    expect(group.instance.position.x).toBeCloseTo(1.4, 6)
+    expect(group.instance.position.z).toBeCloseTo(-0.8, 6)
+  })
+
+  it('nasce no chão mesmo com o boneco erguido — é a altura do chão que se quer ler', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<VerticalRuler position={[0.5, 1.2, 0.5]} />)
+
+    const group = renderer.scene.findByProps({ name: OVERLAY_NAMES.verticalRuler })
+    expect(group.instance.position.y).toBe(0)
+  })
+
+  it('não desenha nada sem boneco selecionado', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<VerticalRuler position={null} />)
+    expect(renderer.scene.findAllByProps({ name: OVERLAY_NAMES.verticalRuler })).toHaveLength(0)
+  })
+
+  it('aparece por cima do corpo: a régua cruza o boneco e ficaria enterrada nele', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<VerticalRuler position={AT_ORIGIN} />)
+
+    const post = renderer.scene.findByProps({ name: 'vertical-ruler-post' })
+    const tick = renderer.scene.findAllByProps({ name: 'vertical-ruler-tick-major' })[0]
+    const materialOf = (mesh: THREE.Object3D) => (mesh as THREE.Mesh).material as THREE.Material
+    expect(materialOf(post.instance).depthTest).toBe(false)
+    expect(materialOf(tick.instance).depthTest).toBe(false)
   })
 })
 

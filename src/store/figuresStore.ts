@@ -145,6 +145,15 @@ export interface FiguresState {
   consumeKeyframeNumber: () => number
   /** Salva um novo snapshot a partir do estado de trabalho atual; retorna o id gerado. */
   saveSceneSnapshot: (name?: string) => string
+  /**
+   * "Salvar" no sentido de um editor (atalho `Ctrl+S`): regrava a cena ativa
+   * do catálogo com o estado de trabalho e o nome atuais, ou cria a primeira
+   * se ainda não houver — sem diálogo. Diferente de `saveSceneSnapshot`, que
+   * sempre acrescenta um snapshot novo (é o botão "salvar como" do painel);
+   * tocar `Ctrl+S` várias vezes não pode encher o catálogo de duplicatas.
+   * Retorna o id da cena gravada.
+   */
+  saveOrUpdateActiveScene: () => string
   /** Substitui o estado de trabalho pelo snapshot indicado; retorna `false` se o id não existir. */
   loadSceneSnapshot: (id: string) => boolean
   renameSceneSnapshot: (id: string, name: string) => void
@@ -359,7 +368,7 @@ export const useFiguresStore = create<FiguresState>()(
             visible: !figure.visible,
           }))
           // Ocultar o boneco selecionado limpa a seleção: ele fica inerte ao
-          // mouse (ver `Figure2.tsx`), então deixá-lo selecionado manteria um
+          // mouse (ver `Figure.tsx`), então deixá-lo selecionado manteria um
           // gizmo no viewport sobre um corpo invisível (fase 9, item 14).
           const hidden = figures.find((figure) => figure.id === id)?.visible === false
           if (!hidden || state.selectedFigureId !== id) return { figures }
@@ -504,6 +513,31 @@ export const useFiguresStore = create<FiguresState>()(
           activeSceneId: id,
         })
         return id
+      },
+
+      saveOrUpdateActiveScene: () => {
+        const state = get()
+        const active = state.scenes.find((scene) => scene.id === state.activeSceneId)
+        // Sem cena ativa (ou apontando para uma cena já removida): cai no
+        // caminho de criar, que já cuida do id, da sequência e do ponteiro.
+        if (!active) return state.saveSceneSnapshot()
+
+        const data: SceneSnapshotData = {
+          figures: state.figures,
+          nextFigureSeq: state.nextFigureSeq,
+          environment: state.environment,
+          cameraBookmarks: state.cameraBookmarks,
+          nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
+          nextKeyframeNumber: state.nextKeyframeNumber,
+        }
+        set({
+          scenes: state.scenes.map((scene) =>
+            // O nome acompanha o campo "Nome da cena" da Toolbar: é o nome da
+            // cena de trabalho que está sendo gravada.
+            scene.id === active.id ? { ...scene, name: state.sceneName, data } : scene,
+          ),
+        })
+        return active.id
       },
 
       loadSceneSnapshot: (id) => {

@@ -67,6 +67,33 @@ export function computePresetView(
 }
 
 /**
+ * Folga em volta do boneco ao enquadrar (tecla `F`): 15% além do raio da
+ * esfera que o envolve, para o boneco não encostar nas bordas da tela.
+ */
+const FRAME_MARGIN = 1.15
+
+/**
+ * Distância da câmera ao alvo que faz uma esfera de raio `boundingRadius`
+ * caber inteira na tela, considerando o FOV **vertical** e a proporção da
+ * janela. Numa janela mais larga que alta o limite é a altura; numa mais
+ * estreita, a largura — daí a divisão por `aspect` no FOV horizontal.
+ * Puro e testável; quem move a câmera é o `CameraRig`.
+ */
+export function computeFrameDistance(
+  boundingRadius: number,
+  fovDeg: number,
+  aspect: number,
+): number {
+  const radius = Math.max(boundingRadius, 0.01) * FRAME_MARGIN
+  const fovRad = (fovDeg * Math.PI) / 180
+  const distanceForHeight = radius / Math.tan(fovRad / 2)
+  // FOV horizontal derivado do vertical pela proporção da janela.
+  const horizontalFovRad = 2 * Math.atan(Math.tan(fovRad / 2) * aspect)
+  const distanceForWidth = radius / Math.tan(horizontalFovRad / 2)
+  return Math.max(distanceForHeight, distanceForWidth)
+}
+
+/**
  * Zoom de uma câmera ortográfica que enquadra a cena de forma equivalente a
  * uma câmera em perspectiva com o FOV dado, à mesma distância do alvo —
  * evita o "salto" de enquadramento ao trocar de projeção.

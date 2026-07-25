@@ -708,3 +708,60 @@ O #3 registrou que arrastar `OrbitControls`/`TransformControls` não funcionava 
 Ao validar a fase 9 com Chrome via Playwright, o arrasto do gizmo de translação **funcionou**: `page.mouse.down/move/up` dispara `PointerEvent` de verdade, o `TransformControls` respondeu, o campo de posição foi de 0 a 0,386 m e o indicador de alinhamento com a grade acendeu na linha Z=0 durante o arrasto — o comportamento do item 10, observado ao vivo. **Isso não muda a política de teste do plano** (aparência renderizada e pixel real de WebGL continuam fora do teste automatizado), mas remove uma limitação de validação que constava como permanente: daqui em diante, interações de arrasto podem ser verificadas na validação assistida por navegador, sem depender só de inspeção do código-fonte.
 
 **Validação da fase:** suíte em 639 testes (58 novos), todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real (headless via Playwright, sobre `npm run preview`), sem nenhum erro de console: indicador de autosave percorrendo "Ainda não salvo" → "Salvando…" → "Salvo às 13:15"; desfazer/refazer pelos botões da Toolbar, desabilitando corretamente nas pontas do histórico; painel de ajuda abrindo pelo botão; régua vertical; gizmo de rotação da raiz com os três anéis centrados no quadril; reset de rotação da raiz e de junta; ocultar o boneco selecionado limpando a seleção; **o bug do item 14 reproduzido e corrigido no cenário exato relatado** (boneco oculto em primeiro plano, clique atravessando e selecionando o boneco visível atrás); badge de IK; painéis recolhendo e sobrevivendo a um reload; e "novo workspace" limpando tudo e desabilitando o desfazer.
+
+---
+
+## 32. Fechamento do mapa de atalhos e remoção do renderizador antigo (dívida técnica dos itens 20 e 22 do cardápio)
+
+**Contexto:** dois itens de higiene levantados ao fim da fase 9 e priorizados pelo usuário. (a) O `PLANO.md` prometia `F`, `Ctrl+S` e `Q/W/E/R` na seção "Observação: uso do teclado", e nenhum tinha sido construído — o catálogo de `shortcuts.ts` os declarava ausentes de propósito, ou seja, o plano prometia o que não existia. (b) `Figure.tsx` (o renderizador de formas geradas em código) tinha virado código morto quando o visual de manequim de madeira entrou no lugar (#21), e o par `skeleton2`/`Figure2` carregava um "2" que só fazia sentido enquanto o "1" existisse.
+
+### 32.1 O mapa de atalhos do plano não podia ser implementado ao pé da letra
+
+Ao ler o código antes de escrever, dois descompassos entre o mapa proposto e o app apareceram:
+
+1. **`R` já estava ocupado.** O mapa propõe `Q/W/E/R` como "modos de ferramenta (selecionar / mover / girar / IK)", mas `R` virou "alternar FK/IK do membro da junta selecionada" na fase 7 — próximo do espírito, e já documentado no painel de ajuda.
+2. **O app não tem "modo de ferramenta".** A ideia de `Q/W/E/R` vem de softwares 3D onde uma ferramenta global fica ativa. Aqui, o que existe é: a seleção decide o que o gizmo faz (junta → rotação; raiz → o modo escolhido), e só a raiz tem dois modos — a alternância mover/girar que nasceu na fase 9 (item 13).
+
+**Opções apresentadas ao usuário:** (1) construir `F`, `Ctrl+S` e `W`/`E`, tirando o `Q` do mapa; (2) construir só `F` e `Ctrl+S`, tirando `Q/W/E/R` inteiro; (3) não construir nada e enxugar o plano para o que já existe.
+
+**Decisão:** opção 1. `W`/`E` passam a alternar o gizmo da raiz entre mover e girar — a leitura mais próxima possível da convenção dos softwares 3D dentro do que o app realmente tem. O `Q` ("selecionar") **não foi construído**: não há modo de seleção separado para ativar, e `Esc` já limpa a seleção. Isso está registrado tanto no docblock de `SHORTCUT_CATALOG` quanto no `PLANO.md`, para o plano parar de prometer o que não existe — que era o ponto do item.
+
+**`Ctrl+S` exigiu uma ação de store nova, não só uma ligação.** "Salvar cena" tem duas leituras no app (gravar snapshot no catálogo ou exportar `.glb`); o usuário escolheu o catálogo. Só que `saveSceneSnapshot` **sempre acrescenta** um snapshot — é o "salvar como" do painel. Ligado direto ao `Ctrl+S`, cada toque encheria o catálogo de duplicatas chamadas "Cena 1". Por isso nasceu `saveOrUpdateActiveScene`: regrava a cena ativa (dados **e** nome, que acompanha o campo "Nome da cena" da Toolbar) ou cria a primeira se não houver nenhuma; se a cena ativa tiver sido removida do catálogo, cai no caminho de criar. É o "salvar" de um editor, e entra no undo como qualquer edição de conteúdo.
+
+Detalhe do handler: `saveScene` devolve `true` **sempre**, mesmo quando não há nada de novo para gravar. Não é descuido — é o `preventDefault` que impede o diálogo "salvar página" do navegador de abrir por cima do app, e ele só acontece quando a ação se declara tratada. Coberto por teste (`event.defaultPrevented`).
+
+**`F` (enquadrar) mede a caixa real do boneco, não estima pela altura.** A alternativa barata seria calcular a distância a partir de `figure.height`; ela erra feio nas poses que mudam a silhueta (Superman deitado ocupa uma caixa completamente diferente de um boneco em pé). O `CameraRig` usa `Box3.setFromObject` sobre o grupo `figure-<id>` vivo na cena e enquadra a esfera envolvente. A matemática ficou num módulo puro e testado (`computeFrameDistance` em `cameraPresets.ts`), que considera FOV vertical **e** a proporção da janela — numa janela mais estreita que alta, quem limita é a largura, e ignorar isso cortaria os braços do boneco na T-pose. A direção de visão atual é preservada: enquadrar aproxima, não escolhe um ângulo pelo usuário.
+
+### 32.2 Remoção do renderizador antigo e fusão da camada visual
+
+**Decisão do usuário:** remover `Figure.tsx` (o renderizador antigo), renomear `Figure2.tsx` → `Figure.tsx` e **fundir `skeleton2.ts` dentro de `skeleton.ts`** (em vez de renomear para algo como `figureVisuals.ts`, que era a recomendação).
+
+Consequência aceita: `skeleton.ts` passou de ~570 para ~1140 linhas, com cinemática (juntas, offsets, limites) e aparência (`JOINT_PARTS`/`BONE_STYLES`) no mesmo arquivo. A fusão foi mecânica e sem risco — `skeleton2.ts` era `export * from './skeleton'` mais a camada visual, sem nenhuma colisão de nome entre os dois conjuntos de exportações (verificado antes de mexer). Um cabeçalho de seção separa visualmente as duas metades, e o teste da camada visual continua num arquivo próprio (`skeletonParts.test.ts`, antigo `skeleton2.test.ts`).
+
+O renderizador antigo levou junto seus 27 testes (`Figure.test.tsx` original), que exercitavam geometria que não existe mais — daí a suíte cair de 639 para 612 antes dos testes novos dos atalhos. **Nada de comportamento se perdeu:** os testes do renderizador atual já cobrem hierarquia de juntas, cores, seleção, refs, sombra e ancoragem no mundo.
+
+Detalhe que só aparece ao renomear: `Viewport.tsx` mantinha `import { Figure2 as Figure }` com o import antigo comentado ao lado, exatamente para permitir reverter o visual com uma linha (#21). Com a decisão de remover, o alias e o comentário saíram — a troca de renderizador deixou de ser uma opção viva, e manter o comentário sugeriria o contrário.
+
+**Validação:** suíte em 633 testes, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real (headless via Playwright), sem erro de console: o boneco continua renderizando igual após a remoção/renomeação; `F` reenquadra a câmera de um boneco minúsculo ao longe para a tela cheia preservando o ângulo; `E`/`W` alternam o gizmo da raiz (confirmado pelo `aria-pressed` dos botões e pelo gizmo no viewport); `Ctrl+S` grava a cena e um segundo `Ctrl+S` **atualiza** a mesma em vez de duplicar; e o painel de ajuda (`?`) lista as três teclas novas.
+
+---
+
+## 33. Régua vertical ancorada no boneco selecionado
+
+**Contexto:** na fase 9 (item 11) a régua nasceu num ponto fixo do chão (`RULER_POSITION = [-0,5; 0; -0,5]`, um cruzamento da grade), como referência comum para comparar vários bonecos. O usuário pediu para alinhá-la ao boneco selecionado.
+
+**A ambiguidade que precisou de resposta.** "Alinhar com o eixo Z do boneco" tem duas leituras opostas na vista frontal — que é justamente onde altura se lê: (a) régua **ao lado** do boneco, na mesma profundidade (mesmo Z, afastada em X), ou (b) régua **sobre o eixo Z** do boneco (mesmo X, afastada em Z), que na vista frontal a esconderia atrás do corpo. Perguntado, o usuário definiu uma terceira: a régua acompanha o eixo Y **centrada no gizmo de translação**, e **pode passar por dentro do boneco**. Sem boneco selecionado, ela some da cena.
+
+**Decisões que a implementação exigiu além do posicionamento:**
+
+1. **A régua nasce sempre no chão, descartando o Y da âncora.** Ela é ancorada em `figure.position`, mas só X e Z são usados. Se acompanhasse o Y, um boneco erguido levaria a régua junto e a altura do salto — a única coisa que se quer medir ali — marcaria zero, sempre. Validado no navegador com um boneco em Y = 0,8 m: a régua continua do chão e o gizmo fica na marca dos 0,8.
+
+2. **Desenhada sem teste de profundidade (`depthTest: false`).** Ancorada no eixo do corpo, a régua fica *dentro* dele — e ficaria enterrada justamente na faixa mais interessante de leitura: o bloco do peito chega a 0,148 m de raio (`skeleton.ts`), então até o traço maior (0,16 m) só apareceria 12 mm para fora, e os traços finos (0,07 m) sumiriam por completo. Sem isso, "pode passar por dentro do boneco" viraria "não dá para ver a régua". É o mesmo tratamento que o `TransformControls` já dá ao próprio gizmo em que ela se ancora, o que mantém a coerência visual dos overlays.
+
+3. **`position: null` em vez de a decisão morar no `Viewport`.** O componente recebe a posição do boneco selecionado ou `null`, e devolve `null` nesse caso — mesmo padrão do `GridAlignmentIndicator`. Assim o "some sem seleção" fica coberto por teste de componente; o `Viewport` (dentro de um `<Canvas>`) não tem teste automatizado.
+
+4. **Dica na Toolbar.** Como a régua agora depende da seleção, marcar a caixa sem nenhum boneco selecionado não muda nada na tela — o que parece defeito. O rótulo ganhou `title` ("Régua de altura no boneco selecionado", chave `toolbar.rulerHint` nos dois idiomas) explicando a condição.
+
+O `RULER_POSITION` foi removido de `constants.ts`: com a âncora vinda do estado, uma constante de posição fixa só poderia mentir.
+
+**Validação:** 4 testes novos (âncora em X/Z, nascer no chão com boneco erguido, não desenhar sem seleção, `depthTest` desligado); suíte em **637 testes**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real (headless via Playwright), sem erro de console: com dois bonecos em posições diferentes, a régua salta de um para o outro conforme a seleção; some ao clicar no vazio (com a caixa da Toolbar ainda marcada); e aparece por cima do corpo, legível, com o boneco erguido do chão.

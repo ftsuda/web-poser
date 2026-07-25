@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { computeOrthographicZoom, computePresetView, ORTHO_PRESET_NAMES } from '../cameraPresets'
+import {
+  computeFrameDistance,
+  computeOrthographicZoom,
+  computePresetView,
+  ORTHO_PRESET_NAMES,
+} from '../cameraPresets'
 
 describe('computePresetView', () => {
   it('positions the camera in front of the target (+Z), upright, for the "front" preset', () => {
@@ -80,5 +85,28 @@ describe('computeOrthographicZoom', () => {
     const narrow = computeOrthographicZoom(5, 30, 800)
     const wide = computeOrthographicZoom(5, 90, 800)
     expect(wide).toBeLessThan(narrow)
+  })
+})
+
+describe('computeFrameDistance — enquadrar o boneco selecionado (tecla F)', () => {
+  it('afasta o suficiente para a esfera do boneco caber na altura da tela', () => {
+    const distance = computeFrameDistance(1, 50, 1.6)
+    // Meia-altura visível à essa distância tem de cobrir o raio (mais a margem).
+    const halfHeight = distance * Math.tan((50 * Math.PI) / 180 / 2)
+    expect(halfHeight).toBeGreaterThanOrEqual(1)
+  })
+
+  it('afasta mais quando a tela é mais estreita que alta (o limite vira a largura)', () => {
+    const wide = computeFrameDistance(1, 50, 2)
+    const narrow = computeFrameDistance(1, 50, 0.5)
+    expect(narrow).toBeGreaterThan(wide)
+  })
+
+  it('escala linearmente com o tamanho do boneco', () => {
+    expect(computeFrameDistance(2, 50, 1.6)).toBeCloseTo(2 * computeFrameDistance(1, 50, 1.6), 6)
+  })
+
+  it('nunca devolve zero, nem para um alvo degenerado', () => {
+    expect(computeFrameDistance(0, 50, 1.6)).toBeGreaterThan(0)
   })
 })

@@ -132,6 +132,21 @@ function applyShortcut(action: ShortcutAction): boolean {
       useUIStore.getState().toggleHelp()
       return true
 
+    case 'frameFigure':
+      if (!selectedFigureId) return false
+      useCameraStore.getState().frameFigure(selectedFigureId)
+      return true
+
+    case 'saveScene':
+      state.saveOrUpdateActiveScene()
+      // Sempre "tratado", mesmo sem nada para salvar: é o `preventDefault`
+      // que impede o diálogo "salvar página" do navegador de abrir por cima.
+      return true
+
+    case 'setRootGizmoMode':
+      useUIStore.getState().setRootGizmoMode(action.mode)
+      return true
+
     default:
       return false
   }

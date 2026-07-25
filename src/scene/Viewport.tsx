@@ -4,8 +4,7 @@ import { OrbitControls } from '@react-three/drei'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type * as THREE from 'three'
 import { useTranslation } from 'react-i18next'
-// import { Figure } from '../figure/Figure'
-import { Figure2 as Figure, ROOT_PIVOT_REF_NAME } from '../figure/Figure2'
+import { Figure, ROOT_PIVOT_REF_NAME } from '../figure/Figure'
 import { getLimbEndEffector } from '../figure/ikSolver'
 import { ROOT_JOINT_NAME } from '../figure/skeleton'
 import { useFiguresStore } from '../store/figuresStore'
@@ -97,7 +96,9 @@ export function Viewport() {
       >
         <color attach="background" args={[BACKGROUND_COLORS[environment.background]]} />
         <SceneContent grid={environment.grid} />
-        {rulerVisible && <VerticalRuler />}
+        {/* Ancorada no boneco selecionado, no mesmo ponto do gizmo de
+            translação; sem seleção não há o que medir (DECISOES.md #33). */}
+        {rulerVisible && <VerticalRuler position={selectedFigure?.position ?? null} />}
         {/* Só enquanto se arrasta: fora do arrasto o destaque seria ruído
             permanente na tela (fase 9, item 10). */}
         {isGizmoDragging && draggedPosition && <GridAlignmentIndicator position={draggedPosition} />}

@@ -13,6 +13,8 @@ export type CameraCommand =
   | { type: 'toPerspective' }
   | { type: 'applyBookmark'; id: string }
   | { type: 'requestSaveBookmark'; name: string }
+  /** Enquadra o boneco na tela (tecla `F`) — o rig mede a caixa real do boneco na cena. */
+  | { type: 'frameFigure'; figureId: string }
 
 export interface CameraState {
   fov: number
@@ -23,6 +25,7 @@ export interface CameraState {
   requestPerspective: () => void
   applyBookmark: (id: string) => void
   requestSaveBookmark: (name: string) => void
+  frameFigure: (figureId: string) => void
   clearPendingCommand: () => void
 }
 
@@ -54,6 +57,8 @@ export const useCameraStore = create<CameraState>((set) => ({
   },
 
   requestSaveBookmark: (name) => set({ pendingCommand: { type: 'requestSaveBookmark', name } }),
+
+  frameFigure: (figureId) => set({ pendingCommand: { type: 'frameFigure', figureId } }),
 
   clearPendingCommand: () => set({ pendingCommand: null }),
 }))

@@ -265,3 +265,57 @@ describe('useKeyboardShortcuts', () => {
     expect(useFiguresStore.getState().figures[0].visible).toBe(true)
   })
 })
+
+describe('useKeyboardShortcuts — atalhos novos (F, Ctrl+S, W/E)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+    renderHook(() => useKeyboardShortcuts())
+  })
+
+  it('F pede o enquadramento do boneco selecionado ao CameraRig', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().selectFigure(id)
+
+    press({ key: 'f' })
+
+    expect(useCameraStore.getState().pendingCommand).toEqual({ type: 'frameFigure', figureId: id })
+  })
+
+  it('F sem boneco selecionado não emite comando nenhum', () => {
+    press({ key: 'f' })
+    expect(useCameraStore.getState().pendingCommand).toBeNull()
+  })
+
+  it('Ctrl+S salva a cena e regrava a mesma ao ser pressionado de novo', () => {
+    press({ key: 's', ctrlKey: true })
+    expect(useFiguresStore.getState().scenes).toHaveLength(1)
+
+    useFiguresStore.getState().addFigure()
+    press({ key: 's', ctrlKey: true })
+
+    expect(useFiguresStore.getState().scenes).toHaveLength(1)
+    expect(useFiguresStore.getState().scenes[0].data.figures).toHaveLength(1)
+  })
+
+  it('Ctrl+S cancela o comportamento padrão do navegador (diálogo de salvar página)', () => {
+    const event = new KeyboardEvent('keydown', {
+      key: 's',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    window.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('W e E trocam o modo do gizmo da raiz', () => {
+    press({ key: 'e' })
+    expect(useUIStore.getState().rootGizmoMode).toBe('rotate')
+
+    press({ key: 'w' })
+    expect(useUIStore.getState().rootGizmoMode).toBe('translate')
+  })
+})

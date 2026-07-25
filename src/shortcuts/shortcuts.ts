@@ -8,6 +8,7 @@
  */
 
 import type { OrthoPresetName } from '../scene/cameraPresets'
+import type { RootGizmoMode } from '../store/uiStore'
 
 export type Step = 'normal' | 'large' | 'fine'
 export type ArrowDirection = 'up' | 'down' | 'left' | 'right'
@@ -27,6 +28,9 @@ export type ShortcutAction =
   | { type: 'captureKeyframe' }
   | { type: 'toggleIK' }
   | { type: 'toggleHelp' }
+  | { type: 'frameFigure' }
+  | { type: 'saveScene' }
+  | { type: 'setRootGizmoMode'; mode: RootGizmoMode }
 
 export interface EventTargetLike {
   tagName?: string
@@ -124,6 +128,12 @@ export function matchShortcut(event: ShortcutKeyEvent): ShortcutAction | null {
     return { type: 'duplicateFigure' }
   }
 
+  // Ctrl+S é interceptável via `preventDefault` (ao contrário de Ctrl+W/T/N) —
+  // ver PLANO.md > "Observação: uso do teclado".
+  if (isPlatformModifier(event) && key === 's' && !event.shiftKey) {
+    return { type: 'saveScene' }
+  }
+
   if (event.key === 'Escape' && !isPlatformModifier(event) && !event.shiftKey) {
     return { type: 'clearSelection' }
   }
@@ -140,6 +150,22 @@ export function matchShortcut(event: ShortcutKeyEvent): ShortcutAction | null {
     return { type: 'toggleIK' }
   }
 
+  if (key === 'f' && !isPlatformModifier(event) && !event.shiftKey) {
+    return { type: 'frameFigure' }
+  }
+
+  // W/E na convenção dos softwares 3D (mover/girar), aplicados ao único gizmo
+  // do app que tem os dois modos: o da raiz. O "Q" (selecionar) do mapa
+  // original não foi construído — o app não tem um modo de seleção separado, e
+  // Esc já limpa a seleção.
+  if (key === 'w' && !isPlatformModifier(event) && !event.shiftKey) {
+    return { type: 'setRootGizmoMode', mode: 'translate' }
+  }
+
+  if (key === 'e' && !isPlatformModifier(event) && !event.shiftKey) {
+    return { type: 'setRootGizmoMode', mode: 'rotate' }
+  }
+
   if (event.key === '?' && !isPlatformModifier(event)) {
     return { type: 'toggleHelp' }
   }
@@ -148,10 +174,11 @@ export function matchShortcut(event: ShortcutKeyEvent): ShortcutAction | null {
 }
 
 /**
- * Catálogo declarativo dos atalhos realmente implementados (não inclui
- * itens do mapa do plano ainda não construídos, ex.: Q/W/E/R de modo de
- * ferramenta, Ctrl+S) — fonte única para o painel de ajuda (`?`), em vez de
- * uma segunda lista mantida à mão e sujeita a ficar desatualizada.
+ * Catálogo declarativo dos atalhos realmente implementados — fonte única para
+ * o painel de ajuda (`?`), em vez de uma segunda lista mantida à mão e sujeita
+ * a ficar desatualizada. Desde 2026-07-25 cobre o mapa inteiro do `PLANO.md`:
+ * o único item proposto que não virou atalho é o "Q" (modo selecionar), por
+ * não existir modo de seleção separado no app (ver DECISOES.md #32).
  */
 export interface ShortcutCatalogEntry {
   keys: string
@@ -165,8 +192,11 @@ export const SHORTCUT_CATALOG: readonly ShortcutCatalogEntry[] = [
   { keys: 'Tab / Shift+Tab', descriptionKey: 'help.cycleJoint' },
   { keys: '1–5', descriptionKey: 'help.selectFigure' },
   { keys: 'R', descriptionKey: 'help.toggleIK' },
+  { keys: 'W / E', descriptionKey: 'help.rootGizmoMode' },
+  { keys: 'F', descriptionKey: 'help.frameFigure' },
   { keys: 'Espaço', descriptionKey: 'help.captureKeyframe' },
   { keys: 'Ctrl+Z / Ctrl+Shift+Z', descriptionKey: 'help.undoRedo' },
+  { keys: 'Ctrl+S', descriptionKey: 'help.saveScene' },
   { keys: 'Ctrl+D', descriptionKey: 'help.duplicateFigure' },
   { keys: 'Delete', descriptionKey: 'help.deleteFigure' },
   { keys: 'H', descriptionKey: 'help.toggleVisibility' },

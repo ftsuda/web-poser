@@ -220,3 +220,48 @@ describe('SHORTCUT_CATALOG', () => {
     }
   })
 })
+
+describe('atalhos construídos ao fechar o mapa do plano (2026-07-25)', () => {
+  it('F enquadra a câmera no boneco selecionado', () => {
+    expect(matchShortcut(key({ key: 'f' }))).toEqual({ type: 'frameFigure' })
+    expect(matchShortcut(key({ key: 'F' }))).toEqual({ type: 'frameFigure' })
+  })
+
+  it('Ctrl+S salva a cena (e não é F com modificador)', () => {
+    expect(matchShortcut(key({ key: 's', ctrlKey: true }))).toEqual({ type: 'saveScene' })
+    expect(matchShortcut(key({ key: 'f', ctrlKey: true }))).toBeNull()
+  })
+
+  it('S sozinho não faz nada — salvar exige o modificador', () => {
+    expect(matchShortcut(key({ key: 's' }))).toBeNull()
+  })
+
+  it('W e E alternam o gizmo da raiz entre mover e girar', () => {
+    expect(matchShortcut(key({ key: 'w' }))).toEqual({
+      type: 'setRootGizmoMode',
+      mode: 'translate',
+    })
+    expect(matchShortcut(key({ key: 'e' }))).toEqual({
+      type: 'setRootGizmoMode',
+      mode: 'rotate',
+    })
+  })
+
+  it('R continua sendo o IK, não um modo de ferramenta', () => {
+    expect(matchShortcut(key({ key: 'r' }))).toEqual({ type: 'toggleIK' })
+  })
+
+  it('as teclas novas continuam ignoradas em campo de texto', () => {
+    const target = { tagName: 'INPUT' }
+    expect(matchShortcut(key({ key: 'f', target }))).toBeNull()
+    expect(matchShortcut(key({ key: 'w', target }))).toBeNull()
+    expect(matchShortcut(key({ key: 's', ctrlKey: true, target }))).toBeNull()
+  })
+
+  it('o catálogo do painel de ajuda lista as teclas novas', () => {
+    const keys = SHORTCUT_CATALOG.map((entry) => entry.keys)
+    expect(keys).toContain('F')
+    expect(keys).toContain('Ctrl+S')
+    expect(keys).toContain('W / E')
+  })
+})

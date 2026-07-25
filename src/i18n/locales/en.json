@@ -17,7 +17,8 @@
     "autosaveSaving": "Saving…",
     "autosaveSaved": "Saved at {{time}}",
     "autosaveError": "Save failed",
-    "ruler": "Ruler"
+    "ruler": "Ruler",
+    "rulerHint": "Height ruler on the selected figure"
   },
   "panels": {
     "figures": {
@@ -183,7 +184,10 @@
     "orthoPresets": "Orthographic views (front/right/top)",
     "orthoPresetsBack": "Orthographic views (back/left)",
     "applyCameraBookmark": "Go to a saved camera bookmark",
-    "toggleHelp": "Open/close this help panel"
+    "toggleHelp": "Open/close this help panel",
+    "frameFigure": "Frame the camera on the selected figure",
+    "saveScene": "Save the current scene to the catalog",
+    "rootGizmoMode": "Root gizmo: move / rotate"
   },
   "errors": {
     "importUnreadable": "The file could not be read — the .glb looks corrupted or is not valid glTF.",

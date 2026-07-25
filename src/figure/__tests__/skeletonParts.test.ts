@@ -17,7 +17,7 @@ import {
   getJointChain,
   getJointParts,
   type SegmentPart,
-} from '../skeleton2'
+} from '../skeleton'
 import { buildJointFrames } from '../jointFrames'
 import type { Figure } from '../../store/figuresStore'
 

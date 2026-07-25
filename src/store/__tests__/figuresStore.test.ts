@@ -1206,3 +1206,61 @@ describe('figuresStore — resetar uma junta (fase 9, item 6)', () => {
     expect(figure?.position).toEqual([1, 0.5, 2])
   })
 })
+
+describe('figuresStore — salvar a cena ativa (Ctrl+S)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  it('cria um snapshot com o nome atual da cena quando ainda não há cena ativa', () => {
+    useFiguresStore.getState().renameScene('Praia')
+    useFiguresStore.getState().addFigure('Herói')
+
+    const id = useFiguresStore.getState().saveOrUpdateActiveScene()
+
+    const state = useFiguresStore.getState()
+    expect(state.scenes).toHaveLength(1)
+    expect(state.scenes[0].name).toBe('Praia')
+    expect(state.activeSceneId).toBe(id)
+  })
+
+  it('ATUALIZA a cena ativa em vez de empilhar duplicatas a cada toque', () => {
+    useFiguresStore.getState().renameScene('Praia')
+    const id = useFiguresStore.getState().saveOrUpdateActiveScene()
+
+    useFiguresStore.getState().addFigure('Herói')
+    const again = useFiguresStore.getState().saveOrUpdateActiveScene()
+
+    const state = useFiguresStore.getState()
+    expect(again).toBe(id)
+    expect(state.scenes).toHaveLength(1)
+    expect(state.scenes[0].data.figures).toHaveLength(1)
+  })
+
+  it('leva o nome novo da cena para o snapshot ao regravar', () => {
+    useFiguresStore.getState().saveOrUpdateActiveScene()
+    useFiguresStore.getState().renameScene('Outro nome')
+    useFiguresStore.getState().saveOrUpdateActiveScene()
+
+    expect(useFiguresStore.getState().scenes[0].name).toBe('Outro nome')
+  })
+
+  it('cria um snapshot novo se a cena ativa tiver sido removida do catálogo', () => {
+    const id = useFiguresStore.getState().saveOrUpdateActiveScene()
+    useFiguresStore.getState().removeSceneSnapshot(id)
+
+    const novo = useFiguresStore.getState().saveOrUpdateActiveScene()
+
+    expect(novo).not.toBe(id)
+    expect(useFiguresStore.getState().scenes).toHaveLength(1)
+  })
+
+  it('entra no histórico de undo como qualquer edição de conteúdo', () => {
+    useFiguresStore.getState().saveOrUpdateActiveScene()
+    expect(useFiguresStore.getState().scenes).toHaveLength(1)
+
+    useFiguresStore.temporal.getState().undo()
+    expect(useFiguresStore.getState().scenes).toHaveLength(0)
+  })
+})

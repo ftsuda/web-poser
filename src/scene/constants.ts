@@ -22,13 +22,12 @@ export const GRID_SPACING_M = GROUND_SIZE / GRID_DIVISIONS
 /**
  * Régua vertical do viewport (fase 9, item 11). Altura acima do boneco mais
  * alto possível (1,90 m), com folga para poses erguidas; traços finos a cada
- * 10 cm entre as marcas de metro; posicionada sobre um cruzamento da grade,
- * perto o bastante dos bonecos para comparar alturas a olho e fora do ponto
- * onde o primeiro boneco nasce (X=0, Z=0).
+ * 10 cm entre as marcas de metro. Onde ela fica não é constante: a régua é
+ * ancorada no boneco selecionado, acompanhando o gizmo de translação (o
+ * `RULER_POSITION` fixo num cruzamento da grade saiu daqui — DECISOES.md #33).
  */
 export const RULER_HEIGHT_M = 2.5
 export const RULER_MINOR_STEP_M = 0.1
-export const RULER_POSITION: readonly [number, number, number] = [-GRID_SPACING_M, 0, -GRID_SPACING_M]
 
 /**
  * Nomes dos objetos que são "apoio de tela", não conteúdo da cena — a captura

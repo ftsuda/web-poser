@@ -84,7 +84,9 @@ export function Toolbar() {
           {t('toolbar.grid')}
         </label>
 
-        <label className="toolbar__field toolbar__field--checkbox">
+        {/* A régua só aparece com um boneco selecionado (ela é ancorada nele),
+            então a dica explica o que fazer quando marcar não muda nada. */}
+        <label className="toolbar__field toolbar__field--checkbox" title={t('toolbar.rulerHint')}>
           <input type="checkbox" checked={rulerVisible} onChange={toggleRuler} />
           {t('toolbar.ruler')}
         </label>
