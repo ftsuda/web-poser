@@ -18,6 +18,7 @@ const EXPECTED_JOINT_NAMES = [
   'root',
   'spine',
   'chest',
+  'upperChest',
   'neck',
   'head',
   'clavicle.L',
@@ -32,8 +33,12 @@ const EXPECTED_JOINT_NAMES = [
   'thumb1.R',
   'thumb2.L',
   'thumb2.R',
-  'fingers.L',
-  'fingers.R',
+  'fingersBase.L',
+  'fingersBase.R',
+  'fingersMid.L',
+  'fingersMid.R',
+  'fingersTip.L',
+  'fingersTip.R',
   'hip.L',
   'hip.R',
   'knee.L',
@@ -45,8 +50,8 @@ const EXPECTED_JOINT_NAMES = [
 ]
 
 describe('skeleton definition', () => {
-  it('has exactly 27 joints', () => {
-    expect(JOINTS).toHaveLength(27)
+  it('has exactly 32 joints', () => {
+    expect(JOINTS).toHaveLength(32)
   })
 
   it('has no duplicate joint names', () => {
@@ -78,6 +83,20 @@ describe('skeleton definition', () => {
     expect(MIN_HEIGHT_M).toBe(1.5)
     expect(MAX_HEIGHT_M).toBe(1.9)
   })
+
+  /**
+   * Regressão do DECISOES.md #30: `clavicle.R.z` era `{ min: 0, max: 20 }`,
+   * copiado do lado esquerdo. Como o mesmo sinal produz o movimento anatômico
+   * OPOSTO em Y/Z nas juntas pareadas (#14), essa faixa só deixava BAIXAR o
+   * ombro direito — o esquerdo só levantava — e era o único par do esqueleto
+   * cujos limites não eram espelho um do outro, quebrando o espelhamento de
+   * pose. A checagem geral de todos os pares está em `poseMirror.test.ts`.
+   */
+  it('both clavicles can be shrugged UP, with mirrored ranges', () => {
+    const byName = new Map(JOINTS.map((joint) => [joint.name, joint]))
+    expect(byName.get('clavicle.L')!.limits.z).toEqual({ min: 0, max: 20 })
+    expect(byName.get('clavicle.R')!.limits.z).toEqual({ min: -20, max: 0 })
+  })
 })
 
 describe('getJoint', () => {
@@ -91,14 +110,19 @@ describe('getJoint', () => {
 })
 
 describe('getJointChildren', () => {
-  it("returns chest's direct children (neck and both clavicles)", () => {
-    const children = getJointChildren('chest').map((joint) => joint.name).sort()
+  it("returns chest's only child (upperChest) — clavicles/neck moved off of chest", () => {
+    const children = getJointChildren('chest').map((joint) => joint.name)
+    expect(children).toEqual(['upperChest'])
+  })
+
+  it("returns upperChest's direct children (neck and both clavicles)", () => {
+    const children = getJointChildren('upperChest').map((joint) => joint.name).sort()
     expect(children).toEqual(['clavicle.L', 'clavicle.R', 'neck'])
   })
 
   it('returns an empty array for a leaf joint', () => {
     expect(getJointChildren('head')).toEqual([])
-    expect(getJointChildren('fingers.L')).toEqual([])
+    expect(getJointChildren('fingersTip.L')).toEqual([])
   })
 })
 
@@ -108,6 +132,7 @@ describe('getJointChain', () => {
       'root',
       'spine',
       'chest',
+      'upperChest',
       'clavicle.L',
       'shoulder.L',
     ])
@@ -134,10 +159,10 @@ describe('getJointAxes', () => {
 })
 
 describe('clampJointRotation', () => {
-  it('clamps a hinge joint (elbow) to its single defined axis range [0, 150]', () => {
-    expect(clampJointRotation('elbow.L', { x: 200 }).x).toBe(150)
-    expect(clampJointRotation('elbow.L', { x: -10 }).x).toBe(0)
-    expect(clampJointRotation('elbow.L', { x: 90 }).x).toBe(90)
+  it('clamps a hinge joint (elbow) to its single defined axis range [-150, 0] — negative = flexion', () => {
+    expect(clampJointRotation('elbow.L', { x: -200 }).x).toBe(-150)
+    expect(clampJointRotation('elbow.L', { x: 10 }).x).toBe(0)
+    expect(clampJointRotation('elbow.L', { x: -90 }).x).toBe(-90)
   })
 
   it('locks axes that are not a defined degree of freedom for the joint', () => {

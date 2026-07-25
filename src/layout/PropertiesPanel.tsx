@@ -1,7 +1,10 @@
 import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { HAND_PRESET_KEYS, type HandPresetKey } from '../figure/handPresets'
 import { applyIKTarget, toggleLimbIK } from '../figure/ikActions'
+import { JOINT_GROUPS, getArmSide, type JointGroupKey } from '../figure/jointGroups'
 import { getLimbEndEffector } from '../figure/ikSolver'
+import type { Side } from '../figure/poseMirror'
 import { POSE_PRESET_KEYS, type PosePresetKey } from '../figure/posePresets'
 import { ROOT_JOINT_NAME, getJoint, getJointAxes, type Axis } from '../figure/skeleton'
 import { useFiguresStore } from '../store/figuresStore'
@@ -11,9 +14,45 @@ const POSITION_AXES: readonly Axis[] = ['x', 'y', 'z']
 
 const POSE_PRESET_LABEL_KEYS: Record<PosePresetKey, string> = {
   standing: 'panels.properties.posePresetStanding',
+  tpose: 'panels.properties.posePresetTPose',
   sitting: 'panels.properties.posePresetSitting',
   walking: 'panels.properties.posePresetWalking',
   running: 'panels.properties.posePresetRunning',
+  lyingHandsBehindHead: 'panels.properties.posePresetLying',
+  fetal: 'panels.properties.posePresetFetal',
+  fighting: 'panels.properties.posePresetFighting',
+  superman: 'panels.properties.posePresetSuperman',
+  model: 'panels.properties.posePresetModel',
+}
+
+/** Descrição longa (tooltip) das poses cujo rótulo curto não se explica sozinho. */
+const POSE_PRESET_HINT_KEYS: Partial<Record<PosePresetKey, string>> = {
+  lyingHandsBehindHead: 'panels.properties.posePresetLyingHint',
+  fetal: 'panels.properties.posePresetFetalHint',
+  fighting: 'panels.properties.posePresetFightingHint',
+  superman: 'panels.properties.posePresetSupermanHint',
+  model: 'panels.properties.posePresetModelHint',
+}
+
+const HAND_PRESET_LABEL_KEYS: Record<HandPresetKey, string> = {
+  open: 'panels.properties.handPresetOpen',
+  relaxed: 'panels.properties.handPresetRelaxed',
+  fist: 'panels.properties.handPresetFist',
+  thumbsUp: 'panels.properties.handPresetThumbsUp',
+}
+
+const HAND_PRESETS_LEGEND_KEYS: Record<Side, string> = {
+  L: 'panels.properties.handPresetsLeft',
+  R: 'panels.properties.handPresetsRight',
+}
+
+const JOINT_GROUP_LABEL_KEYS: Record<JointGroupKey, string> = {
+  trunk: 'panels.properties.jointGroupTrunk',
+  head: 'panels.properties.jointGroupHead',
+  armRight: 'panels.properties.jointGroupArmRight',
+  armLeft: 'panels.properties.jointGroupArmLeft',
+  legRight: 'panels.properties.jointGroupLegRight',
+  legLeft: 'panels.properties.jointGroupLegLeft',
 }
 
 export function PropertiesPanel() {
@@ -21,12 +60,20 @@ export function PropertiesPanel() {
   const figures = useFiguresStore((state) => state.figures)
   const selectedFigureId = useFiguresStore((state) => state.selectedFigureId)
   const selectedJointName = useFiguresStore((state) => state.selectedJointName)
+  const selectJoint = useFiguresStore((state) => state.selectJoint)
   const activeAxis = useFiguresStore((state) => state.activeAxis)
   const setPosition = useFiguresStore((state) => state.setPosition)
   const setRootRotation = useFiguresStore((state) => state.setRootRotation)
   const setJointRotation = useFiguresStore((state) => state.setJointRotation)
   const setActiveAxis = useFiguresStore((state) => state.setActiveAxis)
   const applyPosePreset = useFiguresStore((state) => state.applyPosePreset)
+  const applyHandPreset = useFiguresStore((state) => state.applyHandPreset)
+  const mirrorSide = useFiguresStore((state) => state.mirrorSide)
+  const swapSides = useFiguresStore((state) => state.swapSides)
+  // Não é usado diretamente: assina a customização de limites do workspace só
+  // para que as faixas dos sliders (lidas de `getJoint`) sejam recalculadas
+  // quando ela mudar — ver DECISOES.md #29.
+  useFiguresStore((state) => state.jointLimits)
 
   const figure = figures.find((f) => f.id === selectedFigureId)
   const limbEndEffector = selectedJointName ? getLimbEndEffector(selectedJointName) : null
@@ -50,6 +97,10 @@ export function PropertiesPanel() {
   }
 
   const isRoot = selectedJointName === ROOT_JOINT_NAME
+  // Poses de mão aparecem no contexto: qualquer junta do braço (clavícula →
+  // ponta dos dedos) revela as poses DAQUELA mão, sem um seletor de lado à
+  // parte (ver DECISOES.md #30).
+  const armSide = getArmSide(selectedJointName)
   // Ombro/cotovelo (ou quadril/joelho) somem dos controles de FK enquanto o
   // membro estiver em IK — só a própria junta-efetuador (pulso/tornozelo)
   // continua com seus eixos de FK próprios (torção, sem efeito na posição do
@@ -98,16 +149,60 @@ export function PropertiesPanel() {
       <h2>{t('panels.properties.title')}</h2>
       <p className="properties-panel__figure-name">{figure.name}</p>
 
+      <label className="properties-panel__field properties-panel__joint-select" htmlFor="joint-select">
+        {t('panels.properties.jointSelect')}
+        <select
+          id="joint-select"
+          value={selectedJointName}
+          onChange={(event) => selectJoint(event.target.value)}
+        >
+          <option value={ROOT_JOINT_NAME}>{t('panels.properties.jointSelectRoot')}</option>
+          {JOINT_GROUPS.map((group) => (
+            <optgroup key={group.key} label={t(JOINT_GROUP_LABEL_KEYS[group.key])}>
+              {group.joints.map((jointName) => (
+                <option key={jointName} value={jointName}>
+                  {jointName}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
+
       {isRoot ? (
         <>
           <fieldset aria-label={t('panels.properties.posePresets')}>
             <legend>{t('panels.properties.posePresets')}</legend>
             <div className="properties-panel__pose-presets">
-              {POSE_PRESET_KEYS.map((key) => (
-                <button key={key} type="button" onClick={() => applyPosePreset(figure.id, key)}>
-                  {t(POSE_PRESET_LABEL_KEYS[key])}
-                </button>
-              ))}
+              {POSE_PRESET_KEYS.map((key) => {
+                const hintKey = POSE_PRESET_HINT_KEYS[key]
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    title={hintKey ? t(hintKey) : undefined}
+                    onClick={() => applyPosePreset(figure.id, key)}
+                  >
+                    {t(POSE_PRESET_LABEL_KEYS[key])}
+                  </button>
+                )
+              })}
+            </div>
+          </fieldset>
+
+          <fieldset aria-label={t('panels.properties.symmetry')}>
+            <legend>{t('panels.properties.symmetry')}</legend>
+            <p className="properties-panel__hint">{t('panels.properties.symmetryHint')}</p>
+            <div className="properties-panel__pose-presets">
+              <button type="button" onClick={() => mirrorSide(figure.id, 'R')}>
+                {t('panels.properties.mirrorFromRight')}
+              </button>
+              <button type="button" onClick={() => mirrorSide(figure.id, 'L')}>
+                {t('panels.properties.mirrorFromLeft')}
+              </button>
+              <button type="button" onClick={() => swapSides(figure.id)}>
+                {t('panels.properties.swapSides')}
+              </button>
             </div>
           </fieldset>
 
@@ -148,6 +243,23 @@ export function PropertiesPanel() {
           <p className="properties-panel__joint-name">
             {t('panels.properties.selectedJoint')}: <span>{selectedJointName}</span>
           </p>
+
+          {armSide && (
+            <fieldset aria-label={t(HAND_PRESETS_LEGEND_KEYS[armSide])}>
+              <legend>{t(HAND_PRESETS_LEGEND_KEYS[armSide])}</legend>
+              <div className="properties-panel__pose-presets">
+                {HAND_PRESET_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => applyHandPreset(figure.id, armSide, key)}
+                  >
+                    {t(HAND_PRESET_LABEL_KEYS[key])}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           {limbEndEffector && (
             <label className="properties-panel__field properties-panel__field--checkbox">

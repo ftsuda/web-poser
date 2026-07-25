@@ -163,13 +163,20 @@ export function solveIKChain(
   // a base ortonormal completa (direção do membro + eixo de dobra) e
   // extraímos a rotação de uma vez, em vez de girar só a direção.
   //
-  // O eixo X da base é o OPOSTO de `bendAxis` (não `bendAxis` em si) —
-  // verificado numericamente: a flexão positiva de `elbow.x`/`knee.x`
-  // (sentido em que o limite `[0,150]` nunca permite hiperestender) dobra o
-  // membro para o lado oposto ao definido por `+bendAxis` nessa base; usar
-  // `-bendAxis` como eixo X faz a flexão positiva dobrar para o lado certo
-  // (ver DECISOES.md #12 — checado testando os dois sentidos e confirmando
-  // qual bate com o alvo, não assumido).
+  // `flexesNegative`: `knee`/`ankle` flexionam em X positivo (faixa
+  // `{min:0,max:...}`), mas `elbow` flexiona em X negativo (faixa
+  // `{min:...,max:0}`, corrigido em `DECISOES.md` #14 — antes o cotovelo só
+  // permitia hiperestender). O eixo X da base (`basisX`, via
+  // `localHingeAxis`) e o sinal aplicado a `flexionDeg` abaixo precisam
+  // inverter juntos para a junta intermediária dobrar no sentido certo —
+  // Rot(eixo, ang) = Rot(-eixo, -ang), então negar os dois ao mesmo tempo
+  // preserva a posição final alcançada, só muda qual sinal de X representa
+  // essa mesma dobra física. Verificado numericamente pelos testes de
+  // convergência do braço (que dependem do resultado bater com o alvo, não
+  // só do limite ser respeitado), não assumido — mesma disciplina do #12.
+  const midLimitsForSign = getJoint(midJointName).limits
+  const flexesNegative = midLimitsForSign.x !== undefined && midLimitsForSign.x.max <= 0
+  const hingeSign = flexesNegative ? 1 : -1
   const baseParentWorldQuat = new THREE.Quaternion()
   baseGroup.parent.getWorldQuaternion(baseParentWorldQuat)
   const parentWorldQuatInverse = baseParentWorldQuat.clone().invert()
@@ -178,7 +185,11 @@ export function solveIKChain(
   // `skeleton.ts`) — por isso o eixo Y local é a referência de "direção do
   // membro".
   const localDir = midDirection.clone().applyQuaternion(parentWorldQuatInverse).normalize()
-  const localHingeAxis = bendAxis.clone().applyQuaternion(parentWorldQuatInverse).negate().normalize()
+  const localHingeAxis = bendAxis
+    .clone()
+    .applyQuaternion(parentWorldQuatInverse)
+    .multiplyScalar(hingeSign)
+    .normalize()
   const basisY = localDir.clone().negate()
   const basisZ = new THREE.Vector3().crossVectors(localHingeAxis, basisY).normalize()
   const basisX = new THREE.Vector3().crossVectors(basisY, basisZ).normalize()
@@ -197,10 +208,12 @@ export function solveIKChain(
   // Junta intermediária: só o eixo de flexão (x) é determinado pela
   // distância ao alvo — os demais eixos (torção, sem efeito na posição do
   // efetuador) mantêm o valor atual da pose, para não resetar uma torção já
-  // ajustada manualmente via FK.
-  const midLimits = getJoint(midJointName).limits
+  // ajustada manualmente via FK. `flexionDeg` (lei dos cossenos) é sempre
+  // ≥ 0; aplicado com o sinal correto da junta (`flexesNegative`, acima).
+  const midLimits = midLimitsForSign
+  const signedFlexionDeg = flexesNegative ? -flexionDeg : flexionDeg
   const midRotation: JointRotation = {
-    x: midLimits.x ? THREE.MathUtils.clamp(flexionDeg, midLimits.x.min, midLimits.x.max) : 0,
+    x: midLimits.x ? THREE.MathUtils.clamp(signedFlexionDeg, midLimits.x.min, midLimits.x.max) : 0,
     y: figure.pose[midJointName]?.y ?? 0,
     z: figure.pose[midJointName]?.z ?? 0,
   }

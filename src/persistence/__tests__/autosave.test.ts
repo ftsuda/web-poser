@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { getJoint, type JointLimitOverrides } from '../../figure/skeleton'
 import type { SceneSnapshot } from '../../store/figuresStore'
 import { loadWorkspaceFromLocalStorage, saveWorkspaceToLocalStorage } from '../autosave'
 
@@ -15,6 +16,7 @@ const baseState = {
   scenes: [] as SceneSnapshot[],
   nextSceneSnapshotSeq: 1,
   activeSceneId: null as string | null,
+  jointLimits: {} as JointLimitOverrides,
 }
 
 describe('autosave — persistência do workspace em localStorage', () => {
@@ -69,6 +71,33 @@ describe('autosave — persistência do workspace em localStorage', () => {
     expect(restored!.scenes).toEqual(state.scenes)
     expect(restored!.nextSceneSnapshotSeq).toBe(2)
     expect(restored!.activeSceneId).toBe('scene-1')
+  })
+
+  it('restaura os limites articulares customizados e já os aplica ao ler as poses', () => {
+    saveWorkspaceToLocalStorage({
+      ...baseState,
+      jointLimits: { 'knee.L': { x: { min: 0, max: 45 } } },
+      figures: [
+        {
+          id: 'figure-1',
+          name: 'Boneco 1',
+          color: '#e04040',
+          visible: true,
+          height: 1.7,
+          position: [0, 0, 0] as [number, number, number],
+          rotation: { x: 0, y: 0, z: 0 },
+          pose: { 'knee.L': { x: 150, y: 0, z: 0 } },
+        },
+      ],
+    })
+
+    const restored = loadWorkspaceFromLocalStorage()
+
+    expect(restored!.jointLimits).toEqual({ 'knee.L': { x: { min: 0, max: 45 } } })
+    expect(getJoint('knee.L').limits.x).toEqual({ min: 0, max: 45 })
+    // A pose salva estava em 150° (o máximo do código) — como os limites são
+    // aplicados antes da leitura, ela volta já ajustada à faixa customizada.
+    expect(restored!.workingScene.figures[0].pose['knee.L'].x).toBe(45)
   })
 
   it('retorna null (sem lançar erro) quando o conteúdo salvo está corrompido', () => {

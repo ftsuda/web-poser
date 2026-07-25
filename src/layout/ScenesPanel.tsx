@@ -27,6 +27,8 @@ export function ScenesPanel() {
   const removeSceneSnapshot = useFiguresStore((state) => state.removeSceneSnapshot)
   const loadSceneWorkingState = useFiguresStore((state) => state.loadSceneWorkingState)
   const loadWorkspaceCatalog = useFiguresStore((state) => state.loadWorkspaceCatalog)
+  const jointLimits = useFiguresStore((state) => state.jointLimits)
+  const resetJointLimits = useFiguresStore((state) => state.resetJointLimits)
 
   const [isNaming, setIsNaming] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
@@ -86,7 +88,7 @@ export function ScenesPanel() {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
       setWorkspaceDirectoryHandle(handle)
       const loaded = await loadWorkspaceFromDirectory(handle)
-      loadWorkspaceCatalog(loaded.scenes, loaded.activeSceneId)
+      loadWorkspaceCatalog(loaded.scenes, loaded.activeSceneId, loaded.jointLimits)
       return
     }
 
@@ -94,8 +96,10 @@ export function ScenesPanel() {
     if (!files) return
     const loaded = await loadWorkspaceFromFiles(files)
     if (!loaded) return
-    loadWorkspaceCatalog(loaded.scenes, loaded.activeSceneId)
+    loadWorkspaceCatalog(loaded.scenes, loaded.activeSceneId, loaded.jointLimits)
   }
+
+  const customJointLimitCount = Object.keys(jointLimits).length
 
   return (
     <aside className="panel panel--scenes" aria-label={t('panels.scenes.title')}>
@@ -180,6 +184,20 @@ export function ScenesPanel() {
             ? t('panels.scenes.workspaceFolderUnavailable')
             : workspaceDirectoryHandle && t('panels.scenes.workspaceFolderChosen', { name: workspaceDirectoryHandle.name })}
         </p>
+
+        {/* Limites articulares customizados pelo workspace (ver DECISOES.md #29):
+            só aparece quando há customização em vigor — sem editor na UI, a
+            edição é no próprio `joint-limits.json` da pasta. */}
+        {customJointLimitCount > 0 && (
+          <>
+            <p className="scenes-panel__hint">
+              {t('panels.scenes.customJointLimits', { count: customJointLimitCount })}
+            </p>
+            <button type="button" onClick={resetJointLimits}>
+              {t('panels.scenes.resetJointLimits')}
+            </button>
+          </>
+        )}
       </div>
     </aside>
   )

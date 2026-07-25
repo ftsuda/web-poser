@@ -176,6 +176,109 @@ describe('Figure — primitive mannequin', () => {
     expect(head.instance.position.y).toBeLessThan(0)
   })
 
+  it('renders small face-feature marks (nose/eyes/mouth/ears) on the head, not just a plain sphere', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure()} />)
+    const head = renderer.scene.findByProps({ name: 'joint-head' })
+    const meshes = head.children.filter((child) => child.type === 'Mesh')
+    // segment-head (a esfera) + nariz + 2 olhos + boca + 2 orelhas = 7
+    expect(meshes.length).toBeGreaterThanOrEqual(7)
+  })
+
+  it('keeps the eyes always black, regardless of the figure color (nose/mouth/ears follow the body color)', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure({ color: '#4060e0' })} />)
+    const head = renderer.scene.findByProps({ name: 'joint-head' })
+    const meshMaterialColors = head.children
+      .filter((child) => child.type === 'Mesh')
+      .map((mesh) => {
+        const material = mesh.allChildren.find((child) => child.type === 'MeshStandardMaterial')
+        return (material?.instance as unknown as THREE.MeshStandardMaterial).color.getHexString()
+      })
+
+    const blackMeshes = meshMaterialColors.filter((hex) => hex !== '4060e0')
+    // As 2 esferas dos olhos são as únicas que não seguem a cor do boneco.
+    expect(blackMeshes).toHaveLength(2)
+    for (const hex of blackMeshes) {
+      expect(hex).not.toBe('4060e0')
+    }
+  })
+
+  it('closes the top of the chest lathe geometry (used to be open/hollow)', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure()} />)
+    const chestMesh = renderer.scene.findByProps({ name: 'segment-chest' })
+    const geometry = (chestMesh.instance as unknown as THREE.Mesh).geometry
+    const position = geometry.attributes.position
+
+    let maxY = -Infinity
+    for (let i = 0; i < position.count; i += 1) {
+      maxY = Math.max(maxY, position.getY(i))
+    }
+
+    let minRadiusAtTop = Infinity
+    for (let i = 0; i < position.count; i += 1) {
+      if (Math.abs(position.getY(i) - maxY) < 1e-4) {
+        minRadiusAtTop = Math.min(minRadiusAtTop, Math.hypot(position.getX(i), position.getZ(i)))
+      }
+    }
+
+    expect(minRadiusAtTop).toBeLessThan(0.001)
+  })
+
+  it('renders the finger group (fingersBase→fingersMid→fingersTip) as a chain of 3 paralelepípedo bones, not a single flat paddle', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure()} />)
+    for (const parentJoint of ['wrist.L', 'fingersBase.L', 'fingersMid.L']) {
+      const joint = renderer.scene.findByProps({ name: `joint-${parentJoint}` })
+      const segmentBone = joint.children.find((child) =>
+        child.allChildren.some((grandchild) => grandchild.type === 'BoxGeometry'),
+      )
+      expect(segmentBone).toBeDefined()
+    }
+  })
+
+  it('renders the thumb bones as cylinders, not the organic tapered profile used elsewhere', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure()} />)
+    for (const parentJoint of ['wrist.L', 'thumb1.L']) {
+      const joint = renderer.scene.findByProps({ name: `joint-${parentJoint}` })
+      const thumbBone = joint.children.find((child) =>
+        child.allChildren.some((grandchild) => grandchild.type === 'CylinderGeometry'),
+      )
+      expect(thumbBone).toBeDefined()
+    }
+  })
+
+  it('attaches a geometry block to the tip of fingersTip.*/thumb2.* so bending them has a visible effect', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure()} />)
+    for (const jointName of ['fingersTip.L', 'fingersTip.R']) {
+      const joint = renderer.scene.findByProps({ name: `joint-${jointName}` })
+      const tipMesh = joint.children.find((child) =>
+        child.allChildren.some((grandchild) => grandchild.type === 'BoxGeometry'),
+      )
+      expect(tipMesh).toBeDefined()
+    }
+    for (const jointName of ['thumb2.L', 'thumb2.R']) {
+      const joint = renderer.scene.findByProps({ name: `joint-${jointName}` })
+      const tipMesh = joint.children.find((child) =>
+        child.allChildren.some((grandchild) => grandchild.type === 'CylinderGeometry'),
+      )
+      expect(tipMesh).toBeDefined()
+    }
+  })
+
+  it('moves the whole finger chain in the world when fingersBase.L is posed (bug fixed: a single joint used to have no attached geometry at all)', async () => {
+    const restRenderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure()} />)
+    const restTipJoint = restRenderer.scene.findByProps({ name: 'joint-fingersTip.L' })
+    const restPos = new THREE.Vector3()
+    ;(restTipJoint.instance as unknown as THREE.Object3D).getWorldPosition(restPos)
+
+    const posedRenderer = await ReactThreeTestRenderer.create(
+      <Figure figure={makeFigure({ pose: { 'fingersBase.L': { x: 80, y: 0, z: 0 } } })} />,
+    )
+    const posedTipJoint = posedRenderer.scene.findByProps({ name: 'joint-fingersTip.L' })
+    const posedPos = new THREE.Vector3()
+    ;(posedTipJoint.instance as unknown as THREE.Object3D).getWorldPosition(posedPos)
+
+    expect(posedPos.distanceTo(restPos)).toBeGreaterThan(0.01)
+  })
+
   it('renders a flat, translucent ground-shadow ellipse per figure, colored like the figure', async () => {
     const renderer = await ReactThreeTestRenderer.create(
       <Figure figure={makeFigure({ color: '#4060e0' })} />,

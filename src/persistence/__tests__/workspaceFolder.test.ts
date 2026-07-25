@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SceneSnapshot } from '../../store/figuresStore'
+import { getJoint, getJointLimitOverrides, setJointLimitOverrides } from '../../figure/skeleton'
+import type { Figure, SceneSnapshot } from '../../store/figuresStore'
+import { JOINT_LIMITS_FILENAME, buildJointLimitsFile } from '../jointLimitsFile'
 import { exportSceneToGlb } from '../sceneFile'
 import { WORKSPACE_MANIFEST_FILENAME, buildWorkspaceManifest } from '../workspaceManifest'
 import { loadWorkspaceFromDirectory, loadWorkspaceFromFiles, saveWorkspaceToDirectory } from '../workspaceFolder'
@@ -104,5 +106,89 @@ describe('workspaceFolder — fallback sem File System Access API (seleção man
 
     const loaded = await loadWorkspaceFromFiles([manifestFile])
     expect(loaded?.scenes).toEqual([])
+  })
+
+  it('aplica o joint-limits.json quando ele está entre os arquivos selecionados', async () => {
+    const manifest = buildWorkspaceManifest(scenes, null)
+    const files = [
+      new File([JSON.stringify(manifest)], WORKSPACE_MANIFEST_FILENAME),
+      new File([JSON.stringify(narrowedKneeLimitsFile())], JOINT_LIMITS_FILENAME),
+    ]
+
+    const loaded = await loadWorkspaceFromFiles(files)
+
+    expect(loaded?.jointLimits).toEqual({ 'knee.L': { x: { min: 0, max: 45 } } })
+    expect(getJoint('knee.L').limits.x).toEqual({ min: 0, max: 45 })
+  })
+})
+
+/** Cena com o joelho dobrado no máximo permitido pelo padrão do código (150°). */
+const figureWithBentKnee: Figure = {
+  id: 'figure-1',
+  name: 'Boneco 1',
+  color: '#e04040',
+  visible: true,
+  height: 1.7,
+  position: [0, 0, 0],
+  rotation: { x: 0, y: 0, z: 0 },
+  pose: { 'knee.L': { x: 150, y: 0, z: 0 } },
+}
+
+const scenesWithPose: SceneSnapshot[] = [
+  { id: 'scene-1', name: 'Cena A', data: { ...emptyData, figures: [figureWithBentKnee] } },
+]
+
+/** Mesmo arquivo que a aplicação grava, com uma única faixa apertada à mão. */
+function narrowedKneeLimitsFile() {
+  const file = buildJointLimitsFile()
+  file.joints['knee.L'] = { x: { min: 0, max: 45 } }
+  return file
+}
+
+describe('workspaceFolder — limites articulares customizados (DECISOES.md #29)', () => {
+  it('grava o joint-limits.json com os padrões do código junto com o manifesto', async () => {
+    const { directoryHandle, files } = createFakeDirectory()
+
+    await saveWorkspaceToDirectory(directoryHandle, scenes, null)
+
+    const written = JSON.parse(String(files.get(JOINT_LIMITS_FILENAME)))
+    expect(written.joints['knee.L']).toEqual({ x: { min: 0, max: 150 } })
+    expect(JSON.parse(String(files.get(WORKSPACE_MANIFEST_FILENAME))).jointLimitsFile).toBe(JOINT_LIMITS_FILENAME)
+  })
+
+  it('aplica os limites do arquivo e ajusta as poses salvas que ficaram fora da faixa', async () => {
+    const { directoryHandle, files } = createFakeDirectory()
+    await saveWorkspaceToDirectory(directoryHandle, scenesWithPose, 'scene-1')
+    files.set(JOINT_LIMITS_FILENAME, JSON.stringify(narrowedKneeLimitsFile()))
+
+    const loaded = await loadWorkspaceFromDirectory(directoryHandle)
+
+    expect(loaded.jointLimits).toEqual({ 'knee.L': { x: { min: 0, max: 45 } } })
+    expect(getJoint('knee.L').limits.x).toEqual({ min: 0, max: 45 })
+    expect(loaded.scenes[0].data.figures[0].pose['knee.L'].x).toBe(45)
+  })
+
+  it('volta aos padrões do código ao abrir uma pasta sem joint-limits.json', async () => {
+    const { directoryHandle, files } = createFakeDirectory()
+    await saveWorkspaceToDirectory(directoryHandle, scenesWithPose, 'scene-1')
+    files.delete(JOINT_LIMITS_FILENAME)
+    setJointLimitOverrides({ 'knee.L': { x: { min: 0, max: 45 } } })
+
+    const loaded = await loadWorkspaceFromDirectory(directoryHandle)
+
+    expect(loaded.jointLimits).toEqual({})
+    expect(getJointLimitOverrides()).toEqual({})
+    expect(loaded.scenes[0].data.figures[0].pose['knee.L'].x).toBe(150)
+  })
+
+  it('ignora um joint-limits.json corrompido e mantém os padrões', async () => {
+    const { directoryHandle, files } = createFakeDirectory()
+    await saveWorkspaceToDirectory(directoryHandle, scenes, null)
+    files.set(JOINT_LIMITS_FILENAME, '{ isso não é json')
+
+    const loaded = await loadWorkspaceFromDirectory(directoryHandle)
+
+    expect(loaded.jointLimits).toEqual({})
+    expect(getJoint('knee.L').limits.x).toEqual({ min: 0, max: 150 })
   })
 })

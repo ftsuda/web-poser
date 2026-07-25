@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { MAX_HEIGHT_M, MIN_HEIGHT_M, REFERENCE_HEIGHT_M } from '../../figure/skeleton'
+import {
+  MAX_HEIGHT_M,
+  MIN_HEIGHT_M,
+  REFERENCE_HEIGHT_M,
+  getJoint,
+  setJointLimitOverrides,
+} from '../../figure/skeleton'
+import { resolveHandPreset } from '../../figure/handPresets'
+import { resolvePosePreset } from '../../figure/posePresets'
 import { COLOR_PALETTE, MAX_FIGURES, useFiguresStore } from '../figuresStore'
 
 describe('figuresStore', () => {
@@ -21,7 +29,8 @@ describe('figuresStore', () => {
     expect(figure?.height).toBe(REFERENCE_HEIGHT_M)
     expect(figure?.visible).toBe(true)
     expect(figure?.color).toBe(COLOR_PALETTE[0])
-    expect(figure?.pose).toEqual({})
+    // T-pose por padrão, não a pose neutra — ver DECISOES.md #19.
+    expect(figure?.pose).toEqual(resolvePosePreset('tpose'))
   })
 
   it('spreads new figures apart on X so they do not overlap by default', () => {
@@ -142,9 +151,10 @@ describe('figuresStore', () => {
     const { addFigure, setJointRotation } = useFiguresStore.getState()
     const id = addFigure() as string
 
-    setJointRotation(id, 'elbow.L', { x: 999 })
+    setJointRotation(id, 'elbow.L', { x: -999 })
     const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
-    expect(figure?.pose['elbow.L']).toEqual({ x: 150, y: 0, z: 0 })
+    // y começa em 90 (torção neutra da T-pose, ver DECISOES.md #25) — só o x é alterado aqui.
+    expect(figure?.pose['elbow.L']).toEqual({ x: -150, y: 90, z: 0 })
   })
 
   it('changes a figure color to an unused palette color', () => {
@@ -320,11 +330,14 @@ describe('figuresStore — undo/redo (zundo)', () => {
   it('undoes a pose change', () => {
     const { addFigure, setJointRotation } = useFiguresStore.getState()
     const id = addFigure() as string
-    setJointRotation(id, 'elbow.L', { x: 90 })
-    expect(useFiguresStore.getState().figures[0].pose['elbow.L']).toEqual({ x: 90, y: 0, z: 0 })
+    setJointRotation(id, 'elbow.L', { x: -90 })
+    // y começa em 90 (torção neutra da T-pose, ver DECISOES.md #25) — só o x é alterado aqui.
+    expect(useFiguresStore.getState().figures[0].pose['elbow.L']).toEqual({ x: -90, y: 90, z: 0 })
 
     useFiguresStore.temporal.getState().undo()
-    expect(useFiguresStore.getState().figures[0].pose['elbow.L']).toBeUndefined()
+    // volta ao valor inicial da T-pose (não mais undefined — a pose inicial
+    // já vem preenchida, ver DECISOES.md #19), não a uma pose vazia.
+    expect(useFiguresStore.getState().figures[0].pose['elbow.L']).toEqual({ x: 0, y: 90, z: 0 })
   })
 
   it('does not track selection changes in the undo history', () => {
@@ -802,6 +815,68 @@ describe('figuresStore — importação de arquivo (.glb)', () => {
     expect(state.figures).toHaveLength(1) // cena de trabalho não é tocada
   })
 
+  // Limites articulares customizados pelo workspace — ver DECISOES.md #29.
+  it('applyJointLimits instala a faixa customizada e ajusta as poses já carregadas', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: 150 })
+
+    useFiguresStore.getState().applyJointLimits({ 'knee.L': { x: { min: 0, max: 45 } } })
+
+    const state = useFiguresStore.getState()
+    expect(state.jointLimits).toEqual({ 'knee.L': { x: { min: 0, max: 45 } } })
+    expect(state.figures.find((f) => f.id === id)?.pose['knee.L'].x).toBe(45)
+    expect(getJoint('knee.L').limits.x).toEqual({ min: 0, max: 45 })
+  })
+
+  it('applyJointLimits também ajusta as poses dos snapshots do catálogo', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: 150 })
+    useFiguresStore.getState().saveSceneSnapshot('Cena com joelho dobrado')
+
+    useFiguresStore.getState().applyJointLimits({ 'knee.L': { x: { min: 0, max: 45 } } })
+
+    const snapshot = useFiguresStore.getState().scenes[0]
+    expect(snapshot.data.figures[0].pose['knee.L'].x).toBe(45)
+  })
+
+  it('applyJointLimits com nada fora da faixa não mexe nas poses (não empilha undo)', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: 30 })
+    const figuresBefore = useFiguresStore.getState().figures
+    useFiguresStore.temporal.getState().clear()
+
+    useFiguresStore.getState().applyJointLimits({ 'knee.L': { x: { min: 0, max: 45 } } })
+
+    expect(useFiguresStore.getState().figures).toBe(figuresBefore)
+    expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
+  })
+
+  it('resetJointLimits volta aos limites do código e reajusta poses que ficaram fora deles', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    // Faixa alargada além do padrão do joelho (0..150) e uma pose que a usa.
+    useFiguresStore.getState().applyJointLimits({ 'knee.L': { x: { min: 0, max: 170 } } })
+    useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: 170 })
+
+    useFiguresStore.getState().resetJointLimits()
+
+    const state = useFiguresStore.getState()
+    expect(state.jointLimits).toEqual({})
+    expect(state.figures.find((f) => f.id === id)?.pose['knee.L'].x).toBe(150)
+  })
+
+  it('loadWorkspaceCatalog espelha os limites do workspace e ajusta a cena de trabalho que ficou na tela', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: 150 })
+    // Quem carrega a pasta instala os limites antes de chamar o store.
+    setJointLimitOverrides({ 'knee.L': { x: { min: 0, max: 45 } } })
+
+    useFiguresStore.getState().loadWorkspaceCatalog([], null, { 'knee.L': { x: { min: 0, max: 45 } } })
+
+    const state = useFiguresStore.getState()
+    expect(state.jointLimits).toEqual({ 'knee.L': { x: { min: 0, max: 45 } } })
+    expect(state.figures.find((f) => f.id === id)?.pose['knee.L'].x).toBe(45)
+  })
+
   it('importCameraBookmarks adiciona um sufixo automático quando o nome já existe', () => {
     const { addCameraBookmark, importCameraBookmarks } = useFiguresStore.getState()
     addCameraBookmark({ name: 'Vista A', position: [1, 1, 1], target: [0, 0, 0], projection: 'perspective', fov: 50, zoom: 1 })
@@ -830,7 +905,7 @@ describe('figuresStore — poses predefinidas', () => {
     expect(figure.pose['knee.L'].x).toBeGreaterThan(0)
   })
 
-  it('não altera a posição/rotação do root, só a pose interna', () => {
+  it('preserva onde o boneco está no chão e a direção que ele encara, numa pose em pé', () => {
     const id = useFiguresStore.getState().addFigure() as string
     useFiguresStore.getState().setPosition(id, [1, 0, 2])
     useFiguresStore.getState().setRootRotation(id, { y: 45 })
@@ -839,7 +914,49 @@ describe('figuresStore — poses predefinidas', () => {
 
     const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
     expect(figure.position).toEqual([1, 0, 2])
-    expect(figure.rotation.y).toBe(45)
+    // X/Z (onde ele está) e o giro em Y (para onde ele encara) são encenação do
+    // usuário — só a altura e a inclinação pertencem ao preset (DECISOES.md #30).
+    expect(figure.rotation).toEqual({ x: 0, y: 45, z: 0 })
+  })
+
+  it('assenta o boneco no chão quando o preset pede (sentado desce o quadril)', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setPosition(id, [1, 0, 2])
+
+    useFiguresStore.getState().applyPosePreset(id, 'sitting')
+
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    expect(figure.position[0]).toBe(1)
+    expect(figure.position[2]).toBe(2)
+    // Quadril a 0,485 m (altura de assento) em vez dos 0,90 m de pé.
+    expect(figure.position[1]).toBeCloseTo(0.485 - 0.9, 5)
+  })
+
+  it('deita o boneco (impondo a rotação inteira) e desfaz isso ao voltar para uma pose em pé', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setRootRotation(id, { y: 45 })
+
+    useFiguresStore.getState().applyPosePreset(id, 'lyingHandsBehindHead')
+    let figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    // Deitado de costas: a inclinação vale por inteiro — manter o giro prévio
+    // deixaria o boneco rolado sobre o próprio eixo em vez de deitado.
+    expect(figure.rotation).toEqual({ x: -90, y: 0, z: 0 })
+    expect(figure.position[1]).toBeLessThan(0)
+
+    useFiguresStore.getState().applyPosePreset(id, 'standing')
+    figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    expect(figure.rotation).toEqual({ x: 0, y: 0, z: 0 })
+    expect(figure.position[1]).toBe(0)
+  })
+
+  it('escala o deslocamento vertical pela altura do boneco', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setHeight(id, 1.5)
+    useFiguresStore.getState().applyPosePreset(id, 'sitting')
+
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    // Um boneco menor senta num assento proporcionalmente mais baixo.
+    expect(figure.position[1]).toBeCloseTo((0.485 - 0.9) * (1.5 / 1.7), 5)
   })
 
   it('is tracked by undo, like any other pose edit', () => {
@@ -848,10 +965,103 @@ describe('figuresStore — poses predefinidas', () => {
     expect(useFiguresStore.getState().figures.find((f) => f.id === id)!.pose['hip.L'].x).not.toBe(0)
 
     useFiguresStore.temporal.getState().undo()
-    expect(useFiguresStore.getState().figures.find((f) => f.id === id)!.pose).toEqual({})
+    // volta à pose inicial (T-pose, ver DECISOES.md #19), não a uma pose vazia.
+    expect(useFiguresStore.getState().figures.find((f) => f.id === id)!.pose).toEqual(
+      resolvePosePreset('tpose'),
+    )
   })
 
   it('does nothing for an unknown figure id', () => {
     expect(() => useFiguresStore.getState().applyPosePreset('figure-inexistente', 'standing')).not.toThrow()
+  })
+})
+
+describe('figuresStore — poses de mão e simetria (DECISOES.md #30)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  const figureById = (id: string) => useFiguresStore.getState().figures.find((f) => f.id === id)!
+
+  it('applyHandPreset fecha só a mão pedida, sem tocar na outra nem no braço', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    const before = figureById(id)
+
+    useFiguresStore.getState().applyHandPreset(id, 'R', 'fist')
+
+    const figure = figureById(id)
+    expect(figure.pose['fingersBase.R']).toEqual(resolveHandPreset('fist', 'R')['fingersBase.R'])
+    expect(figure.pose['fingersBase.L']).toEqual(before.pose['fingersBase.L'])
+    expect(figure.pose['wrist.R']).toEqual(before.pose['wrist.R'])
+    expect(figure.pose['elbow.R']).toEqual(before.pose['elbow.R'])
+  })
+
+  it('applyHandPreset preserva o ângulo do punho que o usuário já tinha ajustado', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'wrist.L', { x: 40 })
+
+    useFiguresStore.getState().applyHandPreset(id, 'L', 'thumbsUp')
+
+    expect(figureById(id).pose['wrist.L'].x).toBe(40)
+  })
+
+  it('mirrorSide copia o lado indicado espelhado, sem mexer no tronco', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'shoulder.R', { x: -40, z: -70 })
+    useFiguresStore.getState().setJointRotation(id, 'spine', { y: 25 })
+
+    useFiguresStore.getState().mirrorSide(id, 'R')
+
+    const figure = figureById(id)
+    expect(figure.pose['shoulder.L']).toEqual({ x: -40, y: 0, z: 70 })
+    expect(figure.pose['spine'].y).toBe(25)
+  })
+
+  it('swapSides troca os dois lados e é reversível aplicando de novo', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'hip.L', { x: -30 })
+    useFiguresStore.getState().setJointRotation(id, 'hip.R', { x: 20 })
+    const before = figureById(id).pose
+
+    useFiguresStore.getState().swapSides(id)
+    expect(figureById(id).pose['hip.L'].x).toBe(20)
+    expect(figureById(id).pose['hip.R'].x).toBe(-30)
+
+    useFiguresStore.getState().swapSides(id)
+    expect(figureById(id).pose).toEqual(before)
+  })
+
+  it('as três operações entram no histórico de undo como qualquer edição de pose', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    const tpose = figureById(id).pose
+
+    useFiguresStore.getState().applyHandPreset(id, 'L', 'fist')
+    useFiguresStore.getState().mirrorSide(id, 'L')
+    useFiguresStore.getState().swapSides(id)
+
+    useFiguresStore.temporal.getState().undo()
+    useFiguresStore.temporal.getState().undo()
+    useFiguresStore.temporal.getState().undo()
+    expect(figureById(id).pose).toEqual(tpose)
+  })
+
+  it('respeita os limites customizados do workspace ao espelhar (DECISOES.md #29)', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'shoulder.R', { z: -120 })
+    // Workspace aperta só o lado esquerdo: o espelho não pode furar esse limite.
+    useFiguresStore.getState().applyJointLimits({ 'shoulder.L': { z: { min: -20, max: 45 } } })
+
+    useFiguresStore.getState().mirrorSide(id, 'R')
+
+    expect(figureById(id).pose['shoulder.L'].z).toBe(45)
+  })
+
+  it('não faz nada para um id de boneco inexistente', () => {
+    expect(() => {
+      useFiguresStore.getState().applyHandPreset('figure-inexistente', 'L', 'fist')
+      useFiguresStore.getState().mirrorSide('figure-inexistente', 'L')
+      useFiguresStore.getState().swapSides('figure-inexistente')
+    }).not.toThrow()
   })
 })

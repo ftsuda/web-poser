@@ -175,9 +175,11 @@ describe('useKeyboardShortcuts', () => {
     selectFigure(id)
     selectJoint('elbow.L')
 
-    press({ key: 'ArrowRight' })
+    // elbow.x só existe no lado negativo (flexão, ver DECISOES.md #14) —
+    // ArrowLeft é quem se move dentro da faixa válida.
+    press({ key: 'ArrowLeft' })
     const figure = useFiguresStore.getState().figures[0]
-    expect(figure.pose['elbow.L'].x).toBeGreaterThan(0)
+    expect(figure.pose['elbow.L'].x).toBeLessThan(0)
   })
 
   it('cycles the active axis with up/down arrows on a multi-axis joint', () => {
@@ -197,14 +199,16 @@ describe('useKeyboardShortcuts', () => {
     selectFigure(id)
     selectJoint('elbow.L')
 
-    press({ key: 'ArrowRight', ctrlKey: true })
+    // elbow.x só existe no lado negativo (flexão, ver DECISOES.md #14) —
+    // ArrowLeft é quem se move dentro da faixa válida.
+    press({ key: 'ArrowLeft', ctrlKey: true })
     const fine = useFiguresStore.getState().figures[0].pose['elbow.L'].x
 
     useFiguresStore.getState().selectJoint('elbow.L')
-    press({ key: 'ArrowRight', shiftKey: true })
+    press({ key: 'ArrowLeft', shiftKey: true })
     const large = useFiguresStore.getState().figures[0].pose['elbow.L'].x
 
-    expect(large - fine).toBeGreaterThan(fine)
+    expect(Math.abs(large) - Math.abs(fine)).toBeGreaterThan(Math.abs(fine))
   })
 
   it('does nothing for shortcuts when no figure is selected', () => {

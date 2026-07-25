@@ -6,11 +6,17 @@ import {
   REFERENCE_HEIGHT_M,
   ROOT_JOINT_NAME,
   clampJointRotation,
+  getHeightScale,
   getJointAxes,
+  getJointLimitOverrides,
+  setJointLimitOverrides,
   type Axis,
+  type JointLimitOverrides,
   type JointRotation,
 } from '../figure/skeleton'
-import { resolvePosePreset, type PosePresetKey } from '../figure/posePresets'
+import { resolveHandPreset, type HandPresetKey } from '../figure/handPresets'
+import { mirrorPoseSide, swapPoseSides, type Side } from '../figure/poseMirror'
+import { resolvePosePreset, resolvePosePresetPlacement, type PosePresetKey } from '../figure/posePresets'
 import { loadWorkspaceFromLocalStorage } from '../persistence/autosave'
 
 export const MAX_FIGURES = 5
@@ -103,6 +109,13 @@ export interface FiguresState {
   nextSceneSnapshotSeq: number
   /** Id do snapshot mais recentemente salvo/carregado — navegação, fora do histórico de undo (ver `partialize`). */
   activeSceneId: string | null
+  /**
+   * Limites articulares customizados pelo workspace (ver DECISOES.md #29) —
+   * vazio quando valem os padrões de `skeleton.ts`. É um espelho do estado
+   * global do `skeleton.ts` mantido aqui só para (a) entrar no autosave junto
+   * com o resto do workspace e (b) re-renderizar os sliders quando muda.
+   */
+  jointLimits: JointLimitOverrides
   addFigure: (name?: string) => string | null
   removeFigure: (id: string) => void
   duplicateFigure: (id: string) => string | null
@@ -138,9 +151,28 @@ export interface FiguresState {
   /** Adiciona bookmarks importados aos já existentes (nunca substitui); nomes duplicados recebem um sufixo automático. */
   importCameraBookmarks: (bookmarks: readonly Omit<CameraBookmark, 'id'>[]) => void
   /** Substitui o catálogo de cenas por um workspace lido de uma pasta; carrega a cena ativa na cena de trabalho, se houver. */
-  loadWorkspaceCatalog: (scenes: SceneSnapshot[], activeSceneId: string | null) => void
-  /** Substitui a pose interna do boneco por um preset (em pé/sentado/andando/correndo) — não mexe em posição/rotação do root. */
+  loadWorkspaceCatalog: (
+    scenes: SceneSnapshot[],
+    activeSceneId: string | null,
+    jointLimits?: JointLimitOverrides,
+  ) => void
+  /** Instala limites articulares customizados (JSON do workspace) e ajusta as poses já carregadas para dentro deles. */
+  applyJointLimits: (raw: unknown) => void
+  /** Volta aos limites do código, reajustando poses que tenham ficado fora da faixa padrão. */
+  resetJointLimits: () => void
+  /**
+   * Substitui a pose interna do boneco por um preset e o assenta no chão
+   * conforme o preset pedir (rotação do boneco e altura do quadril — ver
+   * `resolvePosePresetPlacement` e DECISOES.md #30). X/Z, ou seja, ONDE o
+   * boneco está no chão, nunca mudam.
+   */
   applyPosePreset: (id: string, key: PosePresetKey) => void
+  /** Aplica uma pose de mão a UM lado, preservando punho, braço e a outra mão. */
+  applyHandPreset: (id: string, side: Side, key: HandPresetKey) => void
+  /** Copia o lado indicado, espelhado, para o outro — só juntas `.L`/`.R`. */
+  mirrorSide: (id: string, from: Side) => void
+  /** Troca as poses dos dois lados, cada uma espelhada — só juntas `.L`/`.R`. */
+  swapSides: (id: string) => void
 }
 
 const ZERO_ROTATION: JointRotation = { x: 0, y: 0, z: 0 }
@@ -180,6 +212,40 @@ function updateFigure(
   return figures.map((figure) => (figure.id === id ? update(figure) : figure))
 }
 
+function clampFigurePose(figure: Figure): Figure {
+  let changed = false
+  const pose: Record<string, JointRotation> = {}
+
+  for (const [jointName, rotation] of Object.entries(figure.pose)) {
+    const clamped = clampJointRotation(jointName, rotation)
+    pose[jointName] = clamped
+    if (clamped.x !== rotation.x || clamped.y !== rotation.y || clamped.z !== rotation.z) {
+      changed = true
+    }
+  }
+
+  return changed ? { ...figure, pose } : figure
+}
+
+/**
+ * Reajusta poses para dentro dos limites em vigor, preservando a identidade
+ * dos arrays/objetos quando nada muda — assim trocar de limites sem nenhuma
+ * pose fora da faixa não empilha histórico de undo (a `equality` do `zundo`
+ * compara por referência).
+ */
+function clampFigures(figures: Figure[]): Figure[] {
+  const next = figures.map(clampFigurePose)
+  return next.some((figure, index) => figure !== figures[index]) ? next : figures
+}
+
+function clampScenes(scenes: SceneSnapshot[]): SceneSnapshot[] {
+  const next = scenes.map((scene) => {
+    const figures = clampFigures(scene.data.figures)
+    return figures === scene.data.figures ? scene : { ...scene, data: { ...scene.data, figures } }
+  })
+  return next.some((scene, index) => scene !== scenes[index]) ? next : scenes
+}
+
 export const useFiguresStore = create<FiguresState>()(
   temporal(
     (set, get) => ({
@@ -196,6 +262,9 @@ export const useFiguresStore = create<FiguresState>()(
       scenes: restoredWorkspace?.scenes ?? [],
       nextSceneSnapshotSeq: restoredWorkspace?.nextSceneSnapshotSeq ?? 1,
       activeSceneId: restoredWorkspace?.activeSceneId ?? null,
+      // O autosave já aplicou esses limites ao `skeleton.ts` ao restaurar (as
+      // poses acima foram lidas com eles valendo); aqui é só o espelho.
+      jointLimits: restoredWorkspace?.jointLimits ?? {},
 
       addFigure: (name) => {
         const { figures, nextFigureSeq } = get()
@@ -213,7 +282,10 @@ export const useFiguresStore = create<FiguresState>()(
           height: REFERENCE_HEIGHT_M,
           position: [figures.length * DEFAULT_SPACING_M, 0, 0],
           rotation: { ...ZERO_ROTATION },
-          pose: {},
+          // T-pose por padrão (pedido do usuário, ver DECISOES.md #19) —
+          // separa os membros do corpo e facilita posar/testar, em vez da
+          // pose "em pé" relaxada (braços colados ao corpo).
+          pose: resolvePosePreset('tpose'),
         }
 
         set({ figures: [...figures, figure], nextFigureSeq: nextFigureSeq + 1 })
@@ -478,27 +550,96 @@ export const useFiguresStore = create<FiguresState>()(
         set({ cameraBookmarks: [...cameraBookmarks, ...imported], nextCameraBookmarkSeq: seq })
       },
 
-      loadWorkspaceCatalog: (scenes, activeSceneId) => {
+      loadWorkspaceCatalog: (scenes, activeSceneId, jointLimits) => {
+        // Quem carrega a pasta já instalou os limites no `skeleton.ts` antes de
+        // reconstruir as cenas (ordem exigida pelo clamp das poses — ver
+        // `workspaceFolder.ts`); o padrão aqui é só espelhar o que está valendo.
+        const limits = jointLimits ?? getJointLimitOverrides()
         const active = activeSceneId ? scenes.find((scene) => scene.id === activeSceneId) : undefined
+
         if (active) {
           set({
             scenes,
             activeSceneId,
             ...active.data,
+            jointLimits: limits,
             sceneName: active.name,
             selectedFigureId: null,
             selectedJointName: null,
             activeAxis: null,
           })
         } else {
-          set({ scenes, activeSceneId })
+          // Sem cena ativa a cena de trabalho atual continua na tela, e ela não
+          // passou pela leitura do `.glb` — precisa ser reajustada aqui.
+          set((state) => ({
+            scenes,
+            activeSceneId,
+            jointLimits: limits,
+            figures: clampFigures(state.figures),
+          }))
         }
+      },
+
+      applyJointLimits: (raw) => {
+        const jointLimits = setJointLimitOverrides(raw)
+        set((state) => ({
+          jointLimits,
+          figures: clampFigures(state.figures),
+          scenes: clampScenes(state.scenes),
+        }))
+      },
+
+      resetJointLimits: () => {
+        get().applyJointLimits({})
       },
 
       applyPosePreset: (id, key) => {
         const pose = resolvePosePreset(key)
+        const placement = resolvePosePresetPlacement(key)
         set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({ ...figure, pose })),
+          figures: updateFigure(state.figures, id, (figure) => ({
+            ...figure,
+            pose,
+            rotation: placement.preservesHeading
+              ? { ...placement.rotation, y: figure.rotation.y }
+              : placement.rotation,
+            // O deslocamento vertical acompanha a escala do boneco, para que um
+            // de 1,50 m deite tão colado ao chão quanto um de 1,90 m; X e Z
+            // (onde ele está no chão) ficam onde o usuário os deixou.
+            position: [
+              figure.position[0],
+              placement.groundOffsetM * getHeightScale(figure.height),
+              figure.position[2],
+            ],
+          })),
+        }))
+      },
+
+      applyHandPreset: (id, side, key) => {
+        const hand = resolveHandPreset(key, side)
+        set((state) => ({
+          figures: updateFigure(state.figures, id, (figure) => ({
+            ...figure,
+            pose: { ...figure.pose, ...hand },
+          })),
+        }))
+      },
+
+      mirrorSide: (id, from) => {
+        set((state) => ({
+          figures: updateFigure(state.figures, id, (figure) => ({
+            ...figure,
+            pose: mirrorPoseSide(figure.pose, from),
+          })),
+        }))
+      },
+
+      swapSides: (id) => {
+        set((state) => ({
+          figures: updateFigure(state.figures, id, (figure) => ({
+            ...figure,
+            pose: swapPoseSides(figure.pose),
+          })),
         }))
       },
     }),
@@ -521,7 +662,12 @@ export const useFiguresStore = create<FiguresState>()(
       // snapshots do workspace) seguem a mesma regra — salvar/renomear/
       // remover um snapshot é conteúdo; `activeSceneId` fica de fora, como
       // `selectedFigureId` (é só um ponteiro de qual snapshot está carregado
-      // no momento, não conteúdo em si — ver DECISOES.md #11).
+      // no momento, não conteúdo em si — ver DECISOES.md #11). `jointLimits`
+      // também fica de fora: é configuração do modelo que veio de um arquivo do
+      // workspace (não uma edição), e desfazê-la deixaria o espelho do store
+      // divergente dos limites realmente instalados no `skeleton.ts` — as poses
+      // que a troca de limites ajustar, essas sim, entram no histórico normal
+      // (ver DECISOES.md #29).
       partialize: (state) => ({
         figures: state.figures,
         nextFigureSeq: state.nextFigureSeq,

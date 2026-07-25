@@ -21,7 +21,7 @@ const sampleFigure: Figure = {
   rotation: { x: 0, y: 45, z: 0 },
   pose: {
     'shoulder.L': { x: 30, y: 0, z: 10 },
-    'elbow.L': { x: 90, y: 0, z: 0 },
+    'elbow.L': { x: -90, y: 0, z: 0 },
   },
 }
 
@@ -59,11 +59,11 @@ describe('sceneSerialization — figura', () => {
     const restored = figureFromExtras(
       {
         id: 'figure-9',
-        joints: { 'elbow.L': [999, 0, 0] }, // fora do limite (0-150) — deve ser grampeado
+        joints: { 'elbow.L': [-999, 0, 0] }, // fora do limite (-150 a 0) — deve ser grampeado
       },
       0,
     )
-    expect(restored.pose['elbow.L']).toEqual({ x: 150, y: 0, z: 0 })
+    expect(restored.pose['elbow.L']).toEqual({ x: -150, y: 0, z: 0 })
     expect(restored.name).toBe('Figure 1')
     expect(restored.color).toBe('#e04040')
     expect(restored.visible).toBe(true)

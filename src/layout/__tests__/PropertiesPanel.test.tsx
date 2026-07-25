@@ -63,6 +63,35 @@ describe('PropertiesPanel', () => {
       expect(figure.pose['hip.L'].x).toBeLessThan(0)
       expect(figure.pose['knee.L'].x).toBeGreaterThan(0)
     })
+
+    it('applies the T-pose (palms down) through the store when the T-pose button is clicked', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      // Começa numa pose diferente (a T-pose já é o padrão ao criar um
+      // boneco — ver DECISOES.md #19) para o clique no botão ter efeito.
+      useFiguresStore.getState().applyPosePreset(id, 'standing')
+      await renderPropertiesPanel()
+
+      await user.click(screen.getByRole('button', { name: 'T-pose' }))
+
+      const figure = useFiguresStore.getState().figures[0]
+      expect(figure.pose['shoulder.L'].z).toBe(90)
+      expect(figure.pose['shoulder.R'].z).toBe(-90)
+    })
+
+    it('lets the user jump to any joint (including ones hidden behind other body parts) via the joint select combobox', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+
+      const jointSelect = screen.getByLabelText('Selecionar junta') as HTMLSelectElement
+      await user.selectOptions(jointSelect, 'fingersTip.L')
+
+      expect(useFiguresStore.getState().selectedJointName).toBe('fingersTip.L')
+      expect(screen.getByText('fingersTip.L', { selector: 'span' })).toBeInTheDocument()
+    })
   })
 
   describe('with a joint selected', () => {
@@ -72,15 +101,16 @@ describe('PropertiesPanel', () => {
       useFiguresStore.getState().selectJoint('elbow.L')
       await renderPropertiesPanel()
 
-      expect(screen.getByText('elbow.L')).toBeInTheDocument()
+      expect(screen.getByText('elbow.L', { selector: 'span' })).toBeInTheDocument()
 
       const xSlider = screen.getByRole('slider', { name: 'X' }) as HTMLInputElement
-      expect(xSlider.min).toBe('0')
-      expect(xSlider.max).toBe('150')
+      expect(xSlider.min).toBe('-150')
+      expect(xSlider.max).toBe('0')
 
+      // Faixa centrada na torção neutra de +90 (ver DECISOES.md #25).
       const ySlider = screen.getByRole('slider', { name: 'Y' }) as HTMLInputElement
-      expect(ySlider.min).toBe('-80')
-      expect(ySlider.max).toBe('80')
+      expect(ySlider.min).toBe('0')
+      expect(ySlider.max).toBe('180')
     })
 
     it('changes the joint rotation through the store when a slider moves', async () => {
@@ -95,11 +125,11 @@ describe('PropertiesPanel', () => {
         'value',
       )?.set
       await act(async () => {
-        nativeSetter?.call(xSlider, '90')
+        nativeSetter?.call(xSlider, '-90')
         xSlider.dispatchEvent(new Event('input', { bubbles: true }))
       })
 
-      expect(useFiguresStore.getState().figures[0].pose['elbow.L'].x).toBe(90)
+      expect(useFiguresStore.getState().figures[0].pose['elbow.L'].x).toBe(-90)
     })
 
     it('marks the active axis and lets the user change it', async () => {
@@ -196,6 +226,91 @@ describe('PropertiesPanel', () => {
         useFiguresStore.getState().selectJoint('wrist.L')
       })
       expect(screen.getByRole('slider', { name: 'X' })).toBeInTheDocument()
+    })
+  })
+
+  describe('poses de mão e simetria (DECISOES.md #30)', () => {
+    async function withJointSelected(jointName: string) {
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      useFiguresStore.getState().selectJoint(jointName)
+      await renderPropertiesPanel()
+      return id
+    }
+
+    it('oferece as 5 poses novas de corpo, com descrição no tooltip', async () => {
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+
+      for (const label of ['Deitado', 'Fetal', 'Luta', 'Superman', 'Modelo']) {
+        expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+      }
+      expect(screen.getByRole('button', { name: 'Fetal' })).toHaveAttribute(
+        'title',
+        'Sentado no chão, abraçando os joelhos',
+      )
+    })
+
+    it('deita o boneco no chão pelo botão, ajustando também rotação e altura', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+
+      await user.click(screen.getByRole('button', { name: 'Deitado' }))
+
+      const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
+      expect(figure.rotation.x).toBe(-90)
+      expect(figure.position[1]).toBeLessThan(0)
+    })
+
+    it('mostra as poses da mão DAQUELE lado ao selecionar qualquer junta do braço', async () => {
+      await withJointSelected('elbow.R')
+      expect(screen.getByRole('group', { name: 'Poses da mão direita' })).toBeInTheDocument()
+      expect(screen.queryByRole('group', { name: 'Poses da mão esquerda' })).not.toBeInTheDocument()
+
+      await act(async () => {
+        useFiguresStore.getState().selectJoint('fingersTip.L')
+      })
+      expect(screen.getByRole('group', { name: 'Poses da mão esquerda' })).toBeInTheDocument()
+    })
+
+    it('não mostra poses de mão em juntas fora do braço', async () => {
+      await withJointSelected('knee.L')
+      expect(screen.queryByRole('group', { name: 'Poses da mão esquerda' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('group', { name: 'Poses da mão direita' })).not.toBeInTheDocument()
+    })
+
+    it('fecha a mão do lado selecionado, sem mexer na outra', async () => {
+      const user = userEvent.setup()
+      const id = await withJointSelected('wrist.R')
+
+      await user.click(screen.getByRole('button', { name: 'Fechada' }))
+
+      const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
+      expect(figure.pose['fingersBase.R'].x).toBeGreaterThan(60)
+      expect(figure.pose['fingersBase.L'].x).toBe(0)
+    })
+
+    it('espelha e inverte os lados a partir do painel da raiz', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      useFiguresStore.getState().setJointRotation(id, 'shoulder.R', { x: -50 })
+      await renderPropertiesPanel()
+
+      expect(screen.getByRole('group', { name: 'Simetria' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Copiar direito → esquerdo' }))
+      expect(useFiguresStore.getState().figures[0].pose['shoulder.L'].x).toBe(-50)
+
+      await user.click(screen.getByRole('button', { name: 'Inverter lados' }))
+      expect(useFiguresStore.getState().figures[0].pose['shoulder.R'].x).toBe(-50)
+    })
+
+    it('a simetria só aparece na raiz, não numa junta qualquer', async () => {
+      await withJointSelected('spine')
+      expect(screen.queryByRole('group', { name: 'Simetria' })).not.toBeInTheDocument()
     })
   })
 })

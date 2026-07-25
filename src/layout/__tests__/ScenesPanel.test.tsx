@@ -141,7 +141,7 @@ describe('ScenesPanel', () => {
       expect(screen.queryByRole('button', { name: 'Salvar workspace em pasta' })).not.toBeInTheDocument()
       expect(
         screen.getByText(
-          'Este navegador não suporta escolher pasta — use os arquivos individuais (workspace.json + .glb) para abrir um workspace salvo.',
+          'Este navegador não suporta escolher pasta — use os arquivos individuais (workspace.json + joint-limits.json + .glb) para abrir um workspace salvo.',
         ),
       ).toBeInTheDocument()
     })
@@ -164,6 +164,7 @@ describe('ScenesPanel', () => {
           },
         ],
         activeSceneId: 'scene-1',
+        jointLimits: {},
       })
 
       const user = userEvent.setup()
@@ -174,6 +175,42 @@ describe('ScenesPanel', () => {
         expect(useFiguresStore.getState().scenes).toHaveLength(1)
         expect(useFiguresStore.getState().activeSceneId).toBe('scene-1')
       })
+    })
+
+    it('aplica os limites articulares que vieram no workspace (DECISOES.md #29)', async () => {
+      vi.mocked(pickMultipleFiles).mockResolvedValue([new File([], 'workspace.json')])
+      vi.mocked(loadWorkspaceFromFiles).mockResolvedValue({
+        scenes: [],
+        activeSceneId: null,
+        jointLimits: { 'knee.L': { x: { min: 0, max: 45 } } },
+      })
+
+      const user = userEvent.setup()
+      await renderScenesPanel()
+      await user.click(screen.getByRole('button', { name: 'Abrir workspace de pasta' }))
+
+      expect(
+        await screen.findByText('Limites articulares customizados por este workspace em 1 junta (joint-limits.json).'),
+      ).toBeInTheDocument()
+      expect(useFiguresStore.getState().jointLimits).toEqual({ 'knee.L': { x: { min: 0, max: 45 } } })
+    })
+
+    it('restaura os limites padrão pelo botão, sem precisar editar o JSON', async () => {
+      const user = userEvent.setup()
+      await renderScenesPanel()
+      act(() => {
+        useFiguresStore.getState().applyJointLimits({ 'knee.L': { x: { min: 0, max: 45 } } })
+      })
+
+      await user.click(screen.getByRole('button', { name: 'Restaurar limites padrão' }))
+
+      expect(useFiguresStore.getState().jointLimits).toEqual({})
+      expect(screen.queryByRole('button', { name: 'Restaurar limites padrão' })).not.toBeInTheDocument()
+    })
+
+    it('não mostra nada sobre limites quando valem os padrões do código', async () => {
+      await renderScenesPanel()
+      expect(screen.queryByRole('button', { name: 'Restaurar limites padrão' })).not.toBeInTheDocument()
     })
   })
 
@@ -220,6 +257,7 @@ describe('ScenesPanel', () => {
           },
         ],
         activeSceneId: 'scene-1',
+        jointLimits: {},
       })
 
       const user = userEvent.setup()

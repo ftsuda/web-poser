@@ -20,7 +20,7 @@ describe('buildJointFrames', () => {
     const { outer, joints } = buildJointFrames(baseFigure)
     expect(outer.position.toArray()).toEqual([1, 0, -2])
     expect(outer.scale.x).toBeCloseTo(getHeightScale(1.7))
-    expect(joints.size).toBe(27)
+    expect(joints.size).toBe(32)
     expect(joints.has('shoulder.L')).toBe(true)
   })
 

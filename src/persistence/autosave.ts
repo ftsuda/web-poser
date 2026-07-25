@@ -1,3 +1,4 @@
+import { setJointLimitOverrides, type JointLimitOverrides } from '../figure/skeleton'
 import type { CameraBookmark, EnvironmentSettings, Figure, SceneSnapshot, SceneSnapshotData } from '../store/figuresStore'
 import { sceneFromExtras, sceneToExtras, type SceneWorkingState } from './sceneSerialization'
 
@@ -23,6 +24,8 @@ export interface WorkspaceState {
   scenes: SceneSnapshot[]
   nextSceneSnapshotSeq: number
   activeSceneId: string | null
+  /** Limites articulares customizados em vigor (ver DECISOES.md #29) — vazio quando são os padrões do código. */
+  jointLimits: JointLimitOverrides
 }
 
 export interface RestoredWorkspace {
@@ -30,6 +33,8 @@ export interface RestoredWorkspace {
   scenes: SceneSnapshot[]
   nextSceneSnapshotSeq: number
   activeSceneId: string | null
+  /** Limites customizados restaurados — já aplicados ao `skeleton.ts` antes das poses serem lidas. */
+  jointLimits: JointLimitOverrides
 }
 
 function snapshotDataToExtras(data: SceneSnapshotData): Record<string, unknown> {
@@ -69,6 +74,7 @@ export function saveWorkspaceToLocalStorage(state: WorkspaceState): void {
     })),
     nextSceneSnapshotSeq: state.nextSceneSnapshotSeq,
     activeSceneId: state.activeSceneId,
+    jointLimits: state.jointLimits,
   }
 
   try {
@@ -98,6 +104,12 @@ export function loadWorkspaceFromLocalStorage(): RestoredWorkspace | null {
   }
 
   const source = (typeof parsed === 'object' && parsed !== null ? parsed : {}) as Record<string, unknown>
+
+  // Limites ANTES das cenas: é ao reconstruir as poses que o clamp acontece
+  // (`sceneFromExtras` → `figureFromExtras`), então os limites customizados
+  // precisam já estar valendo — mesma ordem de `workspaceFolder.ts`.
+  const jointLimits = setJointLimitOverrides(source.jointLimits)
+
   const workingScene = sceneFromExtras(source.workingScene)
 
   const scenesSource = Array.isArray(source.scenes) ? source.scenes : []
@@ -116,5 +128,6 @@ export function loadWorkspaceFromLocalStorage(): RestoredWorkspace | null {
     nextSceneSnapshotSeq:
       typeof source.nextSceneSnapshotSeq === 'number' ? source.nextSceneSnapshotSeq : scenes.length + 1,
     activeSceneId: typeof source.activeSceneId === 'string' ? source.activeSceneId : null,
+    jointLimits,
   }
 }

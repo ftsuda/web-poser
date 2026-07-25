@@ -34,7 +34,7 @@ describe('solveIKChain — braço (ombro+cotovelo → pulso)', () => {
 
   it('converge para um alvo alcançável dentro da cadeia', () => {
     const shoulderPos = worldPositionOf(restingFigure, 'shoulder.L')
-    // Alvo a ~0,29 m do ombro (dentro do alcance máximo de ~0,58 m). A torção
+    // Alvo a ~0,29 m do ombro (dentro do alcance máximo de ~0,52 m). A torção
     // livre da junta-base não é otimizada (ver docblock de `ikSolver.ts`) —
     // alvos deslocados para +X em vez de -X a partir do ombro esquerdo podem
     // exigir uma torção que bate no limite recém-corrigido de `shoulder.x`
@@ -45,6 +45,10 @@ describe('solveIKChain — braço (ombro+cotovelo → pulso)', () => {
 
     expect(result.reached).toBe(true)
     expect(result.remainingDistanceM).toBeLessThan(0.01)
+    // elbow.x só existe no lado negativo desde a correção de DECISOES.md #14
+    // (antes só permitia hiperestender) — o solver precisa aplicar o sinal
+    // certo para a junta intermediária dobrar de verdade, não travar em 0.
+    expect(result.rotations['elbow.L'].x).toBeLessThan(0)
 
     const posed: Figure = { ...restingFigure, pose: { ...restingFigure.pose, ...result.rotations } }
     const achieved = worldPositionOf(posed, 'wrist.L')
@@ -109,7 +113,7 @@ describe('getLimbEndEffector', () => {
   it('retorna null para juntas fora de qualquer cadeia de IK', () => {
     expect(getLimbEndEffector('root')).toBeNull()
     expect(getLimbEndEffector('spine')).toBeNull()
-    expect(getLimbEndEffector('fingers.L')).toBeNull()
+    expect(getLimbEndEffector('fingersBase.L')).toBeNull()
   })
 })
 

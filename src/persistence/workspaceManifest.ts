@@ -1,5 +1,6 @@
 import { slugifySceneName } from '../keyframe/keyframeNaming'
 import type { SceneSnapshot } from '../store/figuresStore'
+import { JOINT_LIMITS_FILENAME } from './jointLimitsFile'
 
 /**
  * Manifesto `workspace.json` de um workspace salvo em pasta: aponta, por
@@ -20,6 +21,8 @@ export interface WorkspaceManifestEntry {
 export interface WorkspaceManifest {
   version: number
   activeSceneId: string | null
+  /** Arquivo de limites articulares customizados da pasta (ver DECISOES.md #29) — sempre gravado, mas opcional na leitura. */
+  jointLimitsFile: string
   scenes: WorkspaceManifestEntry[]
 }
 
@@ -41,7 +44,12 @@ export function buildWorkspaceManifest(
     return { id: scene.id, name: scene.name, filename }
   })
 
-  return { version: WORKSPACE_MANIFEST_VERSION, activeSceneId, scenes: entries }
+  return {
+    version: WORKSPACE_MANIFEST_VERSION,
+    activeSceneId,
+    jointLimitsFile: JOINT_LIMITS_FILENAME,
+    scenes: entries,
+  }
 }
 
 export function parseWorkspaceManifest(json: unknown): WorkspaceManifest {
@@ -60,6 +68,12 @@ export function parseWorkspaceManifest(json: unknown): WorkspaceManifest {
   return {
     version: typeof source.version === 'number' ? source.version : WORKSPACE_MANIFEST_VERSION,
     activeSceneId: typeof source.activeSceneId === 'string' ? source.activeSceneId : null,
+    // Workspaces gravados antes do #29 não têm o campo — o nome padrão vale, e
+    // se o arquivo também não existir na pasta a aplicação volta aos padrões.
+    jointLimitsFile:
+      typeof source.jointLimitsFile === 'string' && source.jointLimitsFile.trim() !== ''
+        ? source.jointLimitsFile
+        : JOINT_LIMITS_FILENAME,
     scenes,
   }
 }
