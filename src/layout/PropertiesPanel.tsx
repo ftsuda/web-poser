@@ -7,10 +7,84 @@ import { getLimbEndEffector } from '../figure/ikSolver'
 import type { Side } from '../figure/poseMirror'
 import { POSE_PRESET_KEYS, type PosePresetKey } from '../figure/posePresets'
 import { ROOT_JOINT_NAME, getJoint, getJointAxes, type Axis } from '../figure/skeleton'
+import { AXIS_COLORS } from '../scene/axisColors'
 import { useFiguresStore } from '../store/figuresStore'
 import { useIKStore } from '../store/ikStore'
+import { useUIStore } from '../store/uiStore'
+import { CollapsiblePanel } from './CollapsiblePanel'
 
 const POSITION_AXES: readonly Axis[] = ['x', 'y', 'z']
+
+/**
+ * Faixa dos sliders de rotação do `root` (fase 9, item 13). Diferente das
+ * demais juntas, a colocação do boneco na cena não passa por limites
+ * articulares — é uma volta completa, em graus.
+ */
+const ROOT_ROTATION_MIN = -180
+const ROOT_ROTATION_MAX = 180
+
+interface AxisSliderProps {
+  axis: Axis
+  value: number
+  min: number
+  max: number
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void
+  /** Botão de eixo ativo (setas do teclado) — só as juntas com FK têm. */
+  activeAxis?: Axis | null
+  onSelectAxis?: (axis: Axis) => void
+  activeAxisTitle?: string
+}
+
+/**
+ * Linha de slider de um eixo, com a cor do eixo correspondente no gizmo
+ * (fase 9, item 9 — ver `axisColors.ts`). As cores vão por `style` inline, e
+ * não por classe CSS, porque a fonte única delas é o módulo compartilhado com
+ * a convenção do `TransformControls`.
+ */
+function AxisSlider({
+  axis,
+  value,
+  min,
+  max,
+  onChange,
+  activeAxis,
+  onSelectAxis,
+  activeAxisTitle,
+}: AxisSliderProps) {
+  const color = AXIS_COLORS[axis]
+  const label = axis.toUpperCase()
+
+  return (
+    <div className="properties-panel__axis-row">
+      {onSelectAxis ? (
+        <button
+          type="button"
+          aria-pressed={axis === activeAxis}
+          className="properties-panel__axis-button"
+          style={{ color, borderColor: color }}
+          title={activeAxisTitle}
+          onClick={() => onSelectAxis(axis)}
+        >
+          {label}
+        </button>
+      ) : (
+        <span className="properties-panel__axis-tag" style={{ color, borderColor: color }}>
+          {label}
+        </span>
+      )}
+      <input
+        type="range"
+        aria-label={label}
+        style={{ accentColor: color }}
+        min={min}
+        max={max}
+        value={value}
+        onChange={onChange}
+      />
+      <span className="properties-panel__value">{Math.round(value)}°</span>
+    </div>
+  )
+}
 
 const POSE_PRESET_LABEL_KEYS: Record<PosePresetKey, string> = {
   standing: 'panels.properties.posePresetStanding',
@@ -70,6 +144,9 @@ export function PropertiesPanel() {
   const applyHandPreset = useFiguresStore((state) => state.applyHandPreset)
   const mirrorSide = useFiguresStore((state) => state.mirrorSide)
   const swapSides = useFiguresStore((state) => state.swapSides)
+  const resetJointRotation = useFiguresStore((state) => state.resetJointRotation)
+  const rootGizmoMode = useUIStore((state) => state.rootGizmoMode)
+  const setRootGizmoMode = useUIStore((state) => state.setRootGizmoMode)
   // Não é usado diretamente: assina a customização de limites do workspace só
   // para que as faixas dos sliders (lidas de `getJoint`) sejam recalculadas
   // quando ela mudar — ver DECISOES.md #29.
@@ -89,10 +166,9 @@ export function PropertiesPanel() {
 
   if (!figure || !selectedJointName) {
     return (
-      <aside className="panel panel--properties" aria-label={t('panels.properties.title')}>
-        <h2>{t('panels.properties.title')}</h2>
-        <p className="panel__empty">{t('panels.properties.empty')}</p>
-      </aside>
+      <CollapsiblePanel panelKey="properties" className="panel--properties" title={t('panels.properties.title')}>
+                <p className="panel__empty">{t('panels.properties.empty')}</p>
+      </CollapsiblePanel>
     )
   }
 
@@ -145,9 +221,8 @@ export function PropertiesPanel() {
     }
 
   return (
-    <aside className="panel panel--properties" aria-label={t('panels.properties.title')}>
-      <h2>{t('panels.properties.title')}</h2>
-      <p className="properties-panel__figure-name">{figure.name}</p>
+    <CollapsiblePanel panelKey="properties" className="panel--properties" title={t('panels.properties.title')}>
+            <p className="properties-panel__figure-name">{figure.name}</p>
 
       <label className="properties-panel__field properties-panel__joint-select" htmlFor="joint-select">
         {t('panels.properties.jointSelect')}
@@ -206,15 +281,39 @@ export function PropertiesPanel() {
             </div>
           </fieldset>
 
+          {/* Alternância translação/rotação do gizmo da raiz (fase 9, item
+              13) — a rotação gira em torno do próprio pivô do quadril, ponto
+              confirmado com o usuário. */}
+          <fieldset aria-label={t('panels.properties.rootGizmoMode')}>
+            <legend>{t('panels.properties.rootGizmoMode')}</legend>
+            <div className="properties-panel__pose-presets">
+              <button
+                type="button"
+                aria-pressed={rootGizmoMode === 'translate'}
+                onClick={() => setRootGizmoMode('translate')}
+              >
+                {t('panels.properties.rootGizmoTranslate')}
+              </button>
+              <button
+                type="button"
+                aria-pressed={rootGizmoMode === 'rotate'}
+                onClick={() => setRootGizmoMode('rotate')}
+              >
+                {t('panels.properties.rootGizmoRotate')}
+              </button>
+            </div>
+          </fieldset>
+
           <fieldset aria-label={t('panels.properties.position')}>
             <legend>{t('panels.properties.position')}</legend>
             {POSITION_AXES.map((axis, index) => (
               <label key={axis} htmlFor={`position-${axis}`} className="properties-panel__field">
-                {axis.toUpperCase()}
+                <span style={{ color: AXIS_COLORS[axis] }}>{axis.toUpperCase()}</span>
                 <input
                   id={`position-${axis}`}
                   type="number"
                   step={0.01}
+                  style={{ accentColor: AXIS_COLORS[axis] }}
                   value={figure.position[index]}
                   onChange={handlePositionChange(index)}
                 />
@@ -222,20 +321,28 @@ export function PropertiesPanel() {
             ))}
           </fieldset>
 
+          {/* Rotação da raiz por slider, como nas demais juntas (fase 9, item
+              13) — os campos numéricos livres não tinham nem faixa nem a
+              mesma interação do resto do painel. */}
           <fieldset aria-label={t('panels.properties.rotation')}>
             <legend>{t('panels.properties.rotation')}</legend>
             {POSITION_AXES.map((axis) => (
-              <label key={axis} htmlFor={`rotation-${axis}`} className="properties-panel__field">
-                {axis.toUpperCase()}
-                <input
-                  id={`rotation-${axis}`}
-                  type="number"
-                  step={1}
-                  value={figure.rotation[axis]}
-                  onChange={handleRootRotationChange(axis)}
-                />
-              </label>
+              <AxisSlider
+                key={axis}
+                axis={axis}
+                value={figure.rotation[axis]}
+                min={ROOT_ROTATION_MIN}
+                max={ROOT_ROTATION_MAX}
+                onChange={handleRootRotationChange(axis)}
+              />
             ))}
+            <button
+              type="button"
+              className="properties-panel__reset"
+              onClick={() => resetJointRotation(figure.id, ROOT_JOINT_NAME)}
+            >
+              {t('panels.properties.resetRootRotation')}
+            </button>
           </fieldset>
         </>
       ) : (
@@ -278,11 +385,12 @@ export function PropertiesPanel() {
               {!ikReached && <p className="properties-panel__hint properties-panel__hint--warning">{t('panels.properties.ikUnreachable')}</p>}
               {POSITION_AXES.map((axis, index) => (
                 <label key={axis} htmlFor={`ik-target-${axis}`} className="properties-panel__field">
-                  {axis.toUpperCase()}
+                  <span style={{ color: AXIS_COLORS[axis] }}>{axis.toUpperCase()}</span>
                   <input
                     id={`ik-target-${axis}`}
                     type="number"
                     step={0.01}
+                    style={{ accentColor: AXIS_COLORS[axis] }}
                     value={ikTarget?.[index] ?? 0}
                     onChange={handleIKTargetChange(index)}
                   />
@@ -299,35 +407,36 @@ export function PropertiesPanel() {
               {getJointAxes(selectedJointName).map((axis) => {
                 const limit = getJoint(selectedJointName).limits[axis]
                 if (!limit) return null
-                const value = figure.pose[selectedJointName]?.[axis] ?? 0
 
                 return (
-                  <div key={axis} className="properties-panel__axis-row">
-                    <button
-                      type="button"
-                      aria-pressed={axis === activeAxis}
-                      className="properties-panel__axis-button"
-                      title={t('panels.properties.makeActiveAxis', { axis: axis.toUpperCase() })}
-                      onClick={() => setActiveAxis(axis)}
-                    >
-                      {axis.toUpperCase()}
-                    </button>
-                    <input
-                      type="range"
-                      aria-label={axis.toUpperCase()}
-                      min={limit.min}
-                      max={limit.max}
-                      value={value}
-                      onChange={handleJointRotationChange(axis)}
-                    />
-                    <span className="properties-panel__value">{Math.round(value)}°</span>
-                  </div>
+                  <AxisSlider
+                    key={axis}
+                    axis={axis}
+                    value={figure.pose[selectedJointName]?.[axis] ?? 0}
+                    min={limit.min}
+                    max={limit.max}
+                    onChange={handleJointRotationChange(axis)}
+                    activeAxis={activeAxis}
+                    onSelectAxis={setActiveAxis}
+                    activeAxisTitle={t('panels.properties.makeActiveAxis', { axis: axis.toUpperCase() })}
+                  />
                 )
               })}
+
+              {/* Reset por junta (fase 9, item 6): sem isto, voltar uma junta
+                  ao neutro exigia acertar cada eixo na mão. */}
+              <button
+                type="button"
+                className="properties-panel__reset"
+                title={t('panels.properties.resetJointHint')}
+                onClick={() => resetJointRotation(figure.id, selectedJointName)}
+              >
+                {t('panels.properties.resetJoint')}
+              </button>
             </fieldset>
           )}
         </>
       )}
-    </aside>
+    </CollapsiblePanel>
   )
 }

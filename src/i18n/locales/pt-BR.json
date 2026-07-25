@@ -9,7 +9,15 @@
     "backgroundMedium": "Médio",
     "backgroundDark": "Escuro",
     "grid": "Grade",
-    "sceneName": "Nome da cena"
+    "sceneName": "Nome da cena",
+    "undo": "Desfazer (Ctrl+Z)",
+    "redo": "Refazer (Ctrl+Shift+Z)",
+    "help": "Atalhos de teclado (?)",
+    "autosaveNever": "Ainda não salvo",
+    "autosaveSaving": "Salvando…",
+    "autosaveSaved": "Salvo às {{time}}",
+    "autosaveError": "Falha ao salvar",
+    "ruler": "Régua"
   },
   "panels": {
     "figures": {
@@ -26,7 +34,13 @@
       "duplicate": "Duplicar boneco",
       "remove": "Remover boneco",
       "exportFigure": "Exportar boneco (.glb)",
-      "importFigure": "Importar boneco (.glb)"
+      "importFigure": "Importar boneco (.glb)",
+      "ikBadge": "IK",
+      "ikActiveLimbs": "IK ativo em: {{limbs}}",
+      "limbArmLeft": "braço esquerdo",
+      "limbArmRight": "braço direito",
+      "limbLegLeft": "perna esquerda",
+      "limbLegRight": "perna direita"
     },
     "properties": {
       "title": "Propriedades",
@@ -73,7 +87,13 @@
       "jointGroupArmRight": "Braço direito",
       "jointGroupArmLeft": "Braço esquerdo",
       "jointGroupLegRight": "Perna direita",
-      "jointGroupLegLeft": "Perna esquerda"
+      "jointGroupLegLeft": "Perna esquerda",
+      "resetJoint": "Resetar esta junta",
+      "resetJointHint": "Volta a junta ao valor da pose \"Em pé\" (o neutro do modelo), sem tocar nas outras.",
+      "resetRootRotation": "Resetar rotação",
+      "rootGizmoMode": "Gizmo da raiz",
+      "rootGizmoTranslate": "Mover",
+      "rootGizmoRotate": "Girar"
     },
     "camera": {
       "title": "Câmera",
@@ -117,7 +137,10 @@
       "workspaceFolderUnavailable": "Este navegador não suporta escolher pasta — use os arquivos individuais (workspace.json + joint-limits.json + .glb) para abrir um workspace salvo.",
       "customJointLimits_one": "Limites articulares customizados por este workspace em {{count}} junta (joint-limits.json).",
       "customJointLimits_other": "Limites articulares customizados por este workspace em {{count}} juntas (joint-limits.json).",
-      "resetJointLimits": "Restaurar limites padrão"
+      "resetJointLimits": "Restaurar limites padrão",
+      "newWorkspace": "Novo workspace (limpar tudo)",
+      "newWorkspaceConfirm": "Isto apaga todos os bonecos, as cenas salvas, os bookmarks de câmera e os limites customizados, e zera o histórico de desfazer. Não dá para desfazer com Ctrl+Z.",
+      "newWorkspaceConfirmYes": "Limpar tudo"
     },
     "keyframes": {
       "title": "Keyframes",
@@ -135,7 +158,9 @@
       "directoryUnavailable": "Este navegador não suporta escolher pasta — as capturas serão baixadas.",
       "capture": "Capturar keyframe",
       "lastCaptured": "Última captura: {{filename}}"
-    }
+    },
+    "collapse": "Recolher painel {{title}}",
+    "expand": "Expandir painel {{title}}"
   },
   "viewport": {
     "label": "Área de visualização 3D"
@@ -159,5 +184,11 @@
     "orthoPresetsBack": "Vistas ortográficas (costas/esquerda)",
     "applyCameraBookmark": "Ir para um bookmark de câmera salvo",
     "toggleHelp": "Abrir/fechar este painel de ajuda"
+  },
+  "errors": {
+    "importUnreadable": "Arquivo não pôde ser lido — o .glb parece corrompido ou não é um glTF válido.",
+    "importMissingAppData": "O arquivo é um .glb válido, mas não contém os dados do Virtual Mockup (custom properties). Reexporte com a opção de custom properties ligada.",
+    "importFailed": "Não foi possível importar o arquivo.",
+    "workspaceManifestMissing": "A seleção não incluía o arquivo workspace.json — selecione-o junto com os .glb das cenas."
   }
 }

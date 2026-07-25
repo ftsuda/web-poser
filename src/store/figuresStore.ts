@@ -129,6 +129,13 @@ export interface FiguresState {
   setPosition: (id: string, position: readonly [number, number, number]) => void
   setRootRotation: (id: string, rotation: Partial<JointRotation>) => void
   setJointRotation: (id: string, jointName: string, rotation: Partial<JointRotation>) => void
+  /**
+   * Devolve UMA junta à pose de referência (fase 9, item 6). A referência é a
+   * pose "Em pé" (`posePresets.ts`), não zero cru — há eixos cujo neutro do
+   * modelo não é zero, como a torção do antebraço `elbow.*.y` (DECISOES.md
+   * #25). Para o `root`, zera só a rotação de colocação (a posição fica).
+   */
+  resetJointRotation: (id: string, jointName: string) => void
   addCameraBookmark: (bookmark: Omit<CameraBookmark, 'id'>) => string
   removeCameraBookmark: (id: string) => void
   setBackground: (background: BackgroundTone) => void
@@ -160,6 +167,15 @@ export interface FiguresState {
   applyJointLimits: (raw: unknown) => void
   /** Volta aos limites do código, reajustando poses que tenham ficado fora da faixa padrão. */
   resetJointLimits: () => void
+  /**
+   * Limpa e reseta todo o ambiente (fase 9, item 7): bonecos, catálogo de
+   * cenas, bookmarks de câmera, nome/contadores da cena, configuração de
+   * ambiente e limites articulares customizados voltam ao estado inicial —
+   * equivalente a começar do zero, sem recarregar a página. Ação destrutiva e
+   * **irreversível**: também zera o próprio histórico de undo (a UI pede
+   * confirmação antes de chamar).
+   */
+  resetWorkspace: () => void
   /**
    * Substitui a pose interna do boneco por um preset e o assenta no chão
    * conforme o preset pedir (rotação do boneco e altura do quadril — ver
@@ -337,12 +353,18 @@ export const useFiguresStore = create<FiguresState>()(
       },
 
       toggleVisibility: (id) => {
-        set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({
+        set((state) => {
+          const figures = updateFigure(state.figures, id, (figure) => ({
             ...figure,
             visible: !figure.visible,
-          })),
-        }))
+          }))
+          // Ocultar o boneco selecionado limpa a seleção: ele fica inerte ao
+          // mouse (ver `Figure2.tsx`), então deixá-lo selecionado manteria um
+          // gizmo no viewport sobre um corpo invisível (fase 9, item 14).
+          const hidden = figures.find((figure) => figure.id === id)?.visible === false
+          if (!hidden || state.selectedFigureId !== id) return { figures }
+          return { figures, selectedFigureId: null, selectedJointName: null, activeAxis: null }
+        })
       },
 
       selectFigure: (id) => {
@@ -407,6 +429,26 @@ export const useFiguresStore = create<FiguresState>()(
                 ...rotation,
               }),
             },
+          })),
+        }))
+      },
+
+      resetJointRotation: (id, jointName) => {
+        if (jointName === ROOT_JOINT_NAME) {
+          set((state) => ({
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              rotation: { ...ZERO_ROTATION },
+            })),
+          }))
+          return
+        }
+
+        const neutral = resolvePosePreset('standing')[jointName] ?? ZERO_ROTATION
+        set((state) => ({
+          figures: updateFigure(state.figures, id, (figure) => ({
+            ...figure,
+            pose: { ...figure.pose, [jointName]: clampJointRotation(jointName, neutral) },
           })),
         }))
       },
@@ -591,6 +633,32 @@ export const useFiguresStore = create<FiguresState>()(
 
       resetJointLimits: () => {
         get().applyJointLimits({})
+      },
+
+      resetWorkspace: () => {
+        // Limites voltam ao padrão do código antes do `set`, para que o
+        // espelho `jointLimits` do store e o `skeleton.ts` fiquem coerentes.
+        setJointLimitOverrides({})
+        set({
+          figures: [],
+          selectedFigureId: null,
+          selectedJointName: null,
+          activeAxis: null,
+          nextFigureSeq: 1,
+          cameraBookmarks: [],
+          nextCameraBookmarkSeq: 1,
+          environment: { ...INITIAL_ENVIRONMENT },
+          sceneName: 'Cena 1',
+          nextKeyframeNumber: 1,
+          scenes: [],
+          nextSceneSnapshotSeq: 1,
+          activeSceneId: null,
+          jointLimits: {},
+        })
+        // Depois do `set`: limpar o workspace não é desfazível (o próprio
+        // histórico faz parte do que é resetado). Se fosse antes, este `set`
+        // empilharia uma entrada nova e um Ctrl+Z traria tudo de volta.
+        useFiguresStore.temporal.getState().clear()
       },
 
       applyPosePreset: (id, key) => {

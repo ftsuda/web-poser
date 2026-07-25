@@ -3,6 +3,7 @@ import {
   MAX_HEIGHT_M,
   MIN_HEIGHT_M,
   REFERENCE_HEIGHT_M,
+  ROOT_JOINT_NAME,
   getJoint,
   setJointLimitOverrides,
 } from '../../figure/skeleton'
@@ -134,6 +135,35 @@ describe('figuresStore', () => {
 
     toggleVisibility(id)
     expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.visible).toBe(true)
+  })
+
+  // Fase 9, item 14: um boneco oculto fica inerte — não pode continuar
+  // selecionado (com gizmo no viewport) sem o usuário conseguir vê-lo.
+  it('clears the selection when the currently selected figure is hidden', () => {
+    const { addFigure, selectFigure, toggleVisibility } = useFiguresStore.getState()
+    const id = addFigure() as string
+
+    selectFigure(id)
+    expect(useFiguresStore.getState().selectedJointName).toBe(ROOT_JOINT_NAME)
+
+    toggleVisibility(id)
+    expect(useFiguresStore.getState().selectedFigureId).toBeNull()
+    expect(useFiguresStore.getState().selectedJointName).toBeNull()
+    expect(useFiguresStore.getState().activeAxis).toBeNull()
+  })
+
+  it('keeps the selection of other figures when one is hidden, and when a figure is shown again', () => {
+    const { addFigure, selectFigure, toggleVisibility } = useFiguresStore.getState()
+    const first = addFigure() as string
+    const second = addFigure() as string
+
+    selectFigure(second)
+    toggleVisibility(first)
+    expect(useFiguresStore.getState().selectedFigureId).toBe(second)
+
+    // Mostrar de volta nunca mexe na seleção.
+    toggleVisibility(first)
+    expect(useFiguresStore.getState().selectedFigureId).toBe(second)
   })
 
   it('clamps height to the 1.50-1.90m adjustable range', () => {
@@ -1063,5 +1093,116 @@ describe('figuresStore — poses de mão e simetria (DECISOES.md #30)', () => {
       useFiguresStore.getState().mirrorSide('figure-inexistente', 'L')
       useFiguresStore.getState().swapSides('figure-inexistente')
     }).not.toThrow()
+  })
+})
+
+describe('figuresStore — novo workspace (fase 9, item 7)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    setJointLimitOverrides({})
+  })
+
+  it('limpa bonecos, catálogo de cenas, bookmarks, nome, contadores e ambiente', () => {
+    const store = useFiguresStore.getState()
+    const id = store.addFigure('Herói') as string
+    store.selectFigure(id)
+    store.addCameraBookmark({
+      name: 'Vista',
+      position: [1, 2, 3],
+      target: [0, 1, 0],
+      projection: 'perspective',
+      fov: 50,
+      zoom: 1,
+    })
+    store.saveSceneSnapshot('Cena salva')
+    store.renameScene('Praia')
+    store.setBackground('dark')
+    store.consumeKeyframeNumber()
+
+    useFiguresStore.getState().resetWorkspace()
+
+    const after = useFiguresStore.getState()
+    expect(after.figures).toEqual([])
+    expect(after.scenes).toEqual([])
+    expect(after.cameraBookmarks).toEqual([])
+    expect(after.activeSceneId).toBeNull()
+    expect(after.selectedFigureId).toBeNull()
+    expect(after.selectedJointName).toBeNull()
+    expect(after.sceneName).toBe('Cena 1')
+    expect(after.nextFigureSeq).toBe(1)
+    expect(after.nextCameraBookmarkSeq).toBe(1)
+    expect(after.nextSceneSnapshotSeq).toBe(1)
+    expect(after.nextKeyframeNumber).toBe(1)
+    expect(after.environment).toEqual({ background: 'medium', grid: true })
+    expect(after.jointLimits).toEqual({})
+  })
+
+  it('restaura os limites articulares padrão do skeleton.ts', () => {
+    useFiguresStore.getState().applyJointLimits({ 'knee.L': { x: { min: 0, max: 45 } } })
+    expect(getJoint('knee.L').limits.x?.max).toBe(45)
+
+    useFiguresStore.getState().resetWorkspace()
+
+    expect(getJoint('knee.L').limits.x?.max).not.toBe(45)
+    expect(useFiguresStore.getState().jointLimits).toEqual({})
+  })
+
+  it('zera o histórico de undo — limpar o workspace não é desfazível', () => {
+    useFiguresStore.getState().addFigure('Herói')
+    expect(useFiguresStore.temporal.getState().pastStates.length).toBeGreaterThan(0)
+
+    useFiguresStore.getState().resetWorkspace()
+
+    expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
+    expect(useFiguresStore.temporal.getState().futureStates).toHaveLength(0)
+    expect(useFiguresStore.getState().figures).toEqual([])
+  })
+})
+
+describe('figuresStore — resetar uma junta (fase 9, item 6)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    setJointLimitOverrides({})
+  })
+
+  it('devolve a junta ao valor da pose "Em pé", sem tocar nas outras', () => {
+    const store = useFiguresStore.getState()
+    const id = store.addFigure() as string
+    store.setJointRotation(id, 'elbow.L', { x: -120 })
+    store.setJointRotation(id, 'knee.L', { x: 60 })
+
+    useFiguresStore.getState().resetJointRotation(id, 'elbow.L')
+
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
+    const standing = resolvePosePreset('standing')
+    // "Em pé" é a referência do reset, não zero cru: `elbow.*.y` tem torção
+    // neutra não-nula (ver DECISOES.md #25).
+    expect(figure?.pose['elbow.L']).toEqual(standing['elbow.L'])
+    expect(figure?.pose['knee.L']?.x).toBe(60)
+  })
+
+  it('zera uma junta que não aparece na pose "Em pé"', () => {
+    const store = useFiguresStore.getState()
+    const id = store.addFigure() as string
+    store.setJointRotation(id, 'fingersBase.L', { x: 45 })
+
+    useFiguresStore.getState().resetJointRotation(id, 'fingersBase.L')
+
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
+    expect(figure?.pose['fingersBase.L']).toEqual(resolvePosePreset('standing')['fingersBase.L'] ?? { x: 0, y: 0, z: 0 })
+  })
+
+  it('resetar o root zera a rotação de colocação sem mexer na posição', () => {
+    const store = useFiguresStore.getState()
+    const id = store.addFigure() as string
+    store.setPosition(id, [1, 0.5, 2])
+    store.setRootRotation(id, { x: 20, y: 45, z: -10 })
+
+    useFiguresStore.getState().resetJointRotation(id, ROOT_JOINT_NAME)
+
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
+    expect(figure?.rotation).toEqual({ x: 0, y: 0, z: 0 })
+    expect(figure?.position).toEqual([1, 0.5, 2])
   })
 })

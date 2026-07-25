@@ -23,6 +23,45 @@ import {
  * (ver PLANO.md > "Persistência").
  */
 
+/**
+ * Motivo pelo qual um arquivo não pôde ser importado (fase 9, item 4):
+ * - `unreadable`: os bytes não são um `.glb` legível (arquivo corrompido,
+ *   truncado ou de outro formato) — o `GLTFLoader` rejeitou.
+ * - `missingAppData`: é um `.glb` válido, mas sem o bloco `extras` do app.
+ *   Acontece, por exemplo, com um arquivo reexportado pelo Blender sem a
+ *   opção de custom properties (ver DECISOES.md #11). Antes isso passava
+ *   silenciosamente e substituía a cena de trabalho por uma cena vazia.
+ */
+export type SceneFileErrorReason = 'unreadable' | 'missingAppData'
+
+export class SceneFileError extends Error {
+  // Campo declarado à parte (e não como parâmetro do construtor): o
+  // `erasableSyntaxOnly` do tsconfig proíbe parameter properties, por serem
+  // sintaxe TS que não some na transpilação.
+  readonly reason: SceneFileErrorReason
+
+  constructor(reason: SceneFileErrorReason, options?: { cause?: unknown }) {
+    super(`Arquivo .glb não pôde ser importado: ${reason}`, options)
+    this.name = 'SceneFileError'
+    this.reason = reason
+  }
+}
+
+/** Lê o `.glb` traduzindo qualquer falha do loader para `SceneFileError`. */
+async function readGlbExtras(data: ArrayBuffer): Promise<Record<string, unknown>> {
+  let extras: Record<string, unknown>
+  try {
+    extras = (await importGlb(data)).extras
+  } catch (error) {
+    throw new SceneFileError('unreadable', { cause: error })
+  }
+
+  // `version` é escrito por todo arquivo que sai daqui (cena, boneco ou
+  // bookmarks) e é o marcador mais barato de "este arquivo é nosso".
+  if (typeof extras.version !== 'number') throw new SceneFileError('missingAppData')
+  return extras
+}
+
 function sanitizeNamePart(value: string): string {
   return value.replace(/\./g, '_')
 }
@@ -53,8 +92,7 @@ export async function exportSceneToGlb(scene: SceneWorkingState): Promise<ArrayB
 }
 
 export async function importSceneFromGlb(data: ArrayBuffer): Promise<SceneWorkingState> {
-  const { extras } = await importGlb(data)
-  return sceneFromExtras(extras)
+  return sceneFromExtras(await readGlbExtras(data))
 }
 
 const FIGURE_EXTRAS_VERSION = SCENE_EXTRAS_VERSION
@@ -65,7 +103,7 @@ export async function exportFigureToGlb(figure: Figure): Promise<ArrayBuffer> {
 }
 
 export async function importFigureFromGlb(data: ArrayBuffer): Promise<Figure> {
-  const { extras } = await importGlb(data)
+  const extras = await readGlbExtras(data)
   const figures = Array.isArray((extras as { figures?: unknown[] }).figures)
     ? (extras as { figures: unknown[] }).figures
     : []
@@ -81,7 +119,7 @@ export async function exportCameraBookmarksToGlb(bookmarks: readonly CameraBookm
 }
 
 export async function importCameraBookmarksFromGlb(data: ArrayBuffer): Promise<CameraBookmark[]> {
-  const { extras } = await importGlb(data)
+  const extras = await readGlbExtras(data)
   const bookmarksSource = Array.isArray((extras as { cameraBookmarks?: unknown[] }).cameraBookmarks)
     ? (extras as { cameraBookmarks: unknown[] }).cameraBookmarks
     : []

@@ -5,6 +5,8 @@ import { exportCameraBookmarksToGlb, importCameraBookmarksFromGlb } from '../per
 import { ORTHO_PRESET_NAMES, type OrthoPresetName } from '../scene/cameraPresets'
 import { useCameraStore } from '../store/cameraStore'
 import { useFiguresStore } from '../store/figuresStore'
+import { importErrorKey } from './fileFeedback'
+import { CollapsiblePanel } from './CollapsiblePanel'
 
 const PRESET_LABEL_KEYS: Record<OrthoPresetName, string> = {
   front: 'panels.camera.presetFront',
@@ -37,6 +39,8 @@ export function CameraPanel() {
 
   const [isNamingBookmark, setIsNamingBookmark] = useState(false)
   const [bookmarkNameDraft, setBookmarkNameDraft] = useState('')
+  /** Chave i18n do último erro de importação de bookmarks (fase 9, item 4). */
+  const [errorKey, setErrorKey] = useState<string | null>(null)
 
   const handleFovInput = (event: ChangeEvent<HTMLInputElement>) => {
     setFovDraft(event.target.value)
@@ -74,23 +78,27 @@ export function CameraPanel() {
   const handleImportBookmarks = async () => {
     const picked = await pickFile('.glb')
     if (!picked) return
-    const imported = await importCameraBookmarksFromGlb(picked.data)
-    importCameraBookmarks(
-      imported.map((bookmark) => ({
-        name: bookmark.name,
-        position: bookmark.position,
-        target: bookmark.target,
-        projection: bookmark.projection,
-        fov: bookmark.fov,
-        zoom: bookmark.zoom,
-      })),
-    )
+    try {
+      const imported = await importCameraBookmarksFromGlb(picked.data)
+      importCameraBookmarks(
+        imported.map((bookmark) => ({
+          name: bookmark.name,
+          position: bookmark.position,
+          target: bookmark.target,
+          projection: bookmark.projection,
+          fov: bookmark.fov,
+          zoom: bookmark.zoom,
+        })),
+      )
+      setErrorKey(null)
+    } catch (error) {
+      setErrorKey(importErrorKey(error))
+    }
   }
 
   return (
-    <aside className="panel panel--camera" aria-label={t('panels.camera.title')}>
-      <h2>{t('panels.camera.title')}</h2>
-
+    <CollapsiblePanel panelKey="camera" className="panel--camera" title={t('panels.camera.title')}>
+      
       <label htmlFor="camera-fov" className="camera-panel__field">
         {t('panels.camera.fov')}
         <input
@@ -188,7 +196,13 @@ export function CameraPanel() {
             {t('panels.camera.importBookmarks')}
           </button>
         </div>
+
+        {errorKey && (
+          <p role="alert" className="panel__error">
+            {t(errorKey)}
+          </p>
+        )}
       </fieldset>
-    </aside>
+    </CollapsiblePanel>
   )
 }

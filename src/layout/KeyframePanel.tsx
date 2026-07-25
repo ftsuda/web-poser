@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { KEYFRAME_RESOLUTION_PRESETS } from '../keyframe/constants'
 import { isFileSystemAccessAvailable } from '../persistence/fileIO'
 import { useKeyframeCaptureStore } from '../store/keyframeCaptureStore'
+import { CollapsiblePanel } from './CollapsiblePanel'
 
 const PRESET_LABEL_KEYS: Record<string, string> = {
   fullHD: 'panels.keyframes.resolutionFullHD',
@@ -63,9 +64,8 @@ export function KeyframePanel() {
   }
 
   return (
-    <aside className="panel panel--keyframes" aria-label={t('panels.keyframes.title')}>
-      <h2>{t('panels.keyframes.title')}</h2>
-
+    <CollapsiblePanel panelKey="keyframes" className="panel--keyframes" title={t('panels.keyframes.title')}>
+      
       <label htmlFor="keyframe-resolution" className="keyframe-panel__field">
         {t('panels.keyframes.resolution')}
         <select id="keyframe-resolution" value={presetKey} onChange={handleResolutionChange}>
@@ -132,6 +132,6 @@ export function KeyframePanel() {
           {t('panels.keyframes.lastCaptured', { filename: lastCapturedFilename })}
         </p>
       )}
-    </aside>
+    </CollapsiblePanel>
   )
 }

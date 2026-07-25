@@ -53,8 +53,14 @@ function extrasToSnapshotData(extras: unknown): SceneSnapshotData {
   }
 }
 
-export function saveWorkspaceToLocalStorage(state: WorkspaceState): void {
-  if (typeof localStorage === 'undefined') return
+/**
+ * Grava o workspace em `localStorage`. Devolve `false` quando a gravação não
+ * aconteceu (cota estourada, `localStorage` indisponível) — o autosave
+ * continua sendo "melhor esforço" e nunca lança, mas quem chama precisa saber
+ * para não exibir "salvo" ao usuário sem ter salvo nada (fase 9, item 2).
+ */
+export function saveWorkspaceToLocalStorage(state: WorkspaceState): boolean {
+  if (typeof localStorage === 'undefined') return false
 
   const payload = {
     version: 1,
@@ -79,9 +85,11 @@ export function saveWorkspaceToLocalStorage(state: WorkspaceState): void {
 
   try {
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload))
+    return true
   } catch {
     // Quota excedida ou localStorage indisponível (ex.: modo privado) —
     // autosave é "melhor esforço", não deve quebrar a aplicação.
+    return false
   }
 }
 

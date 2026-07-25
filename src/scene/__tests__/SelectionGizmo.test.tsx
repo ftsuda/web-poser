@@ -67,3 +67,27 @@ describe('SelectionGizmo — gizmo mode and axis restriction', () => {
     expect(props.space).toBe('local')
   })
 })
+
+describe('SelectionGizmo — gizmo de rotação da raiz (fase 9, item 13)', () => {
+  it('mantém translação por padrão para o root', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <SelectionGizmo figureId="f1" jointName="root" target={makeTarget()} rootMode="translate" />,
+    )
+    expect(findControlsProps(renderer).mode).toBe('translate')
+  })
+
+  it('gira a raiz nos 3 eixos quando o modo é rotate', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <SelectionGizmo figureId="f1" jointName="root" target={makeTarget()} rootMode="rotate" />,
+    )
+
+    const props = findControlsProps(renderer)
+    expect(props.mode).toBe('rotate')
+    expect(props.showX).toBe(true)
+    expect(props.showY).toBe(true)
+    expect(props.showZ).toBe(true)
+    // Espaço local: girar em torno do próprio pivô do quadril, e não de uma
+    // origem externa — ponto confirmado com o usuário.
+    expect(props.space).toBe('local')
+  })
+})

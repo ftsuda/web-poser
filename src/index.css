@@ -4,6 +4,9 @@
   --bg: #fff;
   --border: #e5e4e7;
   --panel-bg: #f7f6fa;
+  --muted: #8b8494;
+  --danger: #c0392b;
+  --ok: #2e7d32;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
@@ -25,6 +28,9 @@
     --bg: #16171d;
     --border: #2e303a;
     --panel-bg: #1c1d24;
+    --muted: #7c8290;
+    --danger: #e05252;
+    --ok: #6bbf6e;
   }
 }
 
@@ -89,17 +95,105 @@ h2 {
   gap: 0.4rem;
 }
 
+.toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.toolbar__icon-button {
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.toolbar__icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.toolbar__autosave {
+  min-width: 8.5rem;
+  font-size: 0.75rem;
+  text-align: right;
+  color: var(--muted);
+}
+
+.toolbar__autosave--pending {
+  font-style: italic;
+}
+
+.toolbar__autosave--error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Colunas em `auto` (e não px fixos) para que um painel recolhido — fase 9,
+   item 8 — devolva mesmo o espaço ao viewport, em vez de deixar uma coluna
+   vazia do tamanho antigo. A largura de cada painel vem do próprio painel. */
 .app-shell__body {
   display: grid;
-  grid-template-columns: 220px 1fr 260px 240px 240px 240px;
+  grid-template-columns: auto 1fr auto auto auto auto;
   min-height: 0;
 }
 
 .panel {
+  width: 240px;
   padding: 0.75rem;
   overflow-y: auto;
   background: var(--panel-bg);
   border-right: 1px solid var(--border);
+}
+
+.panel--figures {
+  width: 220px;
+}
+
+.panel--properties {
+  width: 260px;
+}
+
+.panel--collapsed {
+  width: 2.1rem;
+  padding: 0.5rem 0.2rem;
+  overflow: hidden;
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.panel__header h2 {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel--collapsed .panel__header {
+  flex-direction: column-reverse;
+  gap: 0.6rem;
+}
+
+/* Recolhido, o título gira e vira a "lombada" da faixa fina. */
+.panel--collapsed .panel__header h2 {
+  flex: none;
+  writing-mode: vertical-rl;
+  font-size: 0.8rem;
+}
+
+.panel__collapse-toggle {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 1;
 }
 
 .panel--properties,
@@ -118,6 +212,38 @@ h2 {
 .panel__empty {
   font-size: 0.85rem;
   opacity: 0.7;
+}
+
+.figures-panel__ik-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.05rem 0.3rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--ok);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  cursor: default;
+}
+
+.figures-panel__ik-count {
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.scenes-panel__hint--warning {
+  color: var(--danger);
+}
+
+.panel__error {
+  margin: 0.5rem 0;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--danger);
+  border: 1px solid currentColor;
+  border-radius: 4px;
 }
 
 .figures-panel__add {

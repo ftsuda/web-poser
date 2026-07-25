@@ -5,7 +5,10 @@ import userEvent from '@testing-library/user-event'
 import { useFiguresStore } from '../../store/figuresStore'
 import { ScenesPanel } from '../ScenesPanel'
 
-vi.mock('../../persistence/sceneFile', () => ({
+// `importOriginal` preserva `SceneFileError` (classe real) — o painel usa
+// `instanceof` para escolher a mensagem de erro (fase 9, item 4).
+vi.mock('../../persistence/sceneFile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../persistence/sceneFile')>()),
   exportSceneToGlb: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
   importSceneFromGlb: vi.fn(),
 }))
@@ -21,7 +24,7 @@ vi.mock('../../persistence/workspaceFolder', () => ({
   loadWorkspaceFromFiles: vi.fn(),
 }))
 
-import { importSceneFromGlb, exportSceneToGlb } from '../../persistence/sceneFile'
+import { SceneFileError, importSceneFromGlb, exportSceneToGlb } from '../../persistence/sceneFile'
 import { isFileSystemAccessAvailable, pickFile, pickMultipleFiles, writeFileToDirectoryOrDownload } from '../../persistence/fileIO'
 import { loadWorkspaceFromDirectory, loadWorkspaceFromFiles, saveWorkspaceToDirectory } from '../../persistence/workspaceFolder'
 
@@ -124,6 +127,56 @@ describe('ScenesPanel', () => {
     await vi.waitFor(() => {
       expect(useFiguresStore.getState().sceneName).toBe('Cena importada')
     })
+  })
+
+  it('shows an error and keeps the current scene when the .glb is corrupted (fase 9, item 4)', async () => {
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'ruim.glb'), data: new ArrayBuffer(4) })
+    vi.mocked(importSceneFromGlb).mockRejectedValue(new SceneFileError('unreadable'))
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+    await user.click(screen.getByRole('button', { name: 'Importar cena (.glb)' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Arquivo não pôde ser lido — o .glb parece corrompido ou não é um glTF válido.')
+    expect(useFiguresStore.getState().sceneName).toBe('Cena 1')
+  })
+
+  it('explains when the .glb has no app data instead of wiping the scene (fase 9, item 4)', async () => {
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'blender.glb'), data: new ArrayBuffer(4) })
+    vi.mocked(importSceneFromGlb).mockRejectedValue(new SceneFileError('missingAppData'))
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+    await user.click(screen.getByRole('button', { name: 'Importar cena (.glb)' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'O arquivo é um .glb válido, mas não contém os dados do Virtual Mockup (custom properties). Reexporte com a opção de custom properties ligada.',
+    )
+  })
+
+  it('clears the error message after a successful import (fase 9, item 4)', async () => {
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'x.glb'), data: new ArrayBuffer(4) })
+    vi.mocked(importSceneFromGlb).mockRejectedValueOnce(new SceneFileError('unreadable')).mockResolvedValueOnce({
+      name: 'Cena importada',
+      figures: [],
+      nextFigureSeq: 1,
+      environment: { background: 'medium', grid: true },
+      cameraBookmarks: [],
+      nextCameraBookmarkSeq: 1,
+      nextKeyframeNumber: 1,
+    })
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+    const button = screen.getByRole('button', { name: 'Importar cena (.glb)' })
+
+    await user.click(button)
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    await user.click(button)
+    await vi.waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(useFiguresStore.getState().sceneName).toBe('Cena importada')
   })
 
   it('does nothing when the user cancels the file picker', async () => {
@@ -268,5 +321,44 @@ describe('ScenesPanel', () => {
         expect(useFiguresStore.getState().scenes).toHaveLength(1)
       })
     })
+  })
+})
+
+describe('ScenesPanel — novo workspace (fase 9, item 7)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    vi.mocked(isFileSystemAccessAvailable).mockReturnValue(false)
+  })
+
+  it('pede confirmação antes de limpar e não faz nada se cancelado', async () => {
+    useFiguresStore.getState().addFigure('Herói')
+    useFiguresStore.getState().saveSceneSnapshot('Cena salva')
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+    await user.click(screen.getByRole('button', { name: 'Novo workspace (limpar tudo)' }))
+
+    expect(screen.getByText(/Isto apaga todos os bonecos/)).toBeInTheDocument()
+    expect(useFiguresStore.getState().figures).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(useFiguresStore.getState().figures).toHaveLength(1)
+    expect(useFiguresStore.getState().scenes).toHaveLength(1)
+  })
+
+  it('limpa todo o ambiente ao confirmar', async () => {
+    useFiguresStore.getState().addFigure('Herói')
+    useFiguresStore.getState().saveSceneSnapshot('Cena salva')
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+    await user.click(screen.getByRole('button', { name: 'Novo workspace (limpar tudo)' }))
+    await user.click(screen.getByRole('button', { name: 'Limpar tudo' }))
+
+    expect(useFiguresStore.getState().figures).toHaveLength(0)
+    expect(useFiguresStore.getState().scenes).toHaveLength(0)
+    expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
+    expect(screen.getByText('Nenhuma cena salva ainda.')).toBeInTheDocument()
   })
 })

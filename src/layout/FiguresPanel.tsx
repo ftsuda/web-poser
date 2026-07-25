@@ -6,11 +6,14 @@ import {
   useFiguresStore,
   type Figure,
 } from '../store/figuresStore'
+import { IK_CHAINS } from '../figure/ikSolver'
 import { MAX_HEIGHT_M, MIN_HEIGHT_M } from '../figure/skeleton'
 import { slugifySceneName } from '../keyframe/keyframeNaming'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { exportFigureToGlb, importFigureFromGlb } from '../persistence/sceneFile'
 import { useIKStore } from '../store/ikStore'
+import { importErrorKey } from './fileFeedback'
+import { CollapsiblePanel } from './CollapsiblePanel'
 
 function nextUnusedColor(figures: readonly Figure[], current: string): string {
   const used = new Set(figures.filter((figure) => figure.color !== current).map((f) => f.color))
@@ -28,8 +31,26 @@ interface FigureRowProps {
   atLimit: boolean
 }
 
+/**
+ * Rótulo curto de cada membro com IK disponível, indexado pela junta-efetuador
+ * da cadeia (`IK_CHAINS` de `ikSolver.ts`) — fase 9, item 5.
+ */
+const LIMB_LABEL_KEYS: Record<string, string> = {
+  'wrist.L': 'panels.figures.limbArmLeft',
+  'wrist.R': 'panels.figures.limbArmRight',
+  'ankle.L': 'panels.figures.limbLegLeft',
+  'ankle.R': 'panels.figures.limbLegRight',
+}
+
 function FigureRow({ figure, selected, atLimit }: FigureRowProps) {
   const { t } = useTranslation()
+  // `enabledLimbs` é substituído por inteiro a cada mudança do `ikStore`, então
+  // assinar o objeto e derivar aqui é estável (sem seletor que crie array novo
+  // a cada render).
+  const enabledLimbs = useIKStore((state) => state.enabledLimbs)
+  const ikLimbs = Object.keys(IK_CHAINS).filter(
+    (endEffector) => enabledLimbs[`${figure.id}:${endEffector}`] === true,
+  )
   const figures = useFiguresStore((state) => state.figures)
   const selectFigure = useFiguresStore((state) => state.selectFigure)
   const renameFigure = useFiguresStore((state) => state.renameFigure)
@@ -109,6 +130,20 @@ function FigureRow({ figure, selected, atLimit }: FigureRowProps) {
         />
       </label>
 
+      {/* Indicador de IK ativo (fase 9, item 5): sem isto, só dava para
+          descobrir que um membro ficou em IK selecionando uma junta dele. */}
+      {ikLimbs.length > 0 && (
+        <span
+          className="figures-panel__ik-badge"
+          title={t('panels.figures.ikActiveLimbs', {
+            limbs: ikLimbs.map((limb) => t(LIMB_LABEL_KEYS[limb])).join(', '),
+          })}
+        >
+          {t('panels.figures.ikBadge')}
+          <span className="figures-panel__ik-count">{ikLimbs.length}</span>
+        </span>
+      )}
+
       <label
         className="figures-panel__visibility"
         onClick={(event) => event.stopPropagation()}
@@ -173,6 +208,8 @@ export function FiguresPanel() {
   const applyImportedPose = useFiguresStore((state) => state.applyImportedPose)
   const importFigureAsNew = useFiguresStore((state) => state.importFigureAsNew)
 
+  const [errorKey, setErrorKey] = useState<string | null>(null)
+
   const atLimit = figures.length >= MAX_FIGURES
 
   const handleAdd = () => {
@@ -182,26 +219,30 @@ export function FiguresPanel() {
   const handleImport = async () => {
     const picked = await pickFile('.glb')
     if (!picked) return
-    const imported = await importFigureFromGlb(picked.data)
-    if (selectedFigureId) {
-      applyImportedPose(selectedFigureId, { height: imported.height, pose: imported.pose })
-    } else {
-      importFigureAsNew({
-        name: imported.name,
-        color: imported.color,
-        visible: imported.visible,
-        height: imported.height,
-        position: imported.position,
-        rotation: imported.rotation,
-        pose: imported.pose,
-      })
+    try {
+      const imported = await importFigureFromGlb(picked.data)
+      if (selectedFigureId) {
+        applyImportedPose(selectedFigureId, { height: imported.height, pose: imported.pose })
+      } else {
+        importFigureAsNew({
+          name: imported.name,
+          color: imported.color,
+          visible: imported.visible,
+          height: imported.height,
+          position: imported.position,
+          rotation: imported.rotation,
+          pose: imported.pose,
+        })
+      }
+      setErrorKey(null)
+    } catch (error) {
+      setErrorKey(importErrorKey(error))
     }
   }
 
   return (
-    <aside className="panel panel--figures" aria-label={t('panels.figures.title')}>
-      <h2>{t('panels.figures.title')}</h2>
-
+    <CollapsiblePanel panelKey="figures" className="panel--figures" title={t('panels.figures.title')}>
+      
       <button
         type="button"
         className="figures-panel__add"
@@ -215,6 +256,12 @@ export function FiguresPanel() {
       <button type="button" className="figures-panel__import" onClick={() => void handleImport()}>
         {t('panels.figures.importFigure')}
       </button>
+
+      {errorKey && (
+        <p role="alert" className="panel__error">
+          {t(errorKey)}
+        </p>
+      )}
 
       {figures.length === 0 ? (
         <p className="panel__empty">{t('panels.figures.empty')}</p>
@@ -230,6 +277,6 @@ export function FiguresPanel() {
           ))}
         </ul>
       )}
-    </aside>
+    </CollapsiblePanel>
   )
 }

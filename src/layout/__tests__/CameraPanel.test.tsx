@@ -6,7 +6,9 @@ import { useCameraStore } from '../../store/cameraStore'
 import { useFiguresStore } from '../../store/figuresStore'
 import { CameraPanel } from '../CameraPanel'
 
-vi.mock('../../persistence/sceneFile', () => ({
+// `importOriginal` preserva `SceneFileError` real (usado por `instanceof`).
+vi.mock('../../persistence/sceneFile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../persistence/sceneFile')>()),
   exportCameraBookmarksToGlb: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
   importCameraBookmarksFromGlb: vi.fn(),
 }))
@@ -15,7 +17,11 @@ vi.mock('../../persistence/fileIO', () => ({
   pickFile: vi.fn(),
 }))
 
-import { exportCameraBookmarksToGlb, importCameraBookmarksFromGlb } from '../../persistence/sceneFile'
+import {
+  SceneFileError,
+  exportCameraBookmarksToGlb,
+  importCameraBookmarksFromGlb,
+} from '../../persistence/sceneFile'
 import { pickFile, writeFileToDirectoryOrDownload } from '../../persistence/fileIO'
 
 async function renderCameraPanel() {
@@ -185,5 +191,25 @@ describe('CameraPanel', () => {
     await vi.waitFor(() => {
       expect(useFiguresStore.getState().cameraBookmarks.map((b) => b.name)).toEqual(['Vista A', 'Vista B'])
     })
+  })
+})
+
+describe('CameraPanel — erro de importação (fase 9, item 4)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    vi.mocked(importCameraBookmarksFromGlb).mockReset()
+    vi.mocked(pickFile).mockReset()
+  })
+
+  it('avisa quando o .glb de bookmarks não tem os dados do app', async () => {
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'x.glb'), data: new ArrayBuffer(4) })
+    vi.mocked(importCameraBookmarksFromGlb).mockRejectedValue(new SceneFileError('missingAppData'))
+
+    const user = userEvent.setup()
+    await renderCameraPanel()
+    await user.click(screen.getByRole('button', { name: 'Importar bookmarks (.glb)' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('não contém os dados do Virtual Mockup')
+    expect(useFiguresStore.getState().cameraBookmarks).toHaveLength(0)
   })
 })

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useFiguresStore } from '../store/figuresStore'
+import { useUIStore } from '../store/uiStore'
 import { saveWorkspaceToLocalStorage } from './autosave'
 
 /** Espera um breve período sem mudanças antes de gravar, para não escrever em `localStorage` a cada tecla. */
@@ -17,7 +18,15 @@ export function useWorkspaceAutosave(): void {
   useEffect(() => {
     const unsubscribe = useFiguresStore.subscribe((state) => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
-      timeoutRef.current = setTimeout(() => saveWorkspaceToLocalStorage(state), AUTOSAVE_DEBOUNCE_MS)
+      // Enquanto o debounce corre, o trabalho ainda NÃO está gravado — o
+      // indicador da Toolbar (fase 9, item 2) mostra isso em vez de deixar
+      // "salvo" na tela por até 800 ms de mentira.
+      useUIStore.getState().markAutosavePending()
+      timeoutRef.current = setTimeout(() => {
+        const saved = saveWorkspaceToLocalStorage(state)
+        if (saved) useUIStore.getState().markAutosaveSaved(Date.now())
+        else useUIStore.getState().markAutosaveFailed()
+      }, AUTOSAVE_DEBOUNCE_MS)
     })
 
     return () => {

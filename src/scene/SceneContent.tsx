@@ -1,4 +1,4 @@
-import { GRID_DIVISIONS, GROUND_SIZE } from './constants'
+import { GRID_DIVISIONS, GROUND_SIZE, OVERLAY_NAMES } from './constants'
 
 export interface SceneContentProps {
   grid: boolean
@@ -21,7 +21,7 @@ export function SceneContent({ grid }: SceneContentProps) {
       </mesh>
 
       {grid && (
-        <gridHelper name="scene-grid" args={[GROUND_SIZE, GRID_DIVISIONS, '#909090', '#707070']} />
+        <gridHelper name={OVERLAY_NAMES.grid} args={[GROUND_SIZE, GRID_DIVISIONS, '#909090', '#707070']} />
       )}
     </>
   )

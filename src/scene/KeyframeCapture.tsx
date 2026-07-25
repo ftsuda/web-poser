@@ -5,6 +5,7 @@ import { formatKeyframeFilename } from '../keyframe/keyframeNaming'
 import { writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { useFiguresStore } from '../store/figuresStore'
 import { useKeyframeCaptureStore } from '../store/keyframeCaptureStore'
+import { OVERLAY_NAME_LIST } from './constants'
 
 function isTransformControlsGizmo(object: THREE.Object3D): boolean {
   return (object as { isTransformControlsGizmo?: boolean }).isTransformControlsGizmo === true
@@ -54,7 +55,7 @@ export function KeyframeCapture() {
     const hiddenObjects: THREE.Object3D[] = []
     if (hideOverlaysOnCapture) {
       scene.traverse((object) => {
-        const isOverlay = object.name === 'scene-grid' || isTransformControlsGizmo(object)
+        const isOverlay = OVERLAY_NAME_LIST.includes(object.name) || isTransformControlsGizmo(object)
         if (isOverlay && object.visible) {
           hiddenObjects.push(object)
           object.visible = false

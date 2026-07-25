@@ -9,7 +9,15 @@
     "backgroundMedium": "Medium",
     "backgroundDark": "Dark",
     "grid": "Grid",
-    "sceneName": "Scene name"
+    "sceneName": "Scene name",
+    "undo": "Undo (Ctrl+Z)",
+    "redo": "Redo (Ctrl+Shift+Z)",
+    "help": "Keyboard shortcuts (?)",
+    "autosaveNever": "Not saved yet",
+    "autosaveSaving": "Saving…",
+    "autosaveSaved": "Saved at {{time}}",
+    "autosaveError": "Save failed",
+    "ruler": "Ruler"
   },
   "panels": {
     "figures": {
@@ -26,7 +34,13 @@
       "duplicate": "Duplicate figure",
       "remove": "Remove figure",
       "exportFigure": "Export figure (.glb)",
-      "importFigure": "Import figure (.glb)"
+      "importFigure": "Import figure (.glb)",
+      "ikBadge": "IK",
+      "ikActiveLimbs": "IK active on: {{limbs}}",
+      "limbArmLeft": "left arm",
+      "limbArmRight": "right arm",
+      "limbLegLeft": "left leg",
+      "limbLegRight": "right leg"
     },
     "properties": {
       "title": "Properties",
@@ -73,7 +87,13 @@
       "jointGroupArmRight": "Right arm",
       "jointGroupArmLeft": "Left arm",
       "jointGroupLegRight": "Right leg",
-      "jointGroupLegLeft": "Left leg"
+      "jointGroupLegLeft": "Left leg",
+      "resetJoint": "Reset this joint",
+      "resetJointHint": "Returns the joint to its \"Standing\" pose value (the model's neutral), leaving the others untouched.",
+      "resetRootRotation": "Reset rotation",
+      "rootGizmoMode": "Root gizmo",
+      "rootGizmoTranslate": "Move",
+      "rootGizmoRotate": "Rotate"
     },
     "camera": {
       "title": "Camera",
@@ -117,7 +137,10 @@
       "workspaceFolderUnavailable": "This browser doesn't support choosing a folder — use the individual files (workspace.json + joint-limits.json + .glb) to open a saved workspace.",
       "customJointLimits_one": "This workspace customizes the joint limits of {{count}} joint (joint-limits.json).",
       "customJointLimits_other": "This workspace customizes the joint limits of {{count}} joints (joint-limits.json).",
-      "resetJointLimits": "Restore default limits"
+      "resetJointLimits": "Restore default limits",
+      "newWorkspace": "New workspace (clear everything)",
+      "newWorkspaceConfirm": "This deletes every figure, saved scene, camera bookmark and custom joint limit, and clears the undo history. Ctrl+Z cannot bring it back.",
+      "newWorkspaceConfirmYes": "Clear everything"
     },
     "keyframes": {
       "title": "Keyframes",
@@ -135,7 +158,9 @@
       "directoryUnavailable": "This browser doesn't support choosing a folder — captures will be downloaded.",
       "capture": "Capture keyframe",
       "lastCaptured": "Last capture: {{filename}}"
-    }
+    },
+    "collapse": "Collapse {{title}} panel",
+    "expand": "Expand {{title}} panel"
   },
   "viewport": {
     "label": "3D viewport"
@@ -159,5 +184,11 @@
     "orthoPresetsBack": "Orthographic views (back/left)",
     "applyCameraBookmark": "Go to a saved camera bookmark",
     "toggleHelp": "Open/close this help panel"
+  },
+  "errors": {
+    "importUnreadable": "The file could not be read — the .glb looks corrupted or is not valid glTF.",
+    "importMissingAppData": "The file is a valid .glb but has no Virtual Mockup data (custom properties). Re-export it with custom properties enabled.",
+    "importFailed": "The file could not be imported.",
+    "workspaceManifestMissing": "The selection did not include workspace.json — pick it together with the scene .glb files."
   }
 }

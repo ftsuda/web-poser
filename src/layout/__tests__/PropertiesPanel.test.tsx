@@ -1,9 +1,11 @@
 import '../../i18n'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AXIS_COLORS } from '../../scene/axisColors'
 import { useFiguresStore } from '../../store/figuresStore'
 import { useIKStore } from '../../store/ikStore'
+import { useUIStore } from '../../store/uiStore'
 import { PropertiesPanel } from '../PropertiesPanel'
 
 async function renderPropertiesPanel() {
@@ -16,6 +18,7 @@ describe('PropertiesPanel', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useIKStore.setState(useIKStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
   })
 
   it('shows the panel title and the empty-state message when nothing is selected', async () => {
@@ -43,11 +46,54 @@ describe('PropertiesPanel', () => {
 
       expect(useFiguresStore.getState().figures[0].position[0]).toBeCloseTo(1.5, 2)
 
-      const rotationY = screen.getByLabelText('Y', { selector: '#rotation-y' })
-      await user.clear(rotationY)
-      await user.type(rotationY, '45')
+      // A rotação da raiz virou slider na fase 9 (item 13), como nas demais juntas.
+      const rotationGroup = screen.getByRole('group', { name: 'Rotação (°)' })
+      const rotationY = within(rotationGroup).getByRole('slider', { name: 'Y' })
+      fireEvent.change(rotationY, { target: { value: '45' } })
 
       expect(useFiguresStore.getState().figures[0].rotation.y).toBeCloseTo(45, 2)
+    })
+
+    it('gives the root rotation sliders a full turn of range and the gizmo axis colors (fase 9, itens 9 e 13)', async () => {
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+
+      const rotationGroup = screen.getByRole('group', { name: 'Rotação (°)' })
+      const sliderX = within(rotationGroup).getByRole('slider', { name: 'X' })
+      expect(sliderX).toHaveAttribute('min', '-180')
+      expect(sliderX).toHaveAttribute('max', '180')
+      expect(sliderX).toHaveStyle({ accentColor: AXIS_COLORS.x })
+
+      const positionZ = screen.getByLabelText('Z', { selector: '#position-z' })
+      expect(positionZ).toHaveStyle({ accentColor: AXIS_COLORS.z })
+    })
+
+    it('resets only the root rotation, keeping the position (fase 9, item 13)', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      useFiguresStore.getState().setPosition(id, [2, 0, 1])
+      useFiguresStore.getState().setRootRotation(id, { y: 90 })
+      await renderPropertiesPanel()
+
+      await user.click(screen.getByRole('button', { name: 'Resetar rotação' }))
+
+      expect(useFiguresStore.getState().figures[0].rotation).toEqual({ x: 0, y: 0, z: 0 })
+      expect(useFiguresStore.getState().figures[0].position).toEqual([2, 0, 1])
+    })
+
+    it('switches the root gizmo between move and rotate (fase 9, item 13)', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+
+      expect(screen.getByRole('button', { name: 'Mover' })).toHaveAttribute('aria-pressed', 'true')
+
+      await user.click(screen.getByRole('button', { name: 'Girar' }))
+      expect(useUIStore.getState().rootGizmoMode).toBe('rotate')
+      expect(screen.getByRole('button', { name: 'Girar' })).toHaveAttribute('aria-pressed', 'true')
     })
 
     it('applies a preset pose through the store when a preset button is clicked', async () => {
@@ -311,6 +357,48 @@ describe('PropertiesPanel', () => {
     it('a simetria só aparece na raiz, não numa junta qualquer', async () => {
       await withJointSelected('spine')
       expect(screen.queryByRole('group', { name: 'Simetria' })).not.toBeInTheDocument()
+    })
+  })
+})
+
+describe('PropertiesPanel — resetar junta e cores de eixo (fase 9, itens 6 e 9)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useIKStore.setState(useIKStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  it('reseta só a junta selecionada, preservando as demais', async () => {
+    const user = userEvent.setup()
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    useFiguresStore.getState().selectFigure(id)
+    useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: 90 })
+    useFiguresStore.getState().setJointRotation(id, 'knee.R', { x: 60 })
+    useFiguresStore.getState().selectJoint('knee.L')
+    await renderPropertiesPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Resetar esta junta' }))
+
+    const figure = useFiguresStore.getState().figures[0]
+    expect(figure.pose['knee.L'].x).toBe(0)
+    expect(figure.pose['knee.R'].x).toBe(60)
+  })
+
+  it('pinta cada slider de junta com a cor do eixo do gizmo', async () => {
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    useFiguresStore.getState().selectFigure(id)
+    useFiguresStore.getState().selectJoint('shoulder.L')
+    await renderPropertiesPanel()
+
+    const rotationGroup = screen.getByRole('group', { name: 'Rotação (°)' })
+    expect(within(rotationGroup).getByRole('slider', { name: 'X' })).toHaveStyle({
+      accentColor: AXIS_COLORS.x,
+    })
+    expect(within(rotationGroup).getByRole('button', { name: 'X' })).toHaveStyle({
+      color: AXIS_COLORS.x,
+    })
+    expect(within(rotationGroup).getByRole('slider', { name: 'Z' })).toHaveStyle({
+      accentColor: AXIS_COLORS.z,
     })
   })
 })

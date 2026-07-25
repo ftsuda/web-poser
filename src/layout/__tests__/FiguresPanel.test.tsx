@@ -3,9 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { COLOR_PALETTE, MAX_FIGURES, useFiguresStore } from '../../store/figuresStore'
+import { useIKStore } from '../../store/ikStore'
 import { FiguresPanel } from '../FiguresPanel'
 
-vi.mock('../../persistence/sceneFile', () => ({
+// `importOriginal` preserva `SceneFileError` real (usado por `instanceof`).
+vi.mock('../../persistence/sceneFile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../persistence/sceneFile')>()),
   exportFigureToGlb: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
   importFigureFromGlb: vi.fn(),
 }))
@@ -14,7 +17,7 @@ vi.mock('../../persistence/fileIO', () => ({
   pickFile: vi.fn(),
 }))
 
-import { exportFigureToGlb, importFigureFromGlb } from '../../persistence/sceneFile'
+import { SceneFileError, exportFigureToGlb, importFigureFromGlb } from '../../persistence/sceneFile'
 import { pickFile, writeFileToDirectoryOrDownload } from '../../persistence/fileIO'
 
 async function renderFiguresPanel() {
@@ -215,5 +218,67 @@ describe('FiguresPanel', () => {
       expect(useFiguresStore.getState().figures).toHaveLength(1)
     })
     expect(useFiguresStore.getState().figures[0].name).toBe('Boneco importado')
+  })
+})
+
+describe('FiguresPanel — erro de importação (fase 9, item 4)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    vi.mocked(importFigureFromGlb).mockReset()
+    vi.mocked(pickFile).mockReset()
+  })
+
+  it('avisa quando o .glb do boneco não pode ser lido, sem alterar a cena', async () => {
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'ruim.glb'), data: new ArrayBuffer(4) })
+    vi.mocked(importFigureFromGlb).mockRejectedValue(new SceneFileError('unreadable'))
+
+    const user = userEvent.setup()
+    await renderFiguresPanel()
+    await user.click(screen.getByRole('button', { name: 'Importar boneco (.glb)' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Arquivo não pôde ser lido — o .glb parece corrompido ou não é um glTF válido.',
+    )
+    expect(useFiguresStore.getState().figures).toHaveLength(0)
+  })
+})
+
+describe('FiguresPanel — indicador de IK ativo (fase 9, item 5)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useIKStore.setState(useIKStore.getInitialState())
+  })
+
+  it('não mostra badge de IK quando nenhum membro está em IK', async () => {
+    useFiguresStore.getState().addFigure('Herói')
+    await renderFiguresPanel()
+    expect(screen.queryByTitle(/IK ativo em/)).not.toBeInTheDocument()
+  })
+
+  it('mostra os membros com IK ativo do boneco, e só dele', async () => {
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    const other = useFiguresStore.getState().addFigure('Vilão') as string
+    useIKStore.getState().enableLimb(id, 'wrist.L', [0, 1, 0])
+    useIKStore.getState().enableLimb(id, 'ankle.R', [0, 0, 0])
+
+    await renderFiguresPanel()
+
+    const badge = screen.getByTitle('IK ativo em: braço esquerdo, perna direita')
+    expect(badge).toHaveTextContent('IK')
+    expect(badge).toHaveTextContent('2')
+    expect(screen.getAllByTitle(/IK ativo em/)).toHaveLength(1)
+    expect(other).not.toBe(id)
+  })
+
+  it('some quando o IK do membro é desligado', async () => {
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    useIKStore.getState().enableLimb(id, 'wrist.L', [0, 1, 0])
+    await renderFiguresPanel()
+    expect(screen.getByTitle(/IK ativo em/)).toBeInTheDocument()
+
+    act(() => {
+      useIKStore.getState().disableLimb(id, 'wrist.L')
+    })
+    expect(screen.queryByTitle(/IK ativo em/)).not.toBeInTheDocument()
   })
 })

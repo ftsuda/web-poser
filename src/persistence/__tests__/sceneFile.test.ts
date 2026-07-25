@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { CameraBookmark, Figure } from '../../store/figuresStore'
+import { exportObjectsToGlb } from '../gltfIO'
 import {
+  SceneFileError,
   exportCameraBookmarksToGlb,
   exportFigureToGlb,
   exportSceneToGlb,
@@ -90,5 +92,30 @@ describe('sceneFile — conjunto de bookmarks de câmera', () => {
       if ((object as { isCamera?: boolean }).isCamera) cameraCount += 1
     })
     expect(cameraCount).toBe(1)
+  })
+})
+
+describe('sceneFile — erro de importação visível (fase 9, item 4)', () => {
+  it('rejeita bytes que não são um .glb com reason "unreadable"', async () => {
+    const garbage = new TextEncoder().encode('isto não é um glb').buffer as ArrayBuffer
+
+    await expect(importSceneFromGlb(garbage)).rejects.toBeInstanceOf(SceneFileError)
+    await expect(importSceneFromGlb(garbage)).rejects.toMatchObject({ reason: 'unreadable' })
+  })
+
+  it('rejeita um .glb válido sem o bloco de dados do app com reason "missingAppData"', async () => {
+    // Um `.glb` legítimo (o Blender reexporta assim quando as custom
+    // properties não viajam) — antes, isso substituía a cena por uma vazia
+    // sem nenhum aviso.
+    const glb = await exportObjectsToGlb([], {})
+
+    await expect(importSceneFromGlb(glb)).rejects.toMatchObject({ reason: 'missingAppData' })
+    await expect(importFigureFromGlb(glb)).rejects.toMatchObject({ reason: 'missingAppData' })
+    await expect(importCameraBookmarksFromGlb(glb)).rejects.toMatchObject({ reason: 'missingAppData' })
+  })
+
+  it('continua importando normalmente um arquivo válido do app', async () => {
+    const glb = await exportSceneToGlb(scene)
+    await expect(importSceneFromGlb(glb)).resolves.toMatchObject({ name: scene.name })
   })
 })

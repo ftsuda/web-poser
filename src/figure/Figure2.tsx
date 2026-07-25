@@ -37,6 +37,17 @@ export interface Figure2Props {
   onJointRef?: (jointName: string, object: THREE.Group | null) => void
 }
 
+/**
+ * Chave sob a qual o grupo INTERNO da raiz (`joint-root`) é registrado em
+ * `onJointRef`, para o gizmo de rotação da colocação (fase 9, item 13). A
+ * chave `root` continua reservada ao grupo externo (`figure-<id>`), que é
+ * quem carrega `figure.position` — trocar os dois de lugar foi exatamente o
+ * bug corrigido em DECISOES.md #7. O grupo interno é o que tem
+ * `rotation = figure.rotation` de forma declarativa (1:1, sem offset somado),
+ * então é o alvo certo do gizmo de rotação.
+ */
+export const ROOT_PIVOT_REF_NAME = 'root:pivot'
+
 /** Cor emissiva usada para destacar a junta selecionada (mesma de `Figure`). */
 const SELECTED_EMISSIVE = '#ffe066'
 const SELECTED_EMISSIVE_INTENSITY = 0.6
@@ -277,6 +288,15 @@ function JointNode2({ name, figure, selectedJointName, onSelectJoint, onJointRef
   const rotation = isRoot ? figure.rotation : (figure.pose[name] ?? ZERO_ROTATION)
   const children = getJointChildren(name)
 
+  // Boneco oculto fica inerte ao mouse: `visible=false` só apaga o desenho —
+  // o `Raycaster` do three continua enxergando a malha, e o R3F testa todo
+  // objeto que tenha handler de ponteiro registrado. Sem isto, o boneco
+  // invisível em primeiro plano "rouba" o clique de quem está atrás dele (o
+  // handler chama `stopPropagation`). Não registrar o handler tira a peça da
+  // lista de objetos interativos do R3F — clique e hover passam direto (ver
+  // PLANO.md > fase 9, item 14).
+  const interactive = figure.visible
+
   // Mesma ressalva de `Figure`: o grupo interno da root não é registrado
   // como alvo do gizmo — o grupo externo (`Figure2`, abaixo) é quem carrega
   // `figure.position` de fato.
@@ -285,13 +305,17 @@ function JointNode2({ name, figure, selectedJointName, onSelectJoint, onJointRef
       name={`joint-${name}`}
       position={joint.position}
       rotation={degToRadTriple(rotation)}
-      ref={onJointRef && !isRoot ? (object) => onJointRef(name, object) : undefined}
+      ref={
+        onJointRef
+          ? (object) => onJointRef(isRoot ? ROOT_PIVOT_REF_NAME : name, object)
+          : undefined
+      }
     >
       <JointBody2
         name={name}
         color={figure.color}
         selected={name === selectedJointName}
-        onSelect={onSelectJoint ? () => onSelectJoint(name) : undefined}
+        onSelect={onSelectJoint && interactive ? () => onSelectJoint(name) : undefined}
       />
       {children.map((child) => {
         const style = getBoneStyle(child.name)

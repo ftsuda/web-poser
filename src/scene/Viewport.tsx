@@ -5,16 +5,20 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type * as THREE from 'three'
 import { useTranslation } from 'react-i18next'
 // import { Figure } from '../figure/Figure'
-import { Figure2 as Figure } from '../figure/Figure2'
+import { Figure2 as Figure, ROOT_PIVOT_REF_NAME } from '../figure/Figure2'
 import { getLimbEndEffector } from '../figure/ikSolver'
+import { ROOT_JOINT_NAME } from '../figure/skeleton'
 import { useFiguresStore } from '../store/figuresStore'
 import { useIKStore } from '../store/ikStore'
+import { useUIStore } from '../store/uiStore'
 import { CameraRig } from './CameraRig'
 import { BACKGROUND_COLORS, CAMERA_DEFAULTS } from './constants'
+import { GridAlignmentIndicator } from './GridAlignmentIndicator'
 import { IKTargetGizmo } from './IKTargetGizmo'
 import { KeyframeCapture } from './KeyframeCapture'
 import { SceneContent } from './SceneContent'
 import { SelectionGizmo } from './SelectionGizmo'
+import { VerticalRuler } from './VerticalRuler'
 
 export function Viewport() {
   const { t } = useTranslation()
@@ -24,6 +28,7 @@ export function Viewport() {
   const selectedJointName = useFiguresStore((state) => state.selectedJointName)
   const selectFigure = useFiguresStore((state) => state.selectFigure)
   const selectJoint = useFiguresStore((state) => state.selectJoint)
+  const rootGizmoMode = useUIStore((state) => state.rootGizmoMode)
 
   const limbEndEffector = selectedJointName ? getLimbEndEffector(selectedJointName) : null
   const limbIKEnabled = useIKStore((state) =>
@@ -34,6 +39,10 @@ export function Viewport() {
   // com seu próprio gizmo, já que tem grau de liberdade que o IK não cobre
   // (torção) — mesma regra da fase 3 do painel de Propriedades.
   const isIKControlledJoint = limbIKEnabled && limbEndEffector !== null && selectedJointName !== limbEndEffector
+  const ikTarget = useIKStore((state) =>
+    selectedFigureId && limbEndEffector ? state.getTarget(selectedFigureId, limbEndEffector) : undefined,
+  )
+  const rulerVisible = useUIStore((state) => state.rulerVisible)
 
   const orbitControlsRef = useRef<OrbitControlsImpl>(null)
   const [jointObjects, setJointObjects] = useState(() => new Map<string, THREE.Object3D>())
@@ -54,10 +63,30 @@ export function Viewport() {
     })
   }
 
+  // Girar a raiz precisa do grupo INTERNO (o que carrega `figure.rotation`);
+  // mover precisa do externo (que carrega `figure.position`) — ver
+  // `ROOT_PIVOT_REF_NAME` e DECISOES.md #7.
+  const gizmoJointKey =
+    selectedJointName === ROOT_JOINT_NAME && rootGizmoMode === 'rotate'
+      ? ROOT_PIVOT_REF_NAME
+      : selectedJointName
+
   const gizmoTarget =
-    selectedFigureId && selectedJointName
-      ? (jointObjects.get(`${selectedFigureId}:${selectedJointName}`) ?? null)
+    selectedFigureId && gizmoJointKey
+      ? (jointObjects.get(`${selectedFigureId}:${gizmoJointKey}`) ?? null)
       : null
+
+  // Qual posição o indicador de alinhamento acompanha (fase 9, item 10): a
+  // colocação do boneco, ou o alvo de IK quando é ele que está sendo
+  // arrastado. Rotação da raiz e rotação de junta não mexem em X/Z, então não
+  // acendem nada.
+  const selectedFigure = figures.find((figure) => figure.id === selectedFigureId)
+  const draggedPosition: readonly [number, number, number] | null =
+    limbIKEnabled && limbEndEffector
+      ? (ikTarget ?? null)
+      : selectedJointName === ROOT_JOINT_NAME && rootGizmoMode === 'translate' && selectedFigure
+        ? selectedFigure.position
+        : null
 
   return (
     <div className="viewport" role="img" aria-label={t('viewport.label')}>
@@ -68,6 +97,10 @@ export function Viewport() {
       >
         <color attach="background" args={[BACKGROUND_COLORS[environment.background]]} />
         <SceneContent grid={environment.grid} />
+        {rulerVisible && <VerticalRuler />}
+        {/* Só enquanto se arrasta: fora do arrasto o destaque seria ruído
+            permanente na tela (fase 9, item 10). */}
+        {isGizmoDragging && draggedPosition && <GridAlignmentIndicator position={draggedPosition} />}
         {figures.map((figure) => (
           <Figure
             key={figure.id}
@@ -82,6 +115,7 @@ export function Viewport() {
             figureId={selectedFigureId}
             jointName={selectedJointName}
             target={gizmoTarget}
+            rootMode={rootGizmoMode}
             onDraggingChange={setIsGizmoDragging}
           />
         )}

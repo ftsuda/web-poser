@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import ReactThreeTestRenderer from '@react-three/test-renderer'
 import * as THREE from 'three'
-import { Figure2 } from '../Figure2'
+import { Figure2, ROOT_PIVOT_REF_NAME } from '../Figure2'
 import { JOINT_NAMES, REFERENCE_HEIGHT_M, getHeightScale, getJointChain } from '../skeleton2'
 import type { Figure as FigureData } from '../../store/figuresStore'
 
@@ -260,6 +260,40 @@ describe('Figure2 — seleção de junta', () => {
   })
 })
 
+describe('Figure2 — boneco oculto é inerte ao mouse (fase 9, item 14)', () => {
+  /**
+   * O `Raycaster` do three ignora `visible=false`, e o R3F só testa objetos
+   * que tenham handler de ponteiro registrado (`__r3f.eventCount > 0`). Um
+   * boneco oculto com handler continuava "roubando" o clique de quem estava
+   * atrás dele (chamava `stopPropagation`). Regressão travada aqui.
+   */
+  function eventCountOf(node: { instance: unknown }): number {
+    return (node.instance as { __r3f?: { eventCount?: number } }).__r3f?.eventCount ?? 0
+  }
+
+  it('registra o clique nas peças de um boneco visível', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure2 figure={makeFigure()} onSelectJoint={() => {}} />,
+    )
+    const chest = renderer.scene.findByProps({ name: 'segment-chest' })
+    expect(chest.props.onClick).toBeTypeOf('function')
+    expect(eventCountOf(chest)).toBeGreaterThan(0)
+  })
+
+  it('não registra clique em nenhuma peça quando o boneco está oculto', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure2 figure={makeFigure({ visible: false })} onSelectJoint={() => {}} />,
+    )
+
+    const meshes = renderer.scene.findAllByType('Mesh')
+    expect(meshes.length).toBeGreaterThan(0)
+    for (const mesh of meshes) {
+      expect(mesh.props.onClick).toBeUndefined()
+      expect(eventCountOf(mesh)).toBe(0)
+    }
+  })
+})
+
 describe('Figure2 — registro de refs de junta', () => {
   it('reporta o grupo vivo de cada junta e o grupo externo do boneco para "root"', async () => {
     const registered = new Map<string, unknown>()
@@ -279,5 +313,24 @@ describe('Figure2 — registro de refs de junta', () => {
     const innerRootGroup = renderer.scene.findByProps({ name: 'joint-root' })
     expect(registered.get('root')).toBe(figureGroup.instance)
     expect(registered.get('root')).not.toBe(innerRootGroup.instance)
+  })
+
+  it('registra o pivô interno da raiz sob uma chave própria, para o gizmo de rotação (fase 9, item 13)', async () => {
+    const registered = new Map<string, unknown>()
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure2
+        figure={makeFigure()}
+        onJointRef={(name, object) => {
+          if (object) registered.set(name, object)
+        }}
+      />,
+    )
+
+    // O gizmo de rotação precisa do grupo que carrega `figure.rotation` 1:1
+    // (o interno); o de translação, do externo. Trocar os dois foi o bug de
+    // DECISOES.md #7 — por isso as duas chaves são distintas.
+    const innerRootGroup = renderer.scene.findByProps({ name: 'joint-root' })
+    expect(registered.get(ROOT_PIVOT_REF_NAME)).toBe(innerRootGroup.instance)
+    expect(registered.get(ROOT_PIVOT_REF_NAME)).not.toBe(registered.get('root'))
   })
 })

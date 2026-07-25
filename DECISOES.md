@@ -654,3 +654,57 @@ Causa: o `root` já está na altura certa do quadril (0,90 = 0,530H), mas os off
 **Validação:** suíte em 580 testes (108 novos), todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real: as 5 poses novas conferem visualmente (deitado de costas com os cotovelos no chão, fetal com a sola apoiada, guarda de luta com as duas pontas de pé plantadas, Superman pairando de bruços, modelo com a mão na cintura e o cotovelo aberto); fechar a mão direita não altera a esquerda; e "Copiar direito → esquerdo" transforma uma pose assimétrica numa figura perfeitamente simétrica. Sem erros no console.
 
 **Motivo:** derivar tudo o que é espelhável de uma única tabela (mão direita da esquerda, lado direito das poses simétricas do esquerdo, e o próprio comando de espelhar) faz da convenção do #14 uma propriedade verificada por teste em vez de uma regra a ser lembrada a cada valor digitado. Foi também o que expôs `clavicle.R.z`: a mesma checagem que valida o espelho valida os limites.
+
+---
+
+## 31. Fase 9 (refinamentos de UX e workspace) — quatro decisões confirmadas com o usuário e três detalhes técnicos que não eram óbvios
+
+**Contexto:** a fase 9 juntava 13 itens de refinamento abertos mais um bug relatado. Três desses itens estavam marcados no próprio `PLANO.md` como "confirmar com o usuário antes de implementar", e um quarto (o escopo da fase) definia como o trabalho seria conduzido. Perguntei os quatro de uma vez, antes de escrever qualquer linha de código.
+
+| Questão | Escolha do usuário | Consequência |
+|---|---|---|
+| Escopo | **Fase 9 inteira, bug primeiro** | bug → itens de UI → itens de viewport, numa sequência só |
+| Boneco oculto (item 14) | **Totalmente inerte ao mouse** | clique/hover atravessam; ocultar o boneco selecionado limpa a seleção |
+| Pivô do gizmo de rotação da raiz (item 13) | **Em torno do próprio root/quadril** | o alvo do gizmo é o grupo que já carrega `figure.rotation`; nenhuma compensação de posição |
+| Painéis recolhíveis (item 8) | **Persistir em `localStorage`** | o layout volta como foi deixado ao reabrir o app |
+
+### 31.1 O bug do boneco oculto era do sistema de eventos do R3F, não do `Raycaster`
+
+**Investigação:** a hipótese registrada no plano era "o `Raycaster` não testa `visible`". Está correta, mas é só metade — e a metade que **não** resolve o caso. Lendo o código de `@react-three/fiber` (`events-*.esm.js`), o sistema de eventos não parte da raiz da cena: ele percorre `state.internal.interaction` (os objetos que têm handler de ponteiro registrado) e chama `raycaster.intersectObject(obj, true)` **em cada um deles**. Duas consequências:
+
+1. Bloquear o raycast no grupo externo do boneco **não funcionaria** — o grupo pai nunca é consultado nesse caminho. (O three ≥ r152 até suporta interromper a recursão devolvendo `false` de `raycast`, confirmado lendo o `intersect()` em `three.core.js`; só que esse caminho não é o que o R3F usa para eventos.)
+2. Por outro lado, **não registrar o handler** tira a peça da lista de objetos interativos por completo — clique e hover deixam de existir para ela, sem tocar em `raycast` nenhum.
+
+**Decisão:** a correção é uma condição só, em `Figure2.tsx`: `onSelect` só é passado quando `figure.visible`. Sem prop nova, sem mexer em `raycast` (o que traria de volta o risco das duas cópias do pacote `three` no grafo de módulos — ver #4). O teste de regressão afirma o mecanismo real, não o sintoma: nenhuma malha do boneco oculto tem `__r3f.eventCount > 0`.
+
+**Segunda metade da decisão do usuário:** ocultar o boneco **selecionado** limpa a seleção (`toggleVisibility` no `figuresStore`). Sem isso, sobraria um gizmo no viewport ancorado num corpo invisível, e daria para posar às cegas um boneco que não se vê. Mostrar de volta nunca mexe na seleção.
+
+### 31.2 O gizmo de rotação da raiz precisa do grupo INTERNO — o oposto do gizmo de translação
+
+O gizmo de translação da raiz foi corrigido na fase 3 para usar o grupo **externo** (`figure-<id>`), que é quem carrega `figure.position` (ver #7). Para a rotação vale exatamente o inverso: quem carrega `figure.rotation` de forma declarativa é o grupo **interno** (`joint-root`). Anexar o gizmo de rotação ao externo repetiria o bug do #7 pelo outro lado — o `TransformControls` giraria um grupo cuja rotação o React não controla, e o valor gravado seria reaplicado pelo grupo interno no render seguinte.
+
+Como a chave `root` do callback `onJointRef` está reservada ao grupo externo desde o #7, o grupo interno passou a se registrar sob uma chave própria (`ROOT_PIVOT_REF_NAME = 'root:pivot'`), e o `Viewport` escolhe uma ou outra conforme o modo. Um teste de regressão trava que as duas chaves apontam para objetos **diferentes** — é essa distinção que impede a volta do #7.
+
+O modo (mover/girar) vive no `uiStore`, fora do histórico de undo: é modo de ferramenta, como o toggle de IK, não conteúdo da cena.
+
+### 31.3 Três decisões de arquitetura menores, tomadas por mim e registradas aqui
+
+1. **Reset por junta usa a pose "Em pé" como referência, não zero cru.** Zerar todos os eixos parece o óbvio e está errado neste modelo: `elbow.*.y` tem torção neutra de ±90° (ver #25), então "zerar" o cotovelo torceria a mão para uma orientação que nenhuma pose usa. `resetJointRotation` lê o valor da junta em `resolvePosePreset('standing')` — é literalmente "aplicar o preset Em pé, mas só nesta junta". Para o `root`, zera só a rotação de colocação e preserva a posição.
+
+2. **Preferências de layout ficam numa chave `localStorage` própria (`virtual-mockup:ui:v1`), separada do autosave do workspace.** Painel recolhido e régua ligada são preferências de quem está usando o app, não conteúdo da composição. Se entrassem no bloco do workspace, viajariam no `extras` do `.glb` e no `workspace.json` — poluindo um contrato de arquivo que o Blender também lê, sem nenhum ganho. Pela mesma razão a régua vertical **não** entrou em `environment` junto da grade, apesar da simetria aparente entre as duas.
+
+3. **O autosave passou a devolver `boolean`.** `saveWorkspaceToLocalStorage` engolia silenciosamente qualquer falha de gravação (cota estourada, modo privado). Isso era aceitável enquanto nada era informado ao usuário; com o indicador de "salvo" na Toolbar, um indicador que diz "Salvo às 14:32" sem ter salvo nada é pior do que indicador nenhum. A função continua nunca lançando — só passou a reportar o resultado, e a Toolbar tem um estado de erro visível.
+
+### 31.4 Erro de importação: o caso silencioso perigoso não era o arquivo corrompido
+
+O item 4 pedia aviso ao importar um `.glb` inválido. Ao implementar, apareceu um segundo caso, pior: um `.glb` **válido** sem o bloco `extras` do app — exatamente o que o Blender produz quando as custom properties não viajam (a pendência aberta em #11). Esse arquivo não lançava exceção nenhuma: `sceneFromExtras` é deliberadamente tolerante (é a mesma função usada pelo autosave, onde a tolerância é desejada) e devolvia uma cena vazia, que **substituía a cena de trabalho do usuário** sem uma palavra.
+
+`SceneFileError` distingue os dois casos (`unreadable` / `missingAppData`) na fronteira de `sceneFile.ts`, sem tocar em `sceneSerialization.ts`. A mensagem de `missingAppData` diz o que fazer ("reexporte com a opção de custom properties ligada") — não fecha a pendência do #11, mas transforma um sumiço inexplicável num diagnóstico.
+
+### 31.5 Descoberta: o arrasto de gizmo **é** testável por automação — a limitação do #3 era da ferramenta, não do gizmo
+
+O #3 registrou que arrastar `OrbitControls`/`TransformControls` não funcionava por automação, porque a ferramenta em uso disparava `MouseEvent` clássicos em vez de `PointerEvent`. Isso valeu para todas as fases seguintes (#6, #8, #9), deixando o arrasto real sempre pendente de validação manual.
+
+Ao validar a fase 9 com Chrome via Playwright, o arrasto do gizmo de translação **funcionou**: `page.mouse.down/move/up` dispara `PointerEvent` de verdade, o `TransformControls` respondeu, o campo de posição foi de 0 a 0,386 m e o indicador de alinhamento com a grade acendeu na linha Z=0 durante o arrasto — o comportamento do item 10, observado ao vivo. **Isso não muda a política de teste do plano** (aparência renderizada e pixel real de WebGL continuam fora do teste automatizado), mas remove uma limitação de validação que constava como permanente: daqui em diante, interações de arrasto podem ser verificadas na validação assistida por navegador, sem depender só de inspeção do código-fonte.
+
+**Validação da fase:** suíte em 639 testes (58 novos), todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real (headless via Playwright, sobre `npm run preview`), sem nenhum erro de console: indicador de autosave percorrendo "Ainda não salvo" → "Salvando…" → "Salvo às 13:15"; desfazer/refazer pelos botões da Toolbar, desabilitando corretamente nas pontas do histórico; painel de ajuda abrindo pelo botão; régua vertical; gizmo de rotação da raiz com os três anéis centrados no quadril; reset de rotação da raiz e de junta; ocultar o boneco selecionado limpando a seleção; **o bug do item 14 reproduzido e corrigido no cenário exato relatado** (boneco oculto em primeiro plano, clique atravessando e selecionando o boneco visível atrás); badge de IK; painéis recolhendo e sobrevivendo a um reload; e "novo workspace" limpando tudo e desabilitando o desfazer.
