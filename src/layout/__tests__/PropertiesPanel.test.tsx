@@ -96,14 +96,20 @@ describe('PropertiesPanel', () => {
       expect(screen.getByRole('button', { name: 'Girar' })).toHaveAttribute('aria-pressed', 'true')
     })
 
-    it('applies a preset pose through the store when a preset button is clicked', async () => {
+    /** O combo escolhe; o botão "Aplicar pose" é que aplica (DECISOES.md #36). */
+    async function escolherEAplicar(user: ReturnType<typeof userEvent.setup>, pose: string) {
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), pose)
+      await user.click(screen.getByRole('button', { name: 'Aplicar pose' }))
+    }
+
+    it('applies a preset pose through the store when the apply button is clicked', async () => {
       const user = userEvent.setup()
       const id = useFiguresStore.getState().addFigure('Herói') as string
       useFiguresStore.getState().selectFigure(id)
       await renderPropertiesPanel()
 
       expect(screen.getByRole('group', { name: 'Poses predefinidas' })).toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Sentado' }))
+      await escolherEAplicar(user, 'Sentado')
 
       const figure = useFiguresStore.getState().figures[0]
       expect(figure.pose['hip.L'].x).toBeLessThan(0)
@@ -119,11 +125,53 @@ describe('PropertiesPanel', () => {
       useFiguresStore.getState().applyPosePreset(id, 'standing')
       await renderPropertiesPanel()
 
-      await user.click(screen.getByRole('button', { name: 'T-pose' }))
+      await escolherEAplicar(user, 'T-pose')
 
       const figure = useFiguresStore.getState().figures[0]
       expect(figure.pose['shoulder.L'].z).toBe(90)
       expect(figure.pose['shoulder.R'].z).toBe(-90)
+    })
+
+    /**
+     * O aviso de par (DECISOES.md #41) aparece só quando aplicar VAI mesmo
+     * mexer no outro boneco. Com um boneco só — ou com três, onde não há como
+     * saber qual é o parceiro — a montagem continua manual, e quem manda é a
+     * dica da pose, que traz a distância.
+     */
+    it('avisa que a pose em dupla também vai posar o outro boneco, e só quando são dois', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      const { rerender } = await renderPropertiesPanel()
+
+      const aviso = /também põe o outro boneco na pose correspondente/
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Aperto de mão')
+      expect(screen.queryByText(aviso)).not.toBeInTheDocument()
+
+      act(() => {
+        useFiguresStore.getState().addFigure('Coadjuvante')
+      })
+      rerender(<PropertiesPanel />)
+      expect(screen.getByText(aviso)).toBeInTheDocument()
+
+      // Pose solo: nada a avisar, mesmo com dois bonecos em cena.
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Correndo')
+      expect(screen.queryByText(aviso)).not.toBeInTheDocument()
+    })
+
+    it('aplica a pose em dupla nos dois bonecos pelo botão do painel', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      const outro = useFiguresStore.getState().addFigure('Coadjuvante') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+
+      await escolherEAplicar(user, 'Dança (condutor)')
+
+      const parceiro = useFiguresStore.getState().figures.find((f) => f.id === outro)!
+      expect(parceiro.pose['shoulder.R'].z).not.toBe(0)
+      expect(parceiro.rotation.y).toBe(180)
+      expect(parceiro.position[2]).toBeCloseTo(0.36, 5)
     })
 
     it('lets the user jump to any joint (including ones hidden behind other body parts) via the joint select combobox', async () => {
@@ -290,12 +338,45 @@ describe('PropertiesPanel', () => {
       await renderPropertiesPanel()
 
       for (const label of ['Deitado', 'Fetal', 'Luta', 'Superman', 'Modelo']) {
-        expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+        expect(screen.getByRole('option', { name: label })).toBeInTheDocument()
       }
-      expect(screen.getByRole('button', { name: 'Fetal' })).toHaveAttribute(
-        'title',
-        'Sentado no chão, abraçando os joelhos',
-      )
+      // A descrição da pose escolhida aparece abaixo do combo, no lugar do
+      // antigo tooltip de cada botão.
+      const user = userEvent.setup()
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Fetal')
+      expect(screen.getByText('Sentado no chão, abraçando os joelhos')).toBeInTheDocument()
+    })
+
+    /** Poses de luta em par e sorteio (DECISOES.md #35). */
+    it('oferece as 6 poses de luta em par, com descrição no tooltip', async () => {
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+
+      for (const label of [
+        'Soco (dando)',
+        'Soco (levando)',
+        'Chute (dando)',
+        'Chute (levando)',
+        'Gravata (aplicando)',
+        'Gravata (recebendo)',
+      ]) {
+        expect(screen.getByRole('option', { name: label })).toBeInTheDocument()
+      }
+    })
+
+    it('sorteia uma pose pelo botão, sem tirar o boneco do lugar', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+      const before = useFiguresStore.getState().figures.find((f) => f.id === id)!
+
+      await user.click(screen.getByRole('button', { name: 'Aleatória' }))
+
+      const after = useFiguresStore.getState().figures.find((f) => f.id === id)!
+      expect(after.pose).not.toEqual(before.pose)
+      expect(after.position).toEqual(before.position)
     })
 
     it('deita o boneco no chão pelo botão, ajustando também rotação e altura', async () => {
@@ -304,7 +385,8 @@ describe('PropertiesPanel', () => {
       useFiguresStore.getState().selectFigure(id)
       await renderPropertiesPanel()
 
-      await user.click(screen.getByRole('button', { name: 'Deitado' }))
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Deitado')
+      await user.click(screen.getByRole('button', { name: 'Aplicar pose' }))
 
       const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
       expect(figure.rotation.x).toBe(-90)
@@ -354,8 +436,39 @@ describe('PropertiesPanel', () => {
       expect(useFiguresStore.getState().figures[0].pose['shoulder.R'].x).toBe(-50)
     })
 
-    it('a simetria só aparece na raiz, não numa junta qualquer', async () => {
+    /**
+     * Escopo parcial (DECISOES.md #34): a simetria deixou de ser exclusiva da
+     * raiz — com uma junta selecionada, ela vale só daquela junta para baixo.
+     */
+    it('espelha só a cadeia da junta selecionada, deixando o resto intacto', async () => {
+      const user = userEvent.setup()
+      const id = await withJointSelected('shoulder.R')
+      act(() => {
+        useFiguresStore.getState().setJointRotation(id, 'shoulder.R', { x: -50 })
+        useFiguresStore.getState().setJointRotation(id, 'hip.R', { x: -35 })
+      })
+
+      await user.click(screen.getByRole('button', { name: 'Copiar direito → esquerdo' }))
+
+      const pose = useFiguresStore.getState().figures.find((f) => f.id === id)!.pose
+      expect(pose['shoulder.L'].x).toBe(-50)
+      expect(pose['hip.L'].x).toBe(0)
+    })
+
+    it('diz na dica até onde a operação vale', async () => {
+      await withJointSelected('shoulder.R')
+      expect(
+        screen.getByText('Vale de shoulder.R para baixo, nos dois lados — o resto não muda.'),
+      ).toBeInTheDocument()
+    })
+
+    it('some onde não há junta pareada embaixo (cabeça), mas fica no tronco (os braços)', async () => {
       await withJointSelected('spine')
+      expect(screen.getByRole('group', { name: 'Simetria' })).toBeInTheDocument()
+
+      await act(async () => {
+        useFiguresStore.getState().selectJoint('head')
+      })
       expect(screen.queryByRole('group', { name: 'Simetria' })).not.toBeInTheDocument()
     })
   })

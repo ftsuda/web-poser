@@ -187,7 +187,7 @@ describe('figuresStore', () => {
     expect(figure?.pose['elbow.L']).toEqual({ x: -150, y: 90, z: 0 })
   })
 
-  it('changes a figure color to an unused palette color', () => {
+  it('changes a figure color to another palette color', () => {
     const { addFigure, setColor } = useFiguresStore.getState()
     const id = addFigure() as string
 
@@ -197,25 +197,60 @@ describe('figuresStore', () => {
     )
   })
 
-  it('ignores setColor to a color already used by another figure', () => {
+  // Cor LIVRE (DECISOES.md #39): estes três testes substituem os dois antigos,
+  // que travavam justamente o oposto — só cor da paleta e cor única entre os
+  // bonecos.
+  it('accepts ANY valid hex color, including one already used by another figure', () => {
     const { addFigure, setColor } = useFiguresStore.getState()
     const firstId = addFigure() as string
-    addFigure()
-    const firstColor = useFiguresStore.getState().figures.find((f) => f.id === firstId)?.color
+    const secondId = addFigure() as string
 
-    setColor(firstId, COLOR_PALETTE[1])
-    expect(useFiguresStore.getState().figures.find((f) => f.id === firstId)?.color).toBe(
-      firstColor,
-    )
+    setColor(firstId, '#123456')
+    expect(useFiguresStore.getState().figures.find((f) => f.id === firstId)?.color).toBe('#123456')
+
+    // Dois bonecos da mesma cor é escolha de quem monta a cena, não erro.
+    const secondColor = useFiguresStore.getState().figures.find((f) => f.id === secondId)?.color
+    setColor(firstId, secondColor as string)
+    expect(useFiguresStore.getState().figures.find((f) => f.id === firstId)?.color).toBe(secondColor)
   })
 
-  it('ignores setColor to a color outside the fixed palette', () => {
+  it('normalizes the color to lowercase #rrggbb, expanding the short form', () => {
     const { addFigure, setColor } = useFiguresStore.getState()
     const id = addFigure() as string
-    const originalColor = useFiguresStore.getState().figures.find((f) => f.id === id)?.color
 
-    setColor(id, '#123456')
-    expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.color).toBe(originalColor)
+    setColor(id, '#AABBCC')
+    expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.color).toBe('#aabbcc')
+
+    setColor(id, '#0f8')
+    expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.color).toBe('#00ff88')
+  })
+
+  it('ignores setColor when the value is not a color at all', () => {
+    const { addFigure, setColor } = useFiguresStore.getState()
+    const id = addFigure() as string
+    const original = useFiguresStore.getState().figures.find((f) => f.id === id)?.color
+
+    // Nada disso pode chegar ao material do three.js nem ao `style` do painel.
+    for (const bogus of ['red', 'rgb(1,2,3)', '#12345', '#gggggg', '', 'javascript:alert(1)']) {
+      setColor(id, bogus)
+      expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.color).toBe(original)
+    }
+  })
+
+  it('keeps adding figures up to the limit even when colors repeat', () => {
+    const { addFigure, setColor } = useFiguresStore.getState()
+    // Antes do #39 a paleta ERA o limite: com duas cores repetidas sobrava cor
+    // na lista e `addFigure` devolvia null antes de chegar a MAX_FIGURES.
+    const first = addFigure() as string
+    const second = addFigure() as string
+    setColor(first, '#111111')
+    setColor(second, '#111111')
+
+    while (useFiguresStore.getState().figures.length < MAX_FIGURES) {
+      expect(addFigure()).not.toBeNull()
+    }
+    expect(useFiguresStore.getState().figures).toHaveLength(MAX_FIGURES)
+    expect(addFigure()).toBeNull()
   })
 
   it('sets the root position and free rotation without clamping', () => {
@@ -1006,6 +1041,135 @@ describe('figuresStore — poses predefinidas', () => {
   })
 })
 
+/**
+ * Aplicação automática em dupla (DECISOES.md #41): as poses em par sempre
+ * vieram aos pares, e montar a cena era manual — aplicar a outra metade no
+ * segundo boneco e afastá-lo a olho até bater com a distância da dica. Agora,
+ * com DOIS bonecos em cena, aplicar uma pose de par monta o par inteiro.
+ * A geometria do encaixe é travada em `posePairs.test.ts`; aqui trava-se o
+ * comportamento do store: quem é mexido, quem não é, e o que é uma edição só.
+ */
+describe('figuresStore — poses em dupla aplicadas nos dois bonecos', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  const figureById = (id: string) => useFiguresStore.getState().figures.find((f) => f.id === id)!
+
+  it('aplica a pose correspondente no outro boneco e o posiciona à distância do par', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setPosition(b, [3, 0, -4])
+
+    useFiguresStore.getState().applyPosePreset(a, 'danceLead')
+
+    expect(figureById(b).pose).toEqual(resolvePosePreset('danceFollow'))
+    // De frente para quem conduz, a 0,36 m — não mais onde o usuário o tinha
+    // deixado.
+    expect(figureById(b).position[0]).toBeCloseTo(0, 5)
+    expect(figureById(b).position[2]).toBeCloseTo(0.36, 5)
+    expect(figureById(b).rotation).toEqual({ x: 0, y: 180, z: 0 })
+    // Quem recebeu a pose não sai do lugar: é o parceiro que se move.
+    expect(figureById(a).position[0]).toBe(0)
+    expect(figureById(a).position[2]).toBe(0)
+  })
+
+  it('monta o par em volta de quem recebeu a pose, no giro em que ele estiver', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setPosition(a, [2, 0, 1])
+    useFiguresStore.getState().setRootRotation(a, { y: 90 })
+
+    useFiguresStore.getState().applyPosePreset(a, 'handshake')
+
+    // Girado 90°, "à frente" passa a ser +X: o parceiro acompanha o giro em
+    // vez de ficar no eixo Z do mundo.
+    expect(figureById(b).position[0]).toBeCloseTo(2 + 0.755, 3)
+    expect(figureById(b).position[2]).toBeCloseTo(1, 3)
+    expect(figureById(b).rotation).toEqual({ x: 0, y: -90, z: 0 })
+  })
+
+  it('escala a distância do par pela altura dos bonecos', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setHeight(a, 1.5)
+    useFiguresStore.getState().setHeight(b, 1.5)
+
+    useFiguresStore.getState().applyPosePreset(a, 'handshake')
+
+    expect(figureById(b).position[2]).toBeCloseTo(0.755 * (1.5 / 1.7), 3)
+  })
+
+  it('assenta o parceiro na altura que a pose dele pede', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+
+    useFiguresStore.getState().applyPosePreset(a, 'pullingUp')
+
+    // Quem é ajudado está no chão: o quadril desce de 0,90 m para 0,415 m.
+    expect(figureById(b).position[1]).toBeCloseTo(0.415 - 0.9, 5)
+  })
+
+  it('compõe a rotação (em vez de somar graus em Y) quando a pose do parceiro é deitada', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setRootRotation(a, { y: 90 })
+
+    useFiguresStore.getState().applyPosePreset(a, 'carryingCradle')
+
+    // Deitado atravessado nos braços de quem carrega: com o carregador girado
+    // 90°, somar 90 em `y` ROLARIA o corpo em torno do próprio eixo.
+    expect(figureById(b).rotation).toEqual({ x: -90, y: 0, z: 0 })
+  })
+
+  it('não mexe em ninguém quando a pose é solo', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    const before = figureById(b)
+
+    useFiguresStore.getState().applyPosePreset(a, 'running')
+
+    expect(figureById(b)).toBe(before)
+  })
+
+  it('não mexe em ninguém com três bonecos em cena: não há como saber qual é o parceiro', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    const c = useFiguresStore.getState().addFigure() as string
+    const beforeB = figureById(b)
+    const beforeC = figureById(c)
+
+    useFiguresStore.getState().applyPosePreset(a, 'handshake')
+
+    expect(figureById(a).pose).toEqual(resolvePosePreset('handshake'))
+    expect(figureById(b)).toBe(beforeB)
+    expect(figureById(c)).toBe(beforeC)
+  })
+
+  it('funciona com um boneco só, sem parceiro nenhum', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+
+    useFiguresStore.getState().applyPosePreset(a, 'hug')
+
+    expect(useFiguresStore.getState().figures).toHaveLength(1)
+    expect(figureById(a).pose).toEqual(resolvePosePreset('hug'))
+  })
+
+  it('um Ctrl+Z desfaz o par inteiro: as duas metades são uma edição só', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    const beforeA = figureById(a)
+    const beforeB = figureById(b)
+
+    useFiguresStore.getState().applyPosePreset(a, 'clinch')
+    useFiguresStore.temporal.getState().undo()
+
+    expect(figureById(a)).toEqual(beforeA)
+    expect(figureById(b)).toEqual(beforeB)
+  })
+})
+
 describe('figuresStore — poses de mão e simetria (DECISOES.md #30)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
@@ -1062,6 +1226,57 @@ describe('figuresStore — poses de mão e simetria (DECISOES.md #30)', () => {
     expect(figureById(id).pose).toEqual(before)
   })
 
+  it('applyRandomPose sorteia uma pose nova sem tirar o boneco do lugar (DECISOES.md #35)', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setPosition(id, [1.2, 0, -0.4])
+    useFiguresStore.getState().setRootRotation(id, { y: 30 })
+    const before = figureById(id)
+
+    useFiguresStore.getState().applyRandomPose(id)
+
+    const after = figureById(id)
+    expect(after.pose).not.toEqual(before.pose)
+    // O sorteio é da POSE: onde o boneco está e para onde encara não mudam.
+    expect(after.position).toEqual(before.position)
+    expect(after.rotation).toEqual(before.rotation)
+  })
+
+  it('applyRandomPose entra no histórico de undo como qualquer edição de pose', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    const before = figureById(id).pose
+
+    useFiguresStore.getState().applyRandomPose(id)
+    useFiguresStore.temporal.getState().undo()
+
+    expect(figureById(id).pose).toEqual(before)
+  })
+
+  it('mirrorSide restrito a uma junta só mexe dela para baixo (DECISOES.md #34)', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'shoulder.R', { x: -40 })
+    useFiguresStore.getState().setJointRotation(id, 'hip.R', { x: -35 })
+
+    useFiguresStore.getState().mirrorSide(id, 'R', 'shoulder.R')
+
+    const figure = figureById(id)
+    expect(figure.pose['shoulder.L'].x).toBe(-40)
+    expect(figure.pose['hip.L'].x).toBe(0)
+  })
+
+  it('swapSides restrito a uma junta troca só aquela cadeia', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: -80 })
+    useFiguresStore.getState().setJointRotation(id, 'hip.L', { x: -30 })
+
+    useFiguresStore.getState().swapSides(id, 'elbow.L')
+
+    const figure = figureById(id)
+    expect(figure.pose['elbow.R'].x).toBe(-80)
+    expect(figure.pose['elbow.L'].x).toBe(0)
+    expect(figure.pose['hip.L'].x).toBe(-30)
+    expect(figure.pose['hip.R'].x).toBe(0)
+  })
+
   it('as três operações entram no histórico de undo como qualquer edição de pose', () => {
     const id = useFiguresStore.getState().addFigure() as string
     const tpose = figureById(id).pose
@@ -1092,6 +1307,7 @@ describe('figuresStore — poses de mão e simetria (DECISOES.md #30)', () => {
       useFiguresStore.getState().applyHandPreset('figure-inexistente', 'L', 'fist')
       useFiguresStore.getState().mirrorSide('figure-inexistente', 'L')
       useFiguresStore.getState().swapSides('figure-inexistente')
+      useFiguresStore.getState().applyRandomPose('figure-inexistente')
     }).not.toThrow()
   })
 })

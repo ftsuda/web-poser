@@ -12,6 +12,7 @@ import {
   getJointAxes,
   getJointChain,
   getJointChildren,
+  getJointSubtree,
 } from '../skeleton'
 
 const EXPECTED_JOINT_NAMES = [
@@ -140,6 +141,57 @@ describe('getJointChain', () => {
 
   it('returns just the root for the root joint', () => {
     expect(getJointChain('root')).toEqual(['root'])
+  })
+})
+
+/**
+ * O contrário de `getJointChain`: o que vem DEPOIS da junta. É o que delimita
+ * as operações parciais de pose (espelhar/inverter só o membro selecionado —
+ * ver `poseMirror.ts` e DECISOES.md #34).
+ */
+describe('getJointSubtree', () => {
+  it('returns the joint itself plus every descendant', () => {
+    expect([...getJointSubtree('shoulder.R')].sort()).toEqual(
+      [
+        'shoulder.R',
+        'elbow.R',
+        'wrist.R',
+        'thumb1.R',
+        'thumb2.R',
+        'fingersBase.R',
+        'fingersMid.R',
+        'fingersTip.R',
+      ].sort(),
+    )
+  })
+
+  it('stops at the selected joint: the other side and the legs stay out', () => {
+    const subtree = getJointSubtree('shoulder.R')
+    expect(subtree.filter((name) => name.endsWith('.L'))).toEqual([])
+    expect(subtree).not.toContain('clavicle.R')
+    expect(subtree).not.toContain('hip.R')
+  })
+
+  it('covers the whole skeleton from the root', () => {
+    expect([...getJointSubtree(ROOT_JOINT_NAME)].sort()).toEqual([...JOINT_NAMES].sort())
+  })
+
+  it('returns a leaf joint on its own', () => {
+    expect(getJointSubtree('fingersTip.L')).toEqual(['fingersTip.L'])
+  })
+
+  /** Ordem topológica: quem consome (ex.: um clamp em cascata) pode confiar nela. */
+  it('lists every joint after its own parent', () => {
+    const subtree = getJointSubtree('spine')
+    for (const [index, name] of subtree.entries()) {
+      const parent = getJoint(name).parent
+      if (!parent || !subtree.includes(parent)) continue
+      expect(subtree.indexOf(parent)).toBeLessThan(index)
+    }
+  })
+
+  it('throws for an unknown joint', () => {
+    expect(() => getJointSubtree('cotovelo.X')).toThrow()
   })
 })
 

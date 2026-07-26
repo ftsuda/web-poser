@@ -9,6 +9,7 @@ import {
   sceneToExtras,
   type SceneWorkingState,
 } from '../sceneSerialization'
+import { DEFAULT_FIGURE_COLOR } from '../../store/figuresStore'
 import type { CameraBookmark, Figure } from '../../store/figuresStore'
 
 const sampleFigure: Figure = {
@@ -78,6 +79,21 @@ describe('sceneSerialization — figura', () => {
   it('grampeia a altura fora do intervalo permitido ao reconstruir', () => {
     const restored = figureFromExtras({ id: 'f1', height: 99 }, 0)
     expect(restored.height).toBe(1.9)
+  })
+
+  // Cor livre (DECISOES.md #39): o campo deixou de ser "uma das 5 da paleta" e
+  // passou a ser "qualquer #rrggbb" — o que torna a validação de FORMATO na
+  // leitura obrigatória, já que o valor vai direto para o material do three.js
+  // e para o `style` do painel.
+  it('aceita qualquer cor hexadecimal do arquivo e normaliza a forma curta', () => {
+    expect(figureFromExtras({ id: 'f1', color: '#7F3AC1' }, 0).color).toBe('#7f3ac1')
+    expect(figureFromExtras({ id: 'f1', color: '#0f8' }, 0).color).toBe('#00ff88')
+  })
+
+  it('cai para a cor padrão quando o arquivo traz algo que não é cor', () => {
+    for (const bogus of ['red', 'rgb(1,2,3)', '#12345', 42, null, { r: 1 }]) {
+      expect(figureFromExtras({ id: 'f1', color: bogus }, 0).color).toBe(DEFAULT_FIGURE_COLOR)
+    }
   })
 
   it('usa um id/nome de fallback quando o extras não é um objeto válido', () => {

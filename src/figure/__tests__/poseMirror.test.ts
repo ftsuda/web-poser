@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { buildJointFrames } from '../jointFrames'
 import {
   getJointSide,
+  getMirrorScope,
   getMirroredJointName,
   getSideJointNames,
   mirrorPoseSide,
@@ -215,5 +216,125 @@ describe('swapPoseSides', () => {
     const swapped = swapPoseSides(pose)
     expect(swapped['hip.L'].x).toBe(pose['hip.R'].x)
     expect(swapped['hip.R'].x).toBe(pose['hip.L'].x)
+  })
+})
+
+/**
+ * Escopo parcial (pedido do usuário, ver DECISOES.md #34): com uma junta
+ * selecionada, espelhar/inverter valem só dela para baixo — o exemplo dado foi
+ * "com o ombro direito selecionado, as pernas ficam intactas".
+ */
+describe('getMirrorScope', () => {
+  it('sem junta de escopo, cobre todas as juntas pareadas', () => {
+    expect([...getMirrorScope()].sort()).toEqual(
+      [...getSideJointNames('L'), ...getSideJointNames('R')].sort(),
+    )
+  })
+
+  it('na raiz é o boneco inteiro — o comando de corpo todo virou um caso deste', () => {
+    expect(getMirrorScope('root')).toEqual(getMirrorScope())
+  })
+
+  it('a partir de uma junta de um lado, pega ela e o que vem depois — nos DOIS lados', () => {
+    const chain = [
+      'shoulder',
+      'elbow',
+      'wrist',
+      'thumb1',
+      'thumb2',
+      'fingersBase',
+      'fingersMid',
+      'fingersTip',
+    ]
+    expect([...getMirrorScope('shoulder.R')].sort()).toEqual(
+      [...chain.map((n) => `${n}.R`), ...chain.map((n) => `${n}.L`)].sort(),
+    )
+  })
+
+  it('o exemplo do usuário: com o ombro direito selecionado, pernas e clavícula ficam fora', () => {
+    const scope = getMirrorScope('shoulder.R')
+    expect(scope).not.toContain('hip.L')
+    expect(scope).not.toContain('knee.R')
+    expect(scope).not.toContain('clavicle.R')
+  })
+
+  it('a partir do tronco pega os dois braços, porque as pernas nascem na raiz', () => {
+    const scope = getMirrorScope('spine')
+    expect(scope).toContain('clavicle.L')
+    expect(scope).toContain('fingersTip.R')
+    expect(scope.filter((name) => name.startsWith('hip') || name.startsWith('knee'))).toEqual([])
+  })
+
+  it('é vazio onde não há junta pareada embaixo (pescoço e cabeça)', () => {
+    expect(getMirrorScope('neck')).toEqual([])
+    expect(getMirrorScope('head')).toEqual([])
+  })
+})
+
+describe('espelho e inversão parciais', () => {
+  it('mirrorPoseSide copia só o que está no escopo', () => {
+    const pose = poseFrom({ ...RIGHT_SIDE_POSE, 'clavicle.L': { y: -3 } })
+    const mirrored = mirrorPoseSide(pose, 'R', 'shoulder.R')
+
+    expect(mirrored['shoulder.L']).toEqual(mirrorRotation(pose['shoulder.R']))
+    expect(mirrored['fingersTip.L']).toEqual(mirrorRotation(pose['fingersTip.R']))
+    // Fora do escopo: a perna e a clavícula (acima da junta selecionada) intactas.
+    expect(mirrored['knee.L']).toEqual(pose['knee.L'])
+    expect(mirrored['ankle.L']).toEqual(pose['ankle.L'])
+    expect(mirrored['clavicle.L']).toEqual(pose['clavicle.L'])
+  })
+
+  /**
+   * A mesma verificação numérica do espelho completo, agora restrita: com o
+   * escopo na clavícula (o braço inteiro, pendurado numa junta central), cada
+   * junta do braço cai na posição de mundo do par com X negado — enquanto a
+   * perna, fora do escopo, continua assimétrica.
+   */
+  it('a cadeia espelhada cai na posição de mundo espelhada, com erro nulo', () => {
+    const world = worldPositions(mirrorPoseSide(poseFrom(RIGHT_SIDE_POSE), 'R', 'clavicle.R'))
+
+    for (const name of getMirrorScope('clavicle.R').filter((n) => getJointSide(n) === 'R')) {
+      const right = world.get(name)!
+      const left = world.get(getMirroredJointName(name)!)!
+      expect(left.x + right.x).toBeCloseTo(0, 9)
+      expect(left.y).toBeCloseTo(right.y, 9)
+      expect(left.z).toBeCloseTo(right.z, 9)
+    }
+
+    const kneeR = world.get('knee.R')!
+    const kneeL = world.get('knee.L')!
+    const diff = Math.max(
+      Math.abs(kneeL.x + kneeR.x),
+      Math.abs(kneeL.y - kneeR.y),
+      Math.abs(kneeL.z - kneeR.z),
+    )
+    expect(diff).toBeGreaterThan(0.05)
+  })
+
+  it('swapPoseSides no escopo troca só a cadeia selecionada', () => {
+    const pose = poseFrom({ ...RIGHT_SIDE_POSE, 'shoulder.L': { x: -10, z: 15 }, 'knee.L': { x: 140 } })
+    const swapped = swapPoseSides(pose, 'shoulder.L')
+
+    expect(swapped['shoulder.R']).toEqual(mirrorRotation(pose['shoulder.L']))
+    expect(swapped['shoulder.L']).toEqual(mirrorRotation(pose['shoulder.R']))
+    expect(swapped['knee.L']).toEqual(pose['knee.L'])
+    expect(swapped['knee.R']).toEqual(pose['knee.R'])
+  })
+
+  it('a troca parcial continua sendo involução', () => {
+    const pose = poseFrom({ ...RIGHT_SIDE_POSE, 'shoulder.L': { x: -12, z: 33 } })
+    expect(swapPoseSides(swapPoseSides(pose, 'shoulder.R'), 'shoulder.R')).toEqual(pose)
+  })
+
+  it('escopo sem junta pareada embaixo não muda nada', () => {
+    const pose = poseFrom(RIGHT_SIDE_POSE)
+    expect(mirrorPoseSide(pose, 'R', 'head')).toEqual(pose)
+    expect(swapPoseSides(pose, 'neck')).toEqual(pose)
+  })
+
+  it('o escopo não depende do lado da junta selecionada — só de onde ela fica na cadeia', () => {
+    expect(getMirrorScope('shoulder.L')).toEqual(getMirrorScope('shoulder.R'))
+    const pose = poseFrom(RIGHT_SIDE_POSE)
+    expect(mirrorPoseSide(pose, 'R', 'shoulder.L')).toEqual(mirrorPoseSide(pose, 'R', 'shoulder.R'))
   })
 })

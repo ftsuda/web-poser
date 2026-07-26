@@ -12,6 +12,7 @@ import {
   type JointRotation,
 } from '../figure/skeleton'
 import { MAX_HEIGHT_M, MIN_HEIGHT_M, REFERENCE_HEIGHT_M } from '../figure/skeleton'
+import { DEFAULT_FIGURE_COLOR, normalizeFigureColor } from '../store/figuresStore'
 import type { BackgroundTone, CameraBookmark, CameraProjection, EnvironmentSettings, Figure } from '../store/figuresStore'
 
 export const SCENE_EXTRAS_VERSION = 1
@@ -121,7 +122,10 @@ export function figureFromExtras(extras: unknown, fallbackIndex: number): Figure
   return {
     id: typeof source.id === 'string' ? source.id : `figure-${fallbackIndex + 1}`,
     name: typeof source.name === 'string' ? source.name : `Figure ${fallbackIndex + 1}`,
-    color: typeof source.color === 'string' ? source.color : '#e04040',
+    // Cor livre desde DECISOES.md #39: qualquer `#rrggbb` serve, mas uma
+    // string que não seja cor NÃO passa — ela iria direto para o material do
+    // three.js e para o `style` do painel.
+    color: normalizeFigureColor(source.color) ?? DEFAULT_FIGURE_COLOR,
     visible: typeof source.visible === 'boolean' ? source.visible : true,
     height: typeof source.height === 'number' ? clampHeight(source.height) : REFERENCE_HEIGHT_M,
     position: tupleToVec3(source.position, [0, 0, 0]),

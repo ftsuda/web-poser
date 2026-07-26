@@ -1,6 +1,6 @@
 import '../../i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { COLOR_PALETTE, MAX_FIGURES, useFiguresStore } from '../../store/figuresStore'
 import { useIKStore } from '../../store/ikStore'
@@ -120,15 +120,19 @@ describe('FiguresPanel', () => {
     expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.height).toBeCloseTo(1.85, 2)
   })
 
-  it('cycles to the next unused palette color when the swatch is clicked', async () => {
-    const user = userEvent.setup()
+  // Cor LIVRE (DECISOES.md #39): o swatch deixou de ser um botão que ciclava
+  // entre as 5 cores da paleta e virou um `<input type="color">`.
+  it('applies ANY color picked in the color input, not just palette colors', async () => {
     const id = useFiguresStore.getState().addFigure('Herói') as string
     await renderFiguresPanel()
 
-    await user.click(screen.getByRole('button', { name: 'Trocar cor' }))
+    const swatch = screen.getByLabelText('Trocar cor') as HTMLInputElement
+    expect(swatch.type).toBe('color')
+    expect(swatch.value).toBe(COLOR_PALETTE[0])
 
-    const color = useFiguresStore.getState().figures.find((f) => f.id === id)?.color
-    expect(color).toBe(COLOR_PALETTE[1])
+    fireEvent.change(swatch, { target: { value: '#7f3ac1' } })
+
+    expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.color).toBe('#7f3ac1')
   })
 
   it('duplicates a figure, copying its pose and height, when the duplicate button is clicked', async () => {

@@ -1,11 +1,12 @@
-import type { ChangeEvent } from 'react'
+import { useState, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { HAND_PRESET_KEYS, type HandPresetKey } from '../figure/handPresets'
 import { applyIKTarget, toggleLimbIK } from '../figure/ikActions'
 import { JOINT_GROUPS, getArmSide, type JointGroupKey } from '../figure/jointGroups'
 import { getLimbEndEffector } from '../figure/ikSolver'
-import type { Side } from '../figure/poseMirror'
-import { POSE_PRESET_KEYS, type PosePresetKey } from '../figure/posePresets'
+import { getMirrorScope, type Side } from '../figure/poseMirror'
+import { getPosePairing } from '../figure/posePairs'
+import { POSE_PRESET_GROUPS, type PosePresetGroupKey, type PosePresetKey } from '../figure/posePresets'
 import { ROOT_JOINT_NAME, getJoint, getJointAxes, type Axis } from '../figure/skeleton'
 import { AXIS_COLORS } from '../scene/axisColors'
 import { useFiguresStore } from '../store/figuresStore'
@@ -97,6 +98,67 @@ const POSE_PRESET_LABEL_KEYS: Record<PosePresetKey, string> = {
   fighting: 'panels.properties.posePresetFighting',
   superman: 'panels.properties.posePresetSuperman',
   model: 'panels.properties.posePresetModel',
+  punchGiving: 'panels.properties.posePresetPunchGiving',
+  punchTaking: 'panels.properties.posePresetPunchTaking',
+  kickGiving: 'panels.properties.posePresetKickGiving',
+  kickTaking: 'panels.properties.posePresetKickTaking',
+  chokeGiving: 'panels.properties.posePresetChokeGiving',
+  chokeTaking: 'panels.properties.posePresetChokeTaking',
+  apose: 'panels.properties.posePresetAPose',
+  pointForward: 'panels.properties.posePresetPointForward',
+  pointUp: 'panels.properties.posePresetPointUp',
+  pointDown: 'panels.properties.posePresetPointDown',
+  pointFar: 'panels.properties.posePresetPointFar',
+  pointAtOther: 'panels.properties.posePresetPointAtOther',
+  presenting: 'panels.properties.posePresetPresenting',
+  pointSelf: 'panels.properties.posePresetPointSelf',
+  thumbBack: 'panels.properties.posePresetThumbBack',
+  squat: 'panels.properties.posePresetSquat',
+  kneelingOneKnee: 'panels.properties.posePresetKneelingOneKnee',
+  kneelingBoth: 'panels.properties.posePresetKneelingBoth',
+  crossLegged: 'panels.properties.posePresetCrossLegged',
+  allFours: 'panels.properties.posePresetAllFours',
+  plank: 'panels.properties.posePresetPlank',
+  pronePropped: 'panels.properties.posePresetPronePropped',
+  sideLying: 'panels.properties.posePresetSideLying',
+  touchToes: 'panels.properties.posePresetTouchToes',
+  armsCrossed: 'panels.properties.posePresetArmsCrossed',
+  handsOnHips: 'panels.properties.posePresetHandsOnHips',
+  waving: 'panels.properties.posePresetWaving',
+  celebrating: 'panels.properties.posePresetCelebrating',
+  handOnChin: 'panels.properties.posePresetHandOnChin',
+  headDown: 'panels.properties.posePresetHeadDown',
+  startled: 'panels.properties.posePresetStartled',
+  jumping: 'panels.properties.posePresetJumping',
+  throwing: 'panels.properties.posePresetThrowing',
+  kickingBall: 'panels.properties.posePresetKickingBall',
+  carryingBox: 'panels.properties.posePresetCarryingBox',
+  climbing: 'panels.properties.posePresetClimbing',
+  stepUp: 'panels.properties.posePresetStepUp',
+  handshake: 'panels.properties.posePresetHandshake',
+  hug: 'panels.properties.posePresetHug',
+  danceLead: 'panels.properties.posePresetDanceLead',
+  danceFollow: 'panels.properties.posePresetDanceFollow',
+  carryingPiggyback: 'panels.properties.posePresetCarryingPiggyback',
+  carriedPiggyback: 'panels.properties.posePresetCarriedPiggyback',
+  carryingCradle: 'panels.properties.posePresetCarryingCradle',
+  carriedCradle: 'panels.properties.posePresetCarriedCradle',
+  pullingUp: 'panels.properties.posePresetPullingUp',
+  beingPulledUp: 'panels.properties.posePresetBeingPulledUp',
+  pushGiving: 'panels.properties.posePresetPushGiving',
+  pushTaking: 'panels.properties.posePresetPushTaking',
+  clinch: 'panels.properties.posePresetClinch',
+  meditating: 'panels.properties.posePresetMeditating',
+  businessman: 'panels.properties.posePresetBusinessman',
+  heroStance: 'panels.properties.posePresetHeroStance',
+  lyingSpreadSupine: 'panels.properties.posePresetLyingSpreadSupine',
+  lyingSpreadProne: 'panels.properties.posePresetLyingSpreadProne',
+  sittingLegsForward: 'panels.properties.posePresetSittingLegsForward',
+  sittingKneesBent: 'panels.properties.posePresetSittingKneesBent',
+  rearChokeKneeling: 'panels.properties.posePresetRearChokeKneeling',
+  rearChokeSeated: 'panels.properties.posePresetRearChokeSeated',
+  groundChokeGiving: 'panels.properties.posePresetGroundChokeGiving',
+  groundChokeTaking: 'panels.properties.posePresetGroundChokeTaking',
 }
 
 /** Descrição longa (tooltip) das poses cujo rótulo curto não se explica sozinho. */
@@ -106,6 +168,72 @@ const POSE_PRESET_HINT_KEYS: Partial<Record<PosePresetKey, string>> = {
   fighting: 'panels.properties.posePresetFightingHint',
   superman: 'panels.properties.posePresetSupermanHint',
   model: 'panels.properties.posePresetModelHint',
+  // As poses de luta vêm em par: a dica de cada uma diz com qual outra ela
+  // se encaixa, senão não dá para saber que existe um par (DECISOES.md #35).
+  punchGiving: 'panels.properties.posePresetPunchGivingHint',
+  punchTaking: 'panels.properties.posePresetPunchTakingHint',
+  kickGiving: 'panels.properties.posePresetKickGivingHint',
+  kickTaking: 'panels.properties.posePresetKickTakingHint',
+  chokeGiving: 'panels.properties.posePresetChokeGivingHint',
+  chokeTaking: 'panels.properties.posePresetChokeTakingHint',
+  apose: 'panels.properties.posePresetAPoseHint',
+  pointForward: 'panels.properties.posePresetPointForwardHint',
+  pointUp: 'panels.properties.posePresetPointUpHint',
+  pointDown: 'panels.properties.posePresetPointDownHint',
+  pointFar: 'panels.properties.posePresetPointFarHint',
+  pointAtOther: 'panels.properties.posePresetPointAtOtherHint',
+  presenting: 'panels.properties.posePresetPresentingHint',
+  pointSelf: 'panels.properties.posePresetPointSelfHint',
+  thumbBack: 'panels.properties.posePresetThumbBackHint',
+  squat: 'panels.properties.posePresetSquatHint',
+  kneelingOneKnee: 'panels.properties.posePresetKneelingOneKneeHint',
+  kneelingBoth: 'panels.properties.posePresetKneelingBothHint',
+  crossLegged: 'panels.properties.posePresetCrossLeggedHint',
+  allFours: 'panels.properties.posePresetAllFoursHint',
+  plank: 'panels.properties.posePresetPlankHint',
+  pronePropped: 'panels.properties.posePresetProneProppedHint',
+  sideLying: 'panels.properties.posePresetSideLyingHint',
+  touchToes: 'panels.properties.posePresetTouchToesHint',
+  armsCrossed: 'panels.properties.posePresetArmsCrossedHint',
+  handsOnHips: 'panels.properties.posePresetHandsOnHipsHint',
+  waving: 'panels.properties.posePresetWavingHint',
+  celebrating: 'panels.properties.posePresetCelebratingHint',
+  handOnChin: 'panels.properties.posePresetHandOnChinHint',
+  headDown: 'panels.properties.posePresetHeadDownHint',
+  startled: 'panels.properties.posePresetStartledHint',
+  jumping: 'panels.properties.posePresetJumpingHint',
+  throwing: 'panels.properties.posePresetThrowingHint',
+  kickingBall: 'panels.properties.posePresetKickingBallHint',
+  carryingBox: 'panels.properties.posePresetCarryingBoxHint',
+  climbing: 'panels.properties.posePresetClimbingHint',
+  stepUp: 'panels.properties.posePresetStepUpHint',
+  // Nos pares, a dica é a única coisa que diz a DISTÂNCIA em que as duas
+  // poses se encaixam — sem ela o encaixe resolvido numericamente não chega
+  // ao usuário (DECISOES.md #37).
+  handshake: 'panels.properties.posePresetHandshakeHint',
+  hug: 'panels.properties.posePresetHugHint',
+  danceLead: 'panels.properties.posePresetDanceLeadHint',
+  danceFollow: 'panels.properties.posePresetDanceFollowHint',
+  carryingPiggyback: 'panels.properties.posePresetCarryingPiggybackHint',
+  carriedPiggyback: 'panels.properties.posePresetCarriedPiggybackHint',
+  carryingCradle: 'panels.properties.posePresetCarryingCradleHint',
+  carriedCradle: 'panels.properties.posePresetCarriedCradleHint',
+  pullingUp: 'panels.properties.posePresetPullingUpHint',
+  beingPulledUp: 'panels.properties.posePresetBeingPulledUpHint',
+  pushGiving: 'panels.properties.posePresetPushGivingHint',
+  pushTaking: 'panels.properties.posePresetPushTakingHint',
+  clinch: 'panels.properties.posePresetClinchHint',
+  meditating: 'panels.properties.posePresetMeditatingHint',
+  businessman: 'panels.properties.posePresetBusinessmanHint',
+  heroStance: 'panels.properties.posePresetHeroStanceHint',
+  lyingSpreadSupine: 'panels.properties.posePresetLyingSpreadSupineHint',
+  lyingSpreadProne: 'panels.properties.posePresetLyingSpreadProneHint',
+  sittingLegsForward: 'panels.properties.posePresetSittingLegsForwardHint',
+  sittingKneesBent: 'panels.properties.posePresetSittingKneesBentHint',
+  rearChokeKneeling: 'panels.properties.posePresetRearChokeKneelingHint',
+  rearChokeSeated: 'panels.properties.posePresetRearChokeSeatedHint',
+  groundChokeGiving: 'panels.properties.posePresetGroundChokeGivingHint',
+  groundChokeTaking: 'panels.properties.posePresetGroundChokeTakingHint',
 }
 
 const HAND_PRESET_LABEL_KEYS: Record<HandPresetKey, string> = {
@@ -120,6 +248,55 @@ const HAND_PRESETS_LEGEND_KEYS: Record<Side, string> = {
   R: 'panels.properties.handPresetsRight',
 }
 
+interface SymmetryFieldsetProps {
+  figureId: string
+  /**
+   * Junta a partir da qual a simetria vale (ela e seus descendentes), ou `null`
+   * na raiz — aí é o boneco inteiro.
+   */
+  scopeJoint: string | null
+}
+
+/**
+ * Espelhar/inverter os lados (DECISOES.md #30), agora com escopo parcial
+ * (#34): os mesmos três botões aparecem na raiz e em qualquer junta que tenha
+ * par embaixo, e o que muda é só até onde eles alcançam. Ficam ocultos onde
+ * não há nada a espelhar (pescoço, cabeça), em vez de aparecerem sem efeito.
+ *
+ * Os rótulos continuam dizendo a direção da cópia (direito → esquerdo) em vez
+ * de "deste lado para o outro": o escopo não depende do lado da junta
+ * selecionada, então a direção precisa ser escolhida pelo botão.
+ */
+function SymmetryFieldset({ figureId, scopeJoint }: SymmetryFieldsetProps) {
+  const { t } = useTranslation()
+  const mirrorSide = useFiguresStore((state) => state.mirrorSide)
+  const swapSides = useFiguresStore((state) => state.swapSides)
+
+  if (getMirrorScope(scopeJoint).length === 0) return null
+
+  return (
+    <fieldset aria-label={t('panels.properties.symmetry')}>
+      <legend>{t('panels.properties.symmetry')}</legend>
+      <p className="properties-panel__hint">
+        {scopeJoint
+          ? t('panels.properties.symmetryScopeHint', { joint: scopeJoint })
+          : t('panels.properties.symmetryHint')}
+      </p>
+      <div className="properties-panel__pose-presets">
+        <button type="button" onClick={() => mirrorSide(figureId, 'R', scopeJoint)}>
+          {t('panels.properties.mirrorFromRight')}
+        </button>
+        <button type="button" onClick={() => mirrorSide(figureId, 'L', scopeJoint)}>
+          {t('panels.properties.mirrorFromLeft')}
+        </button>
+        <button type="button" onClick={() => swapSides(figureId, scopeJoint)}>
+          {t('panels.properties.swapSides')}
+        </button>
+      </div>
+    </fieldset>
+  )
+}
+
 const JOINT_GROUP_LABEL_KEYS: Record<JointGroupKey, string> = {
   trunk: 'panels.properties.jointGroupTrunk',
   head: 'panels.properties.jointGroupHead',
@@ -129,8 +306,21 @@ const JOINT_GROUP_LABEL_KEYS: Record<JointGroupKey, string> = {
   legLeft: 'panels.properties.jointGroupLegLeft',
 }
 
+const POSE_PRESET_GROUP_LABEL_KEYS: Record<PosePresetGroupKey, string> = {
+  reference: 'panels.properties.poseGroupReference',
+  everyday: 'panels.properties.poseGroupEveryday',
+  ground: 'panels.properties.poseGroupGround',
+  pointing: 'panels.properties.poseGroupPointing',
+  action: 'panels.properties.poseGroupAction',
+  expressive: 'panels.properties.poseGroupExpressive',
+  pairs: 'panels.properties.poseGroupPairs',
+  fight: 'panels.properties.poseGroupFight',
+}
+
 export function PropertiesPanel() {
   const { t } = useTranslation()
+  // Qual pose está ESCOLHIDA no combo — aplicar é um passo à parte.
+  const [selectedPose, setSelectedPose] = useState<PosePresetKey>('standing')
   const figures = useFiguresStore((state) => state.figures)
   const selectedFigureId = useFiguresStore((state) => state.selectedFigureId)
   const selectedJointName = useFiguresStore((state) => state.selectedJointName)
@@ -142,8 +332,7 @@ export function PropertiesPanel() {
   const setActiveAxis = useFiguresStore((state) => state.setActiveAxis)
   const applyPosePreset = useFiguresStore((state) => state.applyPosePreset)
   const applyHandPreset = useFiguresStore((state) => state.applyHandPreset)
-  const mirrorSide = useFiguresStore((state) => state.mirrorSide)
-  const swapSides = useFiguresStore((state) => state.swapSides)
+  const applyRandomPose = useFiguresStore((state) => state.applyRandomPose)
   const resetJointRotation = useFiguresStore((state) => state.resetJointRotation)
   const rootGizmoMode = useUIStore((state) => state.rootGizmoMode)
   const setRootGizmoMode = useUIStore((state) => state.setRootGizmoMode)
@@ -173,6 +362,12 @@ export function PropertiesPanel() {
   }
 
   const isRoot = selectedJointName === ROOT_JOINT_NAME
+  const selectedPoseHintKey = POSE_PRESET_HINT_KEYS[selectedPose]
+  // Aviso de que aplicar vai mexer TAMBÉM no outro boneco (DECISOES.md #41).
+  // Só aparece quando isso de fato vai acontecer — com um boneco só, ou com
+  // três, a montagem continua manual e a dica da pose (com a distância) é que
+  // vale.
+  const pairsAutomatically = figures.length === 2 && getPosePairing(selectedPose) !== null
   // Poses de mão aparecem no contexto: qualquer junta do braço (clavícula →
   // ponta dos dedos) revela as poses DAQUELA mão, sem um seletor de lado à
   // parte (ver DECISOES.md #30).
@@ -246,40 +441,57 @@ export function PropertiesPanel() {
 
       {isRoot ? (
         <>
+          {/* Combo agrupado + botão "Aplicar" (pedido do usuário, DECISOES.md
+              #36): com mais de 30 poses a grade de botões deixou de caber. A
+              escolha não aplica sozinha — só o botão aplica —, para que
+              navegar pela lista com o teclado não desmonte a pose atual. */}
           <fieldset aria-label={t('panels.properties.posePresets')}>
             <legend>{t('panels.properties.posePresets')}</legend>
+              <select
+                id="pose-preset-select"
+                className="properties-panel__pose-select"
+                aria-label={t('panels.properties.posePresets')}
+                value={selectedPose}
+                onChange={(event) => setSelectedPose(event.target.value as PosePresetKey)}
+              >
+                {POSE_PRESET_GROUPS.map((group) => (
+                  <optgroup key={group.key} label={t(POSE_PRESET_GROUP_LABEL_KEYS[group.key])}>
+                    {group.poses.map((key) => (
+                      <option key={key} value={key}>
+                        {t(POSE_PRESET_LABEL_KEYS[key])}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            {selectedPoseHintKey && (
+              <p className="properties-panel__hint">{t(selectedPoseHintKey)}</p>
+            )}
+            {pairsAutomatically && (
+              <p className="properties-panel__hint">{t('panels.properties.posePairAuto')}</p>
+            )}
             <div className="properties-panel__pose-presets">
-              {POSE_PRESET_KEYS.map((key) => {
-                const hintKey = POSE_PRESET_HINT_KEYS[key]
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    title={hintKey ? t(hintKey) : undefined}
-                    onClick={() => applyPosePreset(figure.id, key)}
-                  >
-                    {t(POSE_PRESET_LABEL_KEYS[key])}
-                  </button>
-                )
-              })}
+              <button
+                type="button"
+                className="properties-panel__apply-pose"
+                onClick={() => applyPosePreset(figure.id, selectedPose)}
+              >
+                {t('panels.properties.applyPose')}
+              </button>
+              {/* O sorteio fica FORA do combo (pedido do usuário): não é uma
+                  pose da lista — cada clique dá uma diferente. */}
+              <button
+                type="button"
+                className="properties-panel__random-pose"
+                title={t('panels.properties.randomPoseHint')}
+                onClick={() => applyRandomPose(figure.id)}
+              >
+                {t('panels.properties.randomPose')}
+              </button>
             </div>
           </fieldset>
 
-          <fieldset aria-label={t('panels.properties.symmetry')}>
-            <legend>{t('panels.properties.symmetry')}</legend>
-            <p className="properties-panel__hint">{t('panels.properties.symmetryHint')}</p>
-            <div className="properties-panel__pose-presets">
-              <button type="button" onClick={() => mirrorSide(figure.id, 'R')}>
-                {t('panels.properties.mirrorFromRight')}
-              </button>
-              <button type="button" onClick={() => mirrorSide(figure.id, 'L')}>
-                {t('panels.properties.mirrorFromLeft')}
-              </button>
-              <button type="button" onClick={() => swapSides(figure.id)}>
-                {t('panels.properties.swapSides')}
-              </button>
-            </div>
-          </fieldset>
+          <SymmetryFieldset figureId={figure.id} scopeJoint={null} />
 
           {/* Alternância translação/rotação do gizmo da raiz (fase 9, item
               13) — a rotação gira em torno do próprio pivô do quadril, ponto
@@ -435,6 +647,11 @@ export function PropertiesPanel() {
               </button>
             </fieldset>
           )}
+
+          {/* Simetria parcial (DECISOES.md #34): daqui para baixo, nos dois
+              lados. Fica depois da rotação para não empurrar os sliders — o
+              controle principal da junta — para longe do topo do painel. */}
+          <SymmetryFieldset figureId={figure.id} scopeJoint={selectedJointName} />
         </>
       )}
     </CollapsiblePanel>

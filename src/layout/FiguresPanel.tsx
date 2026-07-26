@@ -1,11 +1,6 @@
 import { useState, type ChangeEvent, type FocusEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  COLOR_PALETTE,
-  MAX_FIGURES,
-  useFiguresStore,
-  type Figure,
-} from '../store/figuresStore'
+import { MAX_FIGURES, useFiguresStore, type Figure } from '../store/figuresStore'
 import { IK_CHAINS } from '../figure/ikSolver'
 import { MAX_HEIGHT_M, MIN_HEIGHT_M } from '../figure/skeleton'
 import { slugifySceneName } from '../keyframe/keyframeNaming'
@@ -14,16 +9,6 @@ import { exportFigureToGlb, importFigureFromGlb } from '../persistence/sceneFile
 import { useIKStore } from '../store/ikStore'
 import { importErrorKey } from './fileFeedback'
 import { CollapsiblePanel } from './CollapsiblePanel'
-
-function nextUnusedColor(figures: readonly Figure[], current: string): string {
-  const used = new Set(figures.filter((figure) => figure.color !== current).map((f) => f.color))
-  const startIndex = COLOR_PALETTE.indexOf(current)
-  for (let offset = 1; offset <= COLOR_PALETTE.length; offset += 1) {
-    const candidate = COLOR_PALETTE[(startIndex + offset) % COLOR_PALETTE.length]
-    if (!used.has(candidate)) return candidate
-  }
-  return current
-}
 
 interface FigureRowProps {
   figure: Figure
@@ -51,7 +36,6 @@ function FigureRow({ figure, selected, atLimit }: FigureRowProps) {
   const ikLimbs = Object.keys(IK_CHAINS).filter(
     (endEffector) => enabledLimbs[`${figure.id}:${endEffector}`] === true,
   )
-  const figures = useFiguresStore((state) => state.figures)
   const selectFigure = useFiguresStore((state) => state.selectFigure)
   const renameFigure = useFiguresStore((state) => state.renameFigure)
   const removeFigure = useFiguresStore((state) => state.removeFigure)
@@ -80,8 +64,8 @@ function FigureRow({ figure, selected, atLimit }: FigureRowProps) {
     if (!Number.isNaN(value)) setHeight(figure.id, value)
   }
 
-  const handleColorClick = () => {
-    setColor(figure.id, nextUnusedColor(figures, figure.color))
+  const handleColorChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setColor(figure.id, event.target.value)
   }
 
   const handleExport = async () => {
@@ -96,16 +80,18 @@ function FigureRow({ figure, selected, atLimit }: FigureRowProps) {
       aria-selected={selected}
       onClick={() => selectFigure(figure.id)}
     >
-      <button
-        type="button"
+      {/* Seletor de cor LIVRE (DECISOES.md #39): era um botão que ciclava
+          entre 5 cores fixas. O `<input type="color">` nativo já é o próprio
+          indicador da cor atual e abre o seletor do sistema — sem dependência
+          nova e com o teclado funcionando de graça. */}
+      <input
+        type="color"
         className="figures-panel__swatch"
-        style={{ backgroundColor: figure.color }}
         title={t('panels.figures.changeColor')}
         aria-label={t('panels.figures.changeColor')}
-        onClick={(event) => {
-          event.stopPropagation()
-          handleColorClick()
-        }}
+        value={figure.color}
+        onClick={(event) => event.stopPropagation()}
+        onChange={handleColorChange}
       />
 
       <input

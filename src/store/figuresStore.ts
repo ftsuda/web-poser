@@ -17,6 +17,13 @@ import {
 import { resolveHandPreset, type HandPresetKey } from '../figure/handPresets'
 import { mirrorPoseSide, swapPoseSides, type Side } from '../figure/poseMirror'
 import { resolvePosePreset, resolvePosePresetPlacement, type PosePresetKey } from '../figure/posePresets'
+import {
+  getPosePairing,
+  resolvePairedOffset,
+  resolvePairedRotation,
+  type PosePairing,
+} from '../figure/posePairs'
+import { resolveRandomPose } from '../figure/randomPose'
 import { loadWorkspaceFromLocalStorage } from '../persistence/autosave'
 
 export const MAX_FIGURES = 5
@@ -47,7 +54,17 @@ export interface CameraBookmark {
   zoom: number
 }
 
-/** Paleta fixa de 5 cores de alto contraste: vermelho, azul, verde, laranja, roxo. */
+/**
+ * Cores PADRÃO dos bonecos — 5 tons de alto contraste (vermelho, azul, verde,
+ * laranja, roxo), atribuídas em rodízio a cada boneco novo para que dois
+ * bonecos não nasçam da mesma cor.
+ *
+ * Desde DECISOES.md #39 esta lista NÃO é mais o conjunto de cores permitidas:
+ * o usuário escolhe qualquer cor pelo seletor do painel, e `setColor` valida
+ * só o FORMATO. Duas consequências que valem lembrar: dois bonecos podem ter
+ * a mesma cor (é escolha de quem monta a cena), e acrescentar um boneco não
+ * depende mais de sobrar cor na paleta.
+ */
 export const COLOR_PALETTE: readonly string[] = [
   '#e04040',
   '#4060e0',
@@ -55,6 +72,30 @@ export const COLOR_PALETTE: readonly string[] = [
   '#e08020',
   '#8040c0',
 ]
+
+/** Cor usada quando um arquivo traz uma cor ilegível (ver `sceneSerialization.ts`). */
+export const DEFAULT_FIGURE_COLOR = COLOR_PALETTE[0]
+
+const HEX_COLOR = /^#[0-9a-f]{6}$/
+
+/**
+ * Aceita só `#rrggbb` minúsculo depois de normalizar — é o formato que o
+ * `<input type="color">` produz, o que o `THREE.MeshStandardMaterial` entende
+ * e o que vai para o `.glb`. Validar o FORMATO (e não uma lista de valores) é
+ * o que permite cor livre sem deixar entrar string arbitrária vinda de um
+ * arquivo de cena ou do `localStorage`.
+ *
+ * A forma curta `#rgb` é aceita e expandida: é válida em CSS, e um usuário
+ * editando um `.glb` à mão pode escrevê-la.
+ */
+export function normalizeFigureColor(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.trim().toLowerCase()
+  if (/^#[0-9a-f]{3}$/.test(text)) {
+    return `#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`
+  }
+  return HEX_COLOR.test(text) ? text : null
+}
 
 export interface Figure {
   id: string
@@ -190,14 +231,29 @@ export interface FiguresState {
    * conforme o preset pedir (rotação do boneco e altura do quadril — ver
    * `resolvePosePresetPlacement` e DECISOES.md #30). X/Z, ou seja, ONDE o
    * boneco está no chão, nunca mudam.
+   *
+   * Exceção: se a pose for de dupla (`posePairs.ts`) e houver EXATAMENTE dois
+   * bonecos em cena, o outro recebe a pose correspondente e é posicionado à
+   * distância certa — as duas metades numa única edição, e um só Ctrl+Z
+   * desfaz o par inteiro.
    */
   applyPosePreset: (id: string, key: PosePresetKey) => void
   /** Aplica uma pose de mão a UM lado, preservando punho, braço e a outra mão. */
   applyHandPreset: (id: string, side: Side, key: HandPresetKey) => void
-  /** Copia o lado indicado, espelhado, para o outro — só juntas `.L`/`.R`. */
-  mirrorSide: (id: string, from: Side) => void
-  /** Troca as poses dos dois lados, cada uma espelhada — só juntas `.L`/`.R`. */
-  swapSides: (id: string) => void
+  /**
+   * Sorteia uma pose inteira dentro dos limites das juntas (DECISOES.md #35).
+   * Só o corpo entra no sorteio: mãos ficam abertas, e onde o boneco está e
+   * para onde encara não mudam.
+   */
+  applyRandomPose: (id: string) => void
+  /**
+   * Copia o lado indicado, espelhado, para o outro — só juntas `.L`/`.R`.
+   * `scopeJoint` restringe a operação àquela junta e seus descendentes (ex.:
+   * `shoulder.R` mexe só no braço); sem ele, vale o boneco inteiro.
+   */
+  mirrorSide: (id: string, from: Side, scopeJoint?: string | null) => void
+  /** Troca as poses dos dois lados, cada uma espelhada — mesmo `scopeJoint` de `mirrorSide`. */
+  swapSides: (id: string, scopeJoint?: string | null) => void
 }
 
 const ZERO_ROTATION: JointRotation = { x: 0, y: 0, z: 0 }
@@ -224,9 +280,18 @@ function clampHeight(heightM: number): number {
   return Math.min(MAX_HEIGHT_M, Math.max(MIN_HEIGHT_M, heightM))
 }
 
-function nextAvailableColor(figures: readonly Figure[]): string | null {
+/**
+ * Cor padrão do próximo boneco: a primeira da paleta que ainda não esteja em
+ * uso e, se todas estiverem, a próxima no rodízio. NUNCA devolve `null` — o
+ * limite de bonecos é `MAX_FIGURES`, e não o tamanho da paleta. Antes de
+ * DECISOES.md #39 devolvia `null` com a paleta cheia, o que só não travava o
+ * app porque as duas listas tinham o mesmo tamanho E as cores eram únicas;
+ * com cor livre, dois bonecos da mesma cor deixariam sobrar paleta e impediriam
+ * acrescentar o terceiro.
+ */
+function nextDefaultColor(figures: readonly Figure[]): string {
   const used = new Set(figures.map((figure) => figure.color))
-  return COLOR_PALETTE.find((color) => !used.has(color)) ?? null
+  return COLOR_PALETTE.find((color) => !used.has(color)) ?? COLOR_PALETTE[figures.length % COLOR_PALETTE.length]
 }
 
 function updateFigure(
@@ -235,6 +300,53 @@ function updateFigure(
   update: (figure: Figure) => Figure,
 ): Figure[] {
   return figures.map((figure) => (figure.id === id ? update(figure) : figure))
+}
+
+/**
+ * Aplica um preset a UM boneco: a pose interna, a rotação e a altura que o
+ * preset pede. X/Z — onde ele está no chão — ficam onde o usuário os deixou.
+ */
+function withPosePreset(figure: Figure, key: PosePresetKey): Figure {
+  const placement = resolvePosePresetPlacement(key)
+
+  return {
+    ...figure,
+    pose: resolvePosePreset(key),
+    rotation: placement.preservesHeading
+      ? { ...placement.rotation, y: figure.rotation.y }
+      : placement.rotation,
+    // O deslocamento vertical acompanha a escala do boneco, para que um de
+    // 1,50 m deite tão colado ao chão quanto um de 1,90 m.
+    position: [figure.position[0], placement.groundOffsetM * getHeightScale(figure.height), figure.position[2]],
+  }
+}
+
+/**
+ * Aplica ao PARCEIRO a outra metade de uma pose em dupla, montando o par: a
+ * pose correspondente, o giro (180° quando um encara o outro) e a distância
+ * medida da tabela de `posePairs.ts`. Diferente de `withPosePreset`, aqui o
+ * X/Z é calculado — é justamente o que o usuário tinha de acertar a olho.
+ *
+ * O par inteiro é rígido: a montagem canônica (origem olhando para +Z) é
+ * girada pelo giro de encenação de quem recebeu a pose, e o mesmo giro vale
+ * para o deslocamento e para a rotação do parceiro. Nas poses que impõem
+ * rotação própria (deitado) não existe "para onde ele encara", então a
+ * montagem canônica é a única — daí o `preservesHeading` mandar no `heading`.
+ */
+function withPairedPreset(partner: Figure, anchor: Figure, anchorKey: PosePresetKey, pairing: PosePairing): Figure {
+  const posed = withPosePreset(partner, pairing.counterpart)
+  const heading = resolvePosePresetPlacement(anchorKey).preservesHeading ? anchor.rotation.y : 0
+  // A distância foi medida com os dois na altura de referência; com alturas
+  // diferentes ela é parte alcance de um e parte alvo do outro, e a média das
+  // duas escalas é a repartição neutra entre eles.
+  const scale = (getHeightScale(anchor.height) + getHeightScale(partner.height)) / 2
+  const [dx, dz] = resolvePairedOffset(pairing.gapM, heading, scale)
+
+  return {
+    ...posed,
+    position: [anchor.position[0] + dx, posed.position[1], anchor.position[2] + dz],
+    rotation: resolvePairedRotation(pairing.counterpart, heading, pairing.facing),
+  }
 }
 
 function clampFigurePose(figure: Figure): Figure {
@@ -295,8 +407,7 @@ export const useFiguresStore = create<FiguresState>()(
         const { figures, nextFigureSeq } = get()
         if (figures.length >= MAX_FIGURES) return null
 
-        const color = nextAvailableColor(figures)
-        if (!color) return null
+        const color = nextDefaultColor(figures)
 
         const id = `figure-${nextFigureSeq}`
         const figure: Figure = {
@@ -333,8 +444,7 @@ export const useFiguresStore = create<FiguresState>()(
         const original = figures.find((figure) => figure.id === id)
         if (!original) return null
 
-        const color = nextAvailableColor(figures)
-        if (!color) return null
+        const color = nextDefaultColor(figures)
 
         const newId = `figure-${nextFigureSeq}`
         const duplicate: Figure = {
@@ -400,15 +510,18 @@ export const useFiguresStore = create<FiguresState>()(
         }))
       },
 
+      // Cor LIVRE (DECISOES.md #39): valida o formato, não uma lista. Também
+      // não exige mais que a cor seja única entre os bonecos — dois bonecos da
+      // mesma cor é escolha de quem monta a cena, e recusar em silêncio uma cor
+      // escolhida num seletor de cor seria só um botão que não funciona.
       setColor: (id, color) => {
-        if (!COLOR_PALETTE.includes(color)) return
-
-        const { figures } = get()
-        const takenByAnother = figures.some((figure) => figure.id !== id && figure.color === color)
-        if (takenByAnother) return
+        const normalized = normalizeFigureColor(color)
+        if (!normalized) return
 
         set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({ ...figure, color })),
+          figures: updateFigure(state.figures, id, (figure) =>
+            figure.color === normalized ? figure : { ...figure, color: normalized },
+          ),
         }))
       },
 
@@ -596,7 +709,7 @@ export const useFiguresStore = create<FiguresState>()(
         const { figures, nextFigureSeq } = get()
         if (figures.length >= MAX_FIGURES) return null
 
-        const color = nextAvailableColor(figures) ?? imported.color
+        const color = nextDefaultColor(figures)
         const id = `figure-${nextFigureSeq}`
         const figure: Figure = { ...imported, id, color }
 
@@ -696,25 +809,30 @@ export const useFiguresStore = create<FiguresState>()(
       },
 
       applyPosePreset: (id, key) => {
-        const pose = resolvePosePreset(key)
-        const placement = resolvePosePresetPlacement(key)
-        set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({
-            ...figure,
-            pose,
-            rotation: placement.preservesHeading
-              ? { ...placement.rotation, y: figure.rotation.y }
-              : placement.rotation,
-            // O deslocamento vertical acompanha a escala do boneco, para que um
-            // de 1,50 m deite tão colado ao chão quanto um de 1,90 m; X e Z
-            // (onde ele está no chão) ficam onde o usuário os deixou.
-            position: [
-              figure.position[0],
-              placement.groundOffsetM * getHeightScale(figure.height),
-              figure.position[2],
-            ],
-          })),
-        }))
+        set((state) => {
+          const anchor = state.figures.find((figure) => figure.id === id)
+          if (!anchor) return {}
+
+          const posed = withPosePreset(anchor, key)
+          const pairing = getPosePairing(key)
+          // Pose em dupla com DOIS bonecos em cena: o outro recebe a metade
+          // correspondente, já posicionada. Com três ou mais não há como saber
+          // qual é o parceiro, e desmontar a pose do boneco errado seria pior
+          // do que não fazer nada — aí a montagem continua manual, guiada pela
+          // distância que a dica da pose informa.
+          const partnerId =
+            pairing && state.figures.length === 2
+              ? (state.figures.find((figure) => figure.id !== id)?.id ?? null)
+              : null
+
+          return {
+            figures: state.figures.map((figure) => {
+              if (figure.id === id) return posed
+              if (figure.id === partnerId) return withPairedPreset(figure, posed, key, pairing!)
+              return figure
+            }),
+          }
+        })
       },
 
       applyHandPreset: (id, side, key) => {
@@ -727,20 +845,29 @@ export const useFiguresStore = create<FiguresState>()(
         }))
       },
 
-      mirrorSide: (id, from) => {
+      applyRandomPose: (id) => {
         set((state) => ({
           figures: updateFigure(state.figures, id, (figure) => ({
             ...figure,
-            pose: mirrorPoseSide(figure.pose, from),
+            pose: resolveRandomPose(),
           })),
         }))
       },
 
-      swapSides: (id) => {
+      mirrorSide: (id, from, scopeJoint) => {
         set((state) => ({
           figures: updateFigure(state.figures, id, (figure) => ({
             ...figure,
-            pose: swapPoseSides(figure.pose),
+            pose: mirrorPoseSide(figure.pose, from, scopeJoint),
+          })),
+        }))
+      },
+
+      swapSides: (id, scopeJoint) => {
+        set((state) => ({
+          figures: updateFigure(state.figures, id, (figure) => ({
+            ...figure,
+            pose: swapPoseSides(figure.pose, scopeJoint),
           })),
         }))
       },

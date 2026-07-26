@@ -401,6 +401,27 @@ export function getJointChildren(name: string): JointDefinition[] {
   return JOINTS.filter((joint) => joint.parent === name).map((joint) => getJoint(joint.name))
 }
 
+/**
+ * A junta e tudo o que vem DEPOIS dela (o contrário de `getJointChain`), em
+ * largura — cada junta sempre depois do próprio pai. É o que delimita as
+ * operações parciais de pose: com o ombro direito selecionado, o subárvore vai
+ * do ombro à ponta dos dedos e as pernas ficam de fora (ver `poseMirror.ts` e
+ * DECISOES.md #34).
+ */
+export function getJointSubtree(name: string): string[] {
+  getJoint(name) // valida o nome, como as demais funções deste módulo
+  const subtree: string[] = []
+  const pending = [name]
+
+  while (pending.length > 0) {
+    const current = pending.shift() as string
+    subtree.push(current)
+    pending.push(...getJointChildren(current).map((child) => child.name))
+  }
+
+  return subtree
+}
+
 export function getJointChain(name: string): string[] {
   const chain: string[] = []
   let current: JointDefinition | undefined = getJoint(name)

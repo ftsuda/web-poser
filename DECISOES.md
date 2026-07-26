@@ -765,3 +765,230 @@ Detalhe que só aparece ao renomear: `Viewport.tsx` mantinha `import { Figure2 a
 O `RULER_POSITION` foi removido de `constants.ts`: com a âncora vinda do estado, uma constante de posição fixa só poderia mentir.
 
 **Validação:** 4 testes novos (âncora em X/Z, nascer no chão com boneco erguido, não desenhar sem seleção, `depthTest` desligado); suíte em **637 testes**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real (headless via Playwright), sem erro de console: com dois bonecos em posições diferentes, a régua salta de um para o outro conforme a seleção; some ao clicar no vazio (com a caixa da Toolbar ainda marcada); e aparece por cima do corpo, legível, com o boneco erguido do chão.
+
+---
+
+## 34. Espelho e inversão parciais: a simetria passa a valer da junta selecionada para baixo
+
+**Contexto:** as operações de simetria do #30 (copiar um lado espelhado para o outro, inverter os dois) valiam sempre o boneco inteiro, e por isso viviam só no painel da raiz. O usuário pediu que fossem parciais — "se o ombro direito estiver selecionado, somente ela e as juntas depois dela até a mão são afetadas; as pernas ficariam intactas".
+
+**A definição de escopo adotada — subárvore, não "membro".** O escopo é a junta selecionada mais todos os seus descendentes (`getJointSubtree`, novo em `skeleton.ts`, o contrário exato do `getJointChain` que já existia), interseção com as juntas pareadas. Não é uma tabela de membros porque a hierarquia já responde a pergunta melhor do que uma lista escrita à mão responderia, e de graça:
+
+- `shoulder.R` → do ombro à ponta dos dedos (a clavícula, que está ACIMA, fica de fora — como o usuário descreveu);
+- `spine`, `chest`, `upperChest` → os **dois braços**, e nenhuma perna: as pernas nascem na raiz, não no tronco, então "tronco para baixo" não as inclui. Vale a pena saber disso ao ler a dica na tela;
+- `root` → o boneco inteiro, que é exatamente o comportamento antigo. O comando de corpo todo virou um caso particular do parcial, em vez de um caminho separado;
+- `neck`, `head` → vazio; não há par nenhum embaixo.
+
+**Decisões que a implementação exigiu:**
+
+1. **O escopo inclui os DOIS lados, e não depende do lado da junta selecionada.** Espelhar escreve na junta pareada: o destino é tão afetado quanto a origem, então `getMirrorScope('shoulder.R')` devolve as 8 juntas da direita e as 8 da esquerda. E `shoulder.L` devolve o mesmo conjunto — o que a seleção define é **até onde** a operação vai, não a direção da cópia. Por isso os rótulos dos botões continuam dizendo a direção explicitamente ("Copiar direito → esquerdo") em vez de virarem "deste lado para o outro": com uma junta do lado esquerdo selecionada, "deste lado" seria ambíguo justamente para quem estivesse consertando o lado errado.
+
+2. **Parâmetro opcional, comportamento antigo intacto.** `mirrorPoseSide(pose, from, scopeJoint?)` e `swapPoseSides(pose, scopeJoint?)` (e as ações `mirrorSide`/`swapSides` do store) mantêm a assinatura anterior funcionando — sem `scopeJoint` é o boneco inteiro. Nenhuma chamada existente precisou mudar, e os testes do #30 continuam valendo como trava de regressão do caso completo.
+
+3. **A simetria saiu do painel da raiz e virou um `SymmetryFieldset` reaproveitado.** Os mesmos três botões aparecem na raiz e em qualquer junta com par embaixo; o que muda é a dica (`symmetryScopeHint`, com o nome da junta interpolado) e o alcance. Onde o escopo é vazio (pescoço, cabeça) o bloco **não é renderizado** em vez de aparecer sem efeito — é a mesma regra que a régua do #33 seguiu: controle que não faz nada é lido como defeito. No painel da junta ele fica **depois** da rotação, para não empurrar os sliders (o controle principal) para longe do topo.
+
+4. **A involução continua valendo no parcial.** Inverter duas vezes com o mesmo escopo devolve a pose original — o que mantém o botão seguro como alternância, agora também restrito a um membro.
+
+**Verificação numérica (o mesmo padrão do #30, não uma inspeção visual):** com o escopo na clavícula direita — o braço inteiro pendurado numa junta central —, cada junta do braço cai na posição de mundo do par com X negado, **erro 0,000 m**, enquanto o joelho, fora do escopo, permanece a mais de 5 cm da posição espelhada. É a trava que prova as duas metades do pedido de uma vez: o que está no escopo espelha exatamente, o que está fora não se move.
+
+**Validação:** 22 testes novos (subárvore do esqueleto, escopo, espelho/inversão parciais, ações do store e o painel), suíte em **659 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real (headless via Playwright), sem erro de console: partindo da pose "Andando" (assimétrica nos quatro membros), espelhar com `shoulder.R` selecionado deixa os braços simétricos e a passada das pernas intacta; inverter com `hip.L` selecionado troca as pernas sem desfazer os braços; a dica na tela acompanha a junta selecionada ("Vale de shoulder.R para baixo…"), o bloco some na cabeça e continua aparecendo no tronco e na raiz.
+
+---
+
+## 35. Poses de luta em par e o botão de pose aleatória
+
+**Contexto:** o usuário pediu três pares de poses de luta — soco, chute e gravata por trás, cada golpe com a pose de quem dá e a de quem recebe — e um botão que sorteia uma pose qualquer dentro dos limites.
+
+**Duas definições confirmadas antes de implementar:**
+
+| Questão | Escolha do usuário | Consequência |
+|---|---|---|
+| Como reage quem recebe o golpe | **De pé, no instante do impacto** | os dois bonecos do par ficam no mesmo nível do chão; encaixar o par é só ajustar a distância entre eles, sem acertar altura relativa |
+| O que o sorteio inclui | **Só as juntas do corpo** | mãos ficam abertas; posição e direção que o boneco encara não mudam |
+
+**O que faz de um par um par é geométrico, e foi resolvido numericamente.** Um par de poses só serve se o golpe de uma chegar na altura exata do alvo da outra. Os três encontros foram RESOLVIDOS por busca em grade contra a cinemática direta (mesmo método do #30), não estimados:
+
+| Par | Encontro | Erro | Distância entre os quadris |
+|---|---|---|---|
+| Soco | punho direito × **rosto** (ponto do nariz/olhos, não a junta da cabeça) | 1,500 m contra 1,500 m | **0,63 m** |
+| Chute | pé × barriga (junta `spine`) | 1,043 m contra 1,043 m — 0,1 mm | **0,94 m** |
+| Gravata | punhos × pescoço | 1,37 m contra 1,39 m — 1,9 cm | **0,33 m** (corpo a corpo) |
+
+Essas distâncias são resultado medido, não ajuste no olho: com quem recebe girado 180°, um ponto de `z` local cai em `D − z` no mundo, então `D = alcance do golpe + z do alvo`. Estão travadas em teste.
+
+**A descoberta que mudou uma pose: tronco em extensão inviabilizava o par do soco.** A primeira versão de "Soco (levando)" tinha o tronco arqueado para trás, o que parece o óbvio para quem leva um golpe. Só que isso põe o rosto **21 cm atrás do próprio quadril**, e como o punho do atacante alcança 0,62 m à frente do dele, o par só encaixava a **0,41 m** — com os dois corpos atravessados na cena. A correção foi inclinar o tronco para a **frente** (`spine.x = +15`) e deixar o recuo por conta do **pescoço**, no limite de extensão (`neck.x = -40`, `head.x = -20`): é o boxeador que vinha avançando quando o soco parou sua cabeça. O rosto passa a ficar sobre o próprio quadril, o par encaixa a 0,63 m, e o gesto ("queixo jogado para cima, joelhos cedendo") ficou mais legível, não menos. Foi o cálculo da distância que expôs o problema — nenhuma inspeção visual da pose sozinha o revelaria.
+
+**Outras decisões da implementação:**
+
+1. **A altura do quadril de cada pose sai da restrição do chão, não do chute de um número.** Subir o quadril translada o corpo inteiro, então a relação é linear: `hipHeightM = 0,9 + (folga − ponto mais baixo)`. Todas as poses novas plantam os pés (a mais alta a 2,3 cm do chão) menos a que chuta, que tem uma perna no ar por definição — e é a única fora da lista `GROUNDED` dos testes.
+
+2. **"Levando o chute" teve os braços re-resolvidos depois de ver na tela.** Com o tronco dobrado 60°, os ombros abertos deixavam as mãos estendidas à frente — parecia mergulho, não proteção. Re-resolvidos contra o alvo "mãos na barriga" (7 cm dali), com o cotovelo bem fechado, o gesto virou o de quem se encolhe em volta do golpe.
+
+3. **As duas poses simétricas usam o helper `symmetric()`** ("levando o chute" e "recebendo a gravata"): só o lado esquerdo é declarado e o direito sai por reflexão exata, como as demais poses simétricas do #30 — os dois lados não têm como sair de sincronia.
+
+4. **Pose aleatória é módulo próprio (`randomPose.ts`), não um preset.** Um preset é uma tabela fixa; o sorteio é uma função. Cada eixo sai uniforme dentro da faixa da PRÓPRIA junta, lida por `getJoint` — assim um `joint-limits.json` do workspace (#29) aperta também o sorteio, em vez de o botão furar a configuração do usuário. Valores inteiros, como os sliders. O gerador é injetável (`resolveRandomPose(random)`) para os testes fixarem o sorteio em vez de torcer pela sorte.
+
+5. **O resultado do sorteio NÃO é uma pose plausível, e isso é o esperado.** Ângulos independentes por junta cruzam membros e enfiam pé no chão; é o que "qualquer pose dentro dos limites" significa, e é o ponto do botão — um ponto de partida inesperado para depois ajustar. Registrado no docblock para ninguém "consertar" isso depois.
+
+6. **O botão fica junto das poses predefinidas, mas com borda tracejada e ocupando a linha inteira.** É a mesma pergunta ("por onde começo?"), mas não é um preset: cada clique dá uma pose diferente, e o visual precisa dizer isso.
+
+**Validação:** 50 testes novos, suíte em **709 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real (headless via Playwright), sem erro de console: os três pares montados com dois bonecos alinhados nas distâncias medidas — o punho chega ao rosto, o pé à barriga, os braços dão a volta no pescoço — e o botão de sorteio dando poses diferentes a cada clique.
+
+---
+
+## 36. Primeira entrega do catálogo: 18 poses novas (apontar, apoios no chão, A-pose) e o combo agrupado
+
+**Contexto:** depois de sugerir um catálogo de poses, o usuário pediu para implementar todas, com um combo box agrupado nas categorias sugeridas, e mão-faca nas de apontar. Confirmadas duas coisas antes de começar: entrega em **duas etapas** (esta = apontar + apoios no chão + A-pose, 18 poses; a próxima = pares, ação e expressivas, 26) e o combo **não aplica sozinho** — quem aplica é um botão "Aplicar pose"; o sorteio segue como botão à parte, fora da lista.
+
+**Convenções medidas antes de posar qualquer coisa** (nenhuma foi deduzida):
+
+- **Direção da palma = -Z local do punho.** Com o braço à frente, a torção neutra (`elbow.R.y = -90`) deixa a palma na VERTICAL — a mão-faca já sai de graça; `0` deixa a palma para baixo (indicar/comandar) e `-180` para cima (apresentar). É `elbow.y` que decide o sentido do gesto, com o mesmo braço.
+- **Rotação da raiz:** `x = 90` deita de bruços (cabeça para +Z), `x = -90` de costas, `z = 90` deita sobre o lado direito com o rosto para a frente.
+
+**Por que apontar usa a mão aberta.** Os quatro dedos do modelo são uma cadeia só (`fingersBase → fingersMid → fingersTip`); só o polegar é independente. Apontar com o indicador é impossível sem dividir a geometria da mão. A mão reta faz o papel — e em silhueta lê melhor que um indicador, que sempre some. Três coisas fazem o gesto ler como apontar e não como alcançar, e as três estão travadas em teste: **punho zerado** (a mão continua a linha do antebraço), **cotovelo quase estendido** e **cabeça acompanhando**. A exceção é "Polegar para trás", a única pose de apontar com dedo de verdade que o modelo permite — o polegar sai apontando para trás com 3° de erro.
+
+**Três limitações do modelo que apareceram ao resolver os apoios, e o que foi feito com cada uma** (todas documentadas na dica da própria pose, para não parecerem defeito):
+
+1. **O boneco não alcança os próprios pés.** O tronco dobra no máximo 70° (coluna 45 + peito 25), e flexionar o quadril LEVANTA a perna em vez de baixar o tronco. Com as mãos a 0,44 m do chão, elas chegam à canela. A pose foi entregue como **"Alongamento à frente"** — o que ela de fato é — em vez de "tocar os pés", que seria promessa falsa.
+2. **Agachar de pé chapado E com o pé sob o corpo é impossível.** A dorsiflexão do tornozelo vai a 20°. Ou o pé fica chapado 46 cm à frente do quadril (e na tela lê como "sentado no ar" — foi a primeira versão, corrigida depois de ver o print), ou fica sob o corpo com o **calcanhar erguido**. Escolhida a segunda: é exatamente como agacha quem tem tornozelo rígido.
+3. **O braço é mais longo que a coxa** (0,515 contra 0,415 m). No "de quatro", com o tronco na altura que põe o joelho no chão, um braço reto atravessaria o piso — daí o cotovelo dobrado 67°. O punho vai ao limite de extensão (-60°) para a mão assentar em vez de espetar o chão.
+
+**A heurística de altura do quadril tem um limite, e ele foi encontrado.** Para poses cujo apoio é pé, joelho ou mão, a altura sai de uma relação linear: subir o quadril translada o corpo inteiro, então `hipHeightM = 0,9 + (folga − ponto mais baixo)`. Isso NÃO vale quando quem encosta no chão é o **bloco do tronco** — a busca só enxerga juntas, e o corpo afundava no piso. Nessas (de bruços, de lado) a altura vem da geometria: meia-espessura da pelve (0,081 m em Z) e meia-largura da cintura escapular (0,195 m em X).
+
+**O combo agrupado.** 34 poses em 6 grupos (Referência, Dia a dia, Apoios no chão, Apontar, Ação, Luta) — a grade de botões não cabia mais. `POSE_PRESET_KEYS` passou a ser **derivado** de `POSE_PRESET_GROUPS`: não há como uma pose existir e não aparecer em lugar nenhum, e um teste trava os dois sentidos. A descrição da pose escolhida aparece abaixo do combo, no lugar do antigo tooltip por botão — informação que antes exigia passar o mouse em cada um.
+
+**Validação:** 89 testes novos, suíte em **798 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real (headless via Playwright), sem erro de console: os 6 grupos do combo com a contagem certa, escolher no combo sem aplicar não muda o boneco, e as 15 poses conferidas visualmente uma a uma (foi assim que o agachado errado apareceu).
+
+---
+
+## 37. Segunda entrega do catálogo: 26 poses novas (expressivas, ação e 13 poses em par)
+
+**Contexto:** fecha o que ficou combinado no #36 — pares, ação e expressivas. Duas categorias novas no combo ("Expressivas" e "Em par"), as de empurrar e o clinche entrando no grupo de luta que já existia. O catálogo vai de 34 para **60 poses em 8 grupos**.
+
+**A regra de encaixe dos pares, e por que ela é exata.** A rotação de um preset é aplicada NA junta `root`, e o deslocamento vertical fica fora dela (no grupo externo). Consequência: girar o segundo boneco 180° em torno de Y e afastá-lo `D` metros em Z leva um ponto `(x, y, z)` medido no primeiro para `(-x, y, D - z)` — sem aproximação. Isso permitiu resolver cada par numericamente e, em três casos, verificar que **a mesma pose serve para os dois bonecos** (aperto de mão, abraço, clinche): basta aplicá-la espelhada e medir. Nos pares que olham para o mesmo lado (cavalinho) o mapeamento é só a translação em Z.
+
+**As distâncias fazem parte do resultado, não são enfeite.** Cada par tem um número que saiu da geometria e que está na dica da pose no painel — sem ele o encaixe resolvido não chega ao usuário: aperto de mão **0,755 m** (o dobro do alcance da mão, porque o encontro é no meio do caminho), abraço **0,26**, dança **0,36**, clinche **0,40**, empurrão **0,467**, puxar **0,69**, cavalinho **0,16** atrás. Os testes travam os encontros: mãos dadas da dança com **3 mm** de erro, mãos do puxão com **2 cm**, e a superfície do peito de quem leva o empurrão caindo exatamente onde estão as mãos de quem empurra.
+
+**Duas limitações medidas, e o que fixou cada distância:**
+
+1. **O abraço não pode ter os peitos colados.** A cabeça do modelo só GIRA, nunca se desloca. Mesmo com pescoço e cabeça inclinados no máximo (30°+15°, o que afasta cada rosto 7,3 cm da linha média), aproximar os troncos faz os dois crânios se atravessarem: a 0,20 m a checagem de sobreposição dos dois elipsoides de cabeça dá **0,73** (atravessados) e a 0,26 m dá **1,24** (livres). Daí D = 0,26, com os peitos a 8 cm. Está travado em teste como desigualdade elipsoidal, não como um número mágico.
+
+2. **Braços cruzados não chegam a agarrar o braço oposto.** A adução do ombro — levar o braço para o outro lado do corpo — vai só a **20°** no modelo; o resto do cruzamento tem de vir da rotação interna, que já fica no limite (`shoulder.R.y = 90`). As mãos param perto da linha média. Os antebraços se cruzam de fato à frente do tronco, que é o que a silhueta mostra, e a dica da pose diz o motivo em vez de prometer o que não acontece.
+
+**Três erros que só o print pegou** (a busca numérica dava custo baixo em todos os três):
+
+1. **Clinche com os braços erguidos.** Os punhos batiam o alvo atrás da cabeça do outro, mas os **cotovelos** ficavam altos e abertos — na tela os dois pareciam se render, não brigar. Re-resolvido com duas penalidades explícitas (cotovelo ao menos 18 cm ABAIXO do punho e a no máximo 0,26 m da linha média), o cotovelo caiu para 1,22 m contra o punho em 1,44 e fechou para 0,10 m da linha média. O que faz a pose ler não era a mão, era o cotovelo — e agora isso é teste.
+2. **"Carregado no colo" fazendo abdominal.** Com o corpo deitado, o +Z dele virou o +Y do mundo: flexionar o quadril levanta o joelho. Os 40° da primeira versão punham as duas pernas apontando para o alto. Com 15° o joelho sobe 0,11 m acima do eixo do corpo e o tornozelo desce 0,16 m — a perna pende.
+3. **Mãos dentro do corpo do outro.** Nas primeiras versões de abraço e dança as mãos caíam entre a coluna e as costas do parceiro. Corrigido medindo as peças de verdade em vez de estimar: pelve 0,081 m de meia-espessura, peito 0,104 na linha dos ombros, cabeça 0,077 de meia-largura por 0,089 de meia-profundidade.
+
+**A ordem de resolver importa: altura ANTES de alcance.** "Sendo ajudado a levantar" saiu 49 cm fora do alvo na primeira tentativa porque o braço foi resolvido com o boneco em pé e só depois o quadril desceu para 0,415 — a mão desceu junto. Vale para toda pose que não fica em pé: fixar `hipHeightM` primeiro, resolver o alcance depois. O mesmo erro apareceu, menor, em "carregando nas costas" (4,5 cm) e foi corrigido do mesmo jeito.
+
+**Rotação de quem é carregado no colo, deduzida em vez de tentada.** Deitar de costas E atravessado (eixo do corpo ao longo de X) precisa de uma rotação que não é nenhuma das três do #36. Em vez de tentar combinações, montou-se a base ortonormal desejada — o +Y do corpo indo para o +X do mundo, o +Z do corpo para o +Y — e extraiu-se o Euler XYZ correspondente: **(-90, 0, -90)**. Conferido medindo: cabeça em +0,61, tornozelo em -0,71, e a frente do peito apontando para cima.
+
+**Outras decisões:**
+
+1. **Grupos novos em vez de inchar os existentes.** "Em par" reúne as 10 poses de dois bonecos que não são briga; empurrão e clinche vão para "Luta (pares)", que já tinha esse contrato. "Ação" cresceu de 2 para 8.
+2. **A mão de cada pose segue a regra do #35/#36:** fechada em quem impulsiona ou agarra (saltar, arremessar, escalar, comemorar), **aberta** em quem usa a palma como superfície (empurrar, carregar caixa, carregar no colo) ou em quem tem a mão como gesto (acenar, assustar-se), relaxada no resto.
+3. **Poses simétricas usam o helper `symmetric()`** — 8 das 26. "Carregado no colo" é simétrica na POSE mas ficou fora do teste de espelho: a colocação gira o boneco 90° em Z, e aí o espelho sagital do mundo deixa de valer.
+
+**Validação:** 20 testes novos, suíte em **945 testes** verdes (48 arquivos); `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real (headless via Playwright), sem erro de console: os 8 grupos do combo com a contagem certa (60 poses), as poses de um boneco conferidas de frente e de lado, e os 8 pares montados com dois bonecos nas distâncias resolvidas — foi assim que o clinche e o colo apareceram errados.
+
+---
+
+## 38. Terceira entrega do catálogo: meditação, poses de postura, "deitado em X" e o mata-leão sentado
+
+**Contexto:** pedido nominal do usuário — meditação, "empresário de sucesso" (em pé de braços cruzados), "pose de herói" (peito estufado, mãos na cintura, pernas abertas), deitado em X, duas sentadas escoradas nas mãos com o tronco levemente para trás, e o mata-leão com o adversário sentado. São **9 poses** (o X virou duas) e o catálogo vai de 60 para **69**, sem grupo novo.
+
+**Três dúvidas levantadas antes de construir, e o que o usuário escolheu:**
+
+1. "Empresário" e "herói" quase repetiam "Braços cruzados" e "Mãos na cintura", que já existiam → **criar as duas à parte**, com a postura que as diferencia (peito estufado, ombros para trás, pernas afastadas), preservando as neutras.
+2. Deitado em X de costas ou de bruços → **as duas**.
+3. Onde fica quem aplica o mata-leão → **ajoelhado atrás** (não sentado com as pernas em volta nem em pé).
+
+**O que faz "empresário" e "herói" não serem cópias.** O ombro vai para trás pela CLAVÍCULA, não pelo ombro: `clavicle.y` positivo no lado L recua a junta do ombro 2,5 cm (medido; o eixo z da clavícula só levanta, não recua). Some-se o tronco em extensão — que põe a junta do peito à FRENTE da linha dos ombros, o inverso do que acontece em pé neutro, e é isso que os testes travam — e as pernas afastadas: 0,53 m entre os tornozelos no empresário, 0,69 m no herói (contra 0,18 em pé). No herói, `ankle.z` compensa a abertura do quadril para a sola continuar chapada.
+
+**Efeito colateral medido, e registrado em vez de escondido:** ombro para trás ENCURTA o alcance cruzado. As mãos do "empresário" param ainda mais perto da linha média (x ≈ 0,01) que as de "Braços cruzados" (0,05) — a adução do ombro já batia no limite de 20° e a postura piora o quadro. O cruzamento dos antebraços, que é o que a silhueta mostra, continua inteiro.
+
+**De bruços, a cabeça TEM de virar.** Com o corpo de barriga para baixo, o ponto do rosto (nariz/olhos) cai **9,5 cm abaixo** da junta da cabeça — de cara reta ele atravessaria o piso. Virando o pescoço 55° e a cabeça mais 25°, o rosto sobe para y = 0,125. É a única assimetria da pose, e por isso ela fica fora do teste de espelho enquanto a versão de costas (que não precisa virar nada) entra.
+
+**A pelve reclinada é o que torna "sentado com joelhos dobrados" possível.** O quadril flexiona no máximo **120° em relação à pelve**. Com a pelve reta e o boneco sentado no chão, isso não é suficiente para recolher o joelho: o pé para a 0,70 m à frente e a pose vira uma sentada preguiçosa, não "pernas dobradas". Reclinando a pelve 25° pelo `rotation.x` sobram 145° efetivos — o joelho sobe para 0,46 m e o pé vem para 0,36 m, com a sola chapada. E a reclinação é, literalmente, o "tronco levemente para trás" que o usuário pediu: uma coisa resolveu a outra. O preço é que a pose passa a IMPOR a direção que o boneco encara, como toda pose que o inclina.
+
+**"Sola no chão" são DUAS alturas, não uma.** Pedir só o tornozelo em 0,07 deixava o pé na ponta; pedir só a ponta em 0,01 deixava o pé inteiro enterrado 5 cm (o teste de "nenhuma junta atravessa o chão" não pega isso, porque as juntas do pé continuam acima do zero — quem afunda é a malha). As duas juntas travadas ao mesmo tempo é o que significa pé chapado, e é assim que as poses sentadas e o teste ficaram. O mesmo vale para a mão espalmada: punho em 0,09 E ponta dos dedos em 0,04, senão a mão fica espetada no chão.
+
+**Mata-leão: a inclinação e a distância brigam entre si, e saíram juntas.** Inclinar mais quem aplica alcança melhor a garganta, mas enfia o peito dele na cabeça de quem senta. Varrendo 3 inclinações × 4 distâncias e medindo as duas coisas, o ponto certo é **12°/8° de inclinação a 0,45 m**: o punho fica a 3,6 cm do alvo e a frente do peito para em z = -0,296 contra a nuca do outro em -0,286 — **encostado**, que é exatamente onde a cabeça de quem é estrangulado descansa. Com 30° de inclinação a mesma distância dava 6 cm de interpenetração. A chave fecha de verdade: a mão esquerda para a **7 mm** do eixo do próprio antebraço direito.
+
+**A garganta foi calculada no referencial do PESCOÇO.** Somar 8,5 cm no Z do mundo erraria o alvo em quase 4 cm, porque o tronco de quem recebe está reclinado 36°. O alvo de quem aplica e o das próprias mãos de quem recebe usam o mesmo ponto.
+
+**Meditação reaproveita as pernas de "Pernas cruzadas"** — com a mesma limitação de abertura de quadril já registrada no #36 — e o alvo de cada mão não foi escolhido: é a posição MEDIDA do joelho depois de montar as pernas, com 6 cm a mais em Y para a mão pousar por cima e não dentro dele. O punho chega a 2,6 cm dali e a palma aponta exatamente para +Y.
+
+**Validação:** 52 testes novos, suíte em **997 testes** verdes (48 arquivos); `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real (headless via Playwright), sem erro de console: 69 poses nos 8 grupos, as poses de um boneco conferidas de frente, de lado e de cima (o X só se lê de cima), e o par do mata-leão montado com os dois bonecos — com as posições lidas do próprio painel, depois de uma leitura equivocada do print sugerir um deslocamento que não existia.
+
+---
+
+## 39. Cor livre para os bonecos, no lugar da paleta fixa de 5
+
+**Contexto:** pedido do usuário — poder escolher qualquer cor para os bonecos, em vez das cores predefinidas. Até aqui o "swatch" redondo da lista era um BOTÃO que ciclava entre as 5 cores de `COLOR_PALETTE`, e o store recusava qualquer coisa fora dela.
+
+**A UI é o `<input type="color">` nativo.** Ele já é o próprio indicador da cor atual (dispensa o quadradinho colorido separado), abre o seletor do sistema, funciona no teclado e não traz dependência nenhuma. Só precisou de CSS para caber no mesmo círculo de 1,1 rem que o botão ocupava: `appearance: none` mais o zeramento do preenchimento interno (`::-webkit-color-swatch` / `::-moz-color-swatch`), senão a moldura que cada navegador desenha por conta própria estouraria a altura da linha da lista.
+
+**A validação mudou de LISTA para FORMATO, e isso não é detalhe.** `setColor` agora aceita qualquer `#rrggbb`, mas continua recusando o que não for cor — e isso passou a ser obrigatório, não opcional: o valor vai direto para o `MeshStandardMaterial` do three.js e para o `style` inline do painel, e não vem só do seletor. Vem também de `.glb` importado e do `localStorage` do autosave, que antes eram filtrados de graça pela checagem de pertencimento à paleta. `figureFromExtras` fazia `typeof source.color === 'string' ? source.color : '#e04040'`, o que deixaria passar `'red'`, `'rgb(1,2,3)'` ou qualquer string. Agora as duas portas usam o mesmo `normalizeFigureColor`, que normaliza para minúsculas e expande a forma curta `#rgb` (válida em CSS, e plausível em quem editar um arquivo à mão).
+
+**A unicidade caiu.** Antes dois bonecos não podiam ter a mesma cor. Com um seletor de cor livre, manter a regra significaria um seletor que às vezes simplesmente não faz nada — e dois bonecos da mesma cor é escolha de quem monta a cena, não erro. A paleta CONTINUA existindo, só que como cor padrão em rodízio: bonecos novos ainda nascem de cores diferentes, que era o objetivo real dela.
+
+**Bug latente encontrado ao soltar a unicidade.** `addFigure`/`duplicateFigure` faziam `nextAvailableColor(figures)` e devolviam `null` quando a paleta acabava. Isso nunca travou o app por coincidência: `MAX_FIGURES` (5) e o tamanho da paleta (5) são iguais E as cores eram únicas, então a paleta só esgotava junto com o limite. Permitir cor repetida quebra essa coincidência — com dois bonecos pintados da mesma cor sobraria cor na paleta e o app recusaria acrescentar o terceiro, com o limite longe. A função virou `nextDefaultColor`, que nunca devolve `null` (cai no rodízio `figures.length % paleta.length`), e o limite de bonecos voltou a ser só o `MAX_FIGURES`. Há teste travando exatamente esse caso.
+
+**Característica conhecida, não alterada:** como todo controle contínuo do app (os sliders de rotação, por exemplo), o seletor de cor grava no store a cada evento, e arrastar dentro do seletor empilha várias entradas de undo. Mudar isso exigiria mexer no `handleSet` do `zundo`, que vale para o store inteiro — fora do escopo deste pedido, e o comportamento fica consistente com o que já existia.
+
+**Validação:** 4 testes novos e 3 reescritos (os antigos travavam justamente o oposto: só cor da paleta e cor única), suíte em **1001 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real, sem erro de console: swatch com `type="color"`, cores iniciais vindas da paleta, dois bonecos recebendo a MESMA cor fora da paleta (`#7f3ac1`) e ainda assim sendo possível acrescentar bonecos até o limite de 5.
+
+---
+
+## 40. Mata-leão deitado, e a direção dos braços no "deitado em X"
+
+**Contexto:** dois pedidos do usuário na mesma leva — uma pose em par de mata-leão no chão (quem aplica deitado de costas por baixo, com as pernas em volta do tronco do outro, os dois de barriga para cima) e a correção dos braços das duas poses "deitado em X", que estavam apontando para os PÉS.
+
+**A escala de `shoulder.z` deitado, que é a raiz do defeito relatado.** Com o boneco deitado, o corpo inteiro fica no plano do chão: o +Y local (subir a coluna) vira -Z de costas e +Z de bruços, e o +X local continua +X. Ou seja, `shoulder.z` gira o braço DENTRO do chão e **não muda a altura do punho** — medido, o punho fica em y = 0,136 para qualquer valor do eixo. A escala é:
+
+| `shoulder.L.z` | direção do braço | punho (dz em relação ao ombro) |
+|---|---|---|
+| 0 | ao longo do corpo, para os PÉS | — |
+| 52 (valor antigo) | para os pés e um pouco para fora | 0,32 na direção dos pés |
+| **90** | **exatamente para o LADO** | 0,000 |
+| 145 | para o alto e ainda aberto | 0,42 na direção da cabeça |
+| 180 | colado ao eixo do corpo, para a cabeça | 0,51 |
+
+Os 52° originais foram herdados de um palpite de "braço aberto" pensado como se o boneco estivesse em pé — deitado, eles apontam para os pés, que é exatamente o que o usuário viu. De costas a pose foi para **90** (punho na linha do ombro, a 0,71 m da linha média) e de bruços para **145**, que é o que o usuário pediu como "para o alto" sem transformar o X numa flecha: em 180° os dois braços ficariam paralelos ao corpo e a pose perderia a abertura. O teste passou a comparar o punho com o PRÓPRIO ombro em vez de medir só a distância entre os dois punhos — a métrica antiga (abertura em X) não distingue "para o lado" de "para os pés", e por isso aprovava o defeito.
+
+**Mata-leão deitado: três coisas que o "deitado de costas" inverte.**
+
+1. **Levantar a cabeça é `neck.x` POSITIVO.** Em pé, quem estrangula estende o pescoço (negativo). Deitado de costas, isso empurra o crânio contra o chão — a primeira tentativa enterrou a cabeça 9 mm. O sinal certo é o oposto, e o motivo é o mesmo que vale para a pose inteira: o corpo girou 90°.
+2. **Envolver o outro com as pernas é FLEXÃO de quadril.** Com o +Z do corpo virado para o +Y do mundo, flexionar o quadril sobe a perna — exatamente o movimento de abraçar o tronco. Os dois quadris ficam cravados no limite de -120°, que é tudo o que o modelo dá.
+3. **Os alvos das pernas têm de estar a UM COMPRIMENTO DE COXA do quadril.** Alvo mais perto que 0,415 m é inalcançável por definição (o osso não encolhe) e o joelho pararia a meio caminho, com custo baixo e resultado errado. Recolocados sobre a esfera de alcance, os joelhos caem a 1 mm do alvo.
+
+**Empilhar os dois é uma conta, não um ajuste no olho.** `hipHeightM` de 0,31 para quem recebe contra 0,11 de quem aplica: os 0,20 m de diferença são a soma das duas meias-espessuras de peito (0,104 cada). Os corpos ficam comprimidos 2,5 cm um contra o outro, que é o que um estrangulamento faz. O deslocamento horizontal — 0,10 m na direção dos próprios pés — é o que põe a cabeça de quem aplica ATRÁS da de quem recebe, e vai na dica da pose porque é a única parte que o preset não consegue impor sozinho.
+
+**As duas cabeças, de novo.** Mesmo problema do abraço (#37): a cabeça do modelo só gira, nunca se desloca. Aqui a saída foi a inclinação lateral do pescoço, cada um para um lado — os crânios ficam a 0,207 m, acima dos 0,18 m que as duas meias-larguras somam.
+
+**Encaixes travados em teste:** antebraço direito de quem aplica a 3,6 cm da garganta (medida no frame do pescoço, não somando no eixo do mundo), mão esquerda a 1,9 cm do eixo do próprio antebraço, joelhos para fora das costelas e acima do peito de quem recebe, tornozelos cruzando na linha média acima da barriga, e a cabeça de quem aplica acima do chão.
+
+**Validação:** 9 testes novos/reescritos, suíte em **1010 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real, sem erro de console: 71 poses no combo, as duas do X conferidas de cima (é o único ângulo em que a direção dos braços se lê) e o par montado com os dois bonecos.
+
+## 41. Poses em dupla aplicadas automaticamente no segundo boneco
+
+Pedido do usuário: em poses em par, com dois bonecos na cena, aplicar a pose num deles deve pôr o outro na pose correspondente automaticamente.
+
+**A tabela é a dica do painel virando número.** As 23 poses em par sempre vieram aos pares, e as dicas já diziam com qual pose cada uma encaixa e a que distância ("encaixa com Empurrão (levando) a 0,47 m"). Isso era instrução para o usuário executar à mão: aplicar a outra metade no segundo boneco e arrastá-lo até bater. O `posePairs.ts` transforma essas mesmas frases em dados — pose do parceiro, distância e se ele fica de frente ou olhando para o mesmo lado — e é o store que executa. Nenhuma distância foi inventada: todas são as que os testes de geometria de `posePresets.test.ts` já travavam, e o `posePairs.test.ts` volta a medir cada encontro (mão × mão, punho × rosto, antebraço × garganta) através da montagem automática.
+
+**Escopo: exatamente dois bonecos.** Com três ou mais não há como saber qual é o parceiro, e desmontar a pose do boneco errado é pior do que não fazer nada — aí a montagem continua manual, guiada pela dica, que por isso continua trazendo a distância. Com um boneco só, nada muda.
+
+**Fora da tabela de propósito:** "guarda de luta" mora no grupo de luta mas é pose SOLO — não tem contato nenhum que fixe uma distância, e arbitrar uma seria chute.
+
+**O par é um corpo rígido — e é aí que estava a armadilha.** A montagem canônica é medida com quem recebe a pose olhando para +Z; o giro de encenação que o usuário deu a ele é aplicado depois, ao deslocamento E à rotação do parceiro. Somar graus em `rotation.y` funciona enquanto a pose do parceiro é em pé, e QUEBRA nas poses que já impõem rotação própria (o "colo", com o carregado deitado atravessado, e o mata-leão deitado): ângulos de Euler não se somam, e mexer em `y` ali ROLA o corpo em torno do próprio eixo em vez de mudar a direção que ele encara. A composição correta sai por matriz (`Ry(giro) · rotação da pose`, decomposta de volta em Euler XYZ), que no caso em pé reduz exatamente à soma. Um teste percorre vários ângulos justamente porque o erro seria invisível a 0°.
+
+**Dois detalhes de sinal e escala.** Nos pares de frente a distância é simétrica (cada um está a D à frente do outro); nos pares de mesmo sentido ela troca de sinal, e um teste trava a consistência mútua da tabela inteira — sem isso, aplicar a pose A montaria um par diferente de aplicar a pose B, e o segundo boneco pularia de lugar. A distância acompanha a altura dos bonecos pela **média** das duas escalas: a distância é parte alcance de um e parte alvo do outro, e a média é a repartição neutra (com alturas iguais, o caso comum, é exata).
+
+**Uma edição só.** As duas metades saem de um único `set`, então um Ctrl+Z desfaz o par inteiro em vez de deixar o segundo boneco posado sozinho.
+
+**Aviso no painel** (`posePairAuto`, chave nova nos dois idiomas), mostrado só quando aplicar vai mesmo mexer no outro boneco — pose em par E exatamente dois bonecos.
+
+**Validação:** 33 testes novos, suíte em **1043 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real sem erro de console: oito pares montados só clicando "Aplicar pose" no primeiro boneco (o segundo estava deslocado de propósito), com a posição e a rotação resultantes lidas nos campos do painel e conferindo com a tabela, mais dois casos com o boneco de origem girado 40° — inclusive o "colo", que é o caso da composição por matriz.

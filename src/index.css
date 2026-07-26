@@ -279,6 +279,11 @@ h2 {
   outline-offset: -1px;
 }
 
+/* Seletor de cor do boneco (DECISOES.md #39). O `<input type="color">` nativo
+   desenha um "swatch" com moldura própria em cada navegador; o `appearance:
+   none` mais o zeramento do preenchimento interno (`::-webkit-color-swatch`)
+   é o que o faz caber no mesmo círculo de 1,1 rem que o botão anterior
+   ocupava, sem quebrar a altura da linha da lista. */
 .figures-panel__swatch {
   flex: 0 0 auto;
   width: 1.1rem;
@@ -287,6 +292,24 @@ h2 {
   border: 1px solid var(--border);
   padding: 0;
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  overflow: hidden;
+}
+
+.figures-panel__swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.figures-panel__swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+
+.figures-panel__swatch::-moz-color-swatch {
+  border: none;
+  border-radius: 50%;
 }
 
 .figures-panel__name {
@@ -469,6 +492,21 @@ h2 {
 .properties-panel__pose-presets button {
   padding: 0.3rem;
   cursor: pointer;
+}
+
+/* Combo de poses agrupadas (DECISOES.md #36) — ocupa a largura do painel. */
+.properties-panel__pose-select {
+  width: 100%;
+  margin-bottom: 0.4rem;
+}
+
+/*
+ * Sorteio de pose (DECISOES.md #35): borda tracejada para não se confundir
+ * com o "Aplicar pose" ao lado — cada clique dá uma pose diferente, em vez de
+ * aplicar a que está escolhida no combo.
+ */
+.properties-panel__random-pose {
+  border-style: dashed;
 }
 
 .camera-panel__presets button,

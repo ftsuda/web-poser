@@ -1,4 +1,4 @@
-import { JOINT_NAMES, clampJointRotation, type JointRotation } from './skeleton'
+import { JOINT_NAMES, clampJointRotation, getJointSubtree, type JointRotation } from './skeleton'
 
 /**
  * Simetria esquerda/direita da pose (pedido do usuário, ver DECISOES.md #30):
@@ -29,6 +29,12 @@ import { JOINT_NAMES, clampJointRotation, type JointRotation } from './skeleton'
  * (`.L`/`.R`) — braços, mãos, pernas e pés. Tronco, pescoço, cabeça e a
  * rotação/posição do boneco não são tocados: a operação faz só o que o nome
  * diz.
+ *
+ * Esse escopo ainda pode ser RESTRINGIDO a uma junta e seus descendentes
+ * (`scopeJoint`, ver `getMirrorScope` e DECISOES.md #34): com o ombro direito
+ * selecionado, espelhar/inverter valem do ombro à ponta dos dedos e as pernas
+ * ficam intactas. Sem `scopeJoint` o comportamento é o de antes — o boneco
+ * inteiro.
  */
 
 export type Side = 'L' | 'R'
@@ -52,6 +58,33 @@ export function getMirroredJointName(jointName: string): string | null {
 /** Juntas pareadas do lado indicado, na ordem do `skeleton.ts`. */
 export function getSideJointNames(side: Side): string[] {
   return JOINT_NAMES.filter((name) => getJointSide(name) === side)
+}
+
+const PAIRED_JOINT_NAMES: readonly string[] = JOINT_NAMES.filter(
+  (name) => getJointSide(name) !== null,
+)
+
+/**
+ * Juntas pareadas que uma operação de simetria pode tocar, partindo da junta
+ * selecionada (pedido do usuário, ver DECISOES.md #34): ela e seus
+ * descendentes, **dos dois lados** — o par de destino é tão afetado quanto a
+ * origem. Sem junta (ou na raiz) é o boneco inteiro, que era o comportamento
+ * único até então.
+ *
+ * O escopo não depende do LADO da junta selecionada, só de onde ela fica na
+ * cadeia: selecionar `shoulder.L` ou `shoulder.R` delimita o mesmo par de
+ * braços, e quem escolhe a direção da cópia é o botão.
+ *
+ * É vazio nas juntas sem par nenhum embaixo (pescoço, cabeça) — aí não há
+ * simetria a oferecer.
+ */
+export function getMirrorScope(scopeJoint?: string | null): readonly string[] {
+  if (!scopeJoint) return PAIRED_JOINT_NAMES
+
+  const subtree = new Set(getJointSubtree(scopeJoint))
+  return PAIRED_JOINT_NAMES.filter(
+    (name) => subtree.has(name) || subtree.has(getMirroredJointName(name) as string),
+  )
 }
 
 const ZERO_ROTATION: JointRotation = { x: 0, y: 0, z: 0 }
@@ -81,12 +114,14 @@ export function mirrorRotation(rotation: JointRotation): JointRotation {
 export function mirrorPoseSide(
   pose: Record<string, JointRotation>,
   from: Side,
+  scopeJoint?: string | null,
 ): Record<string, JointRotation> {
   const next = { ...pose }
+  const scope = new Set(getMirrorScope(scopeJoint))
 
   for (const sourceName of getSideJointNames(from)) {
     const targetName = getMirroredJointName(sourceName)
-    if (!targetName) continue
+    if (!targetName || !scope.has(sourceName)) continue
     next[targetName] = clampJointRotation(
       targetName,
       mirrorRotation(pose[sourceName] ?? ZERO_ROTATION),
@@ -101,12 +136,16 @@ export function mirrorPoseSide(
  * "inverter esquerda e direita". Aplicar duas vezes devolve a pose original
  * (involução), o que a torna segura de usar como toggle.
  */
-export function swapPoseSides(pose: Record<string, JointRotation>): Record<string, JointRotation> {
+export function swapPoseSides(
+  pose: Record<string, JointRotation>,
+  scopeJoint?: string | null,
+): Record<string, JointRotation> {
   const next = { ...pose }
+  const scope = new Set(getMirrorScope(scopeJoint))
 
   for (const sourceName of getSideJointNames('L')) {
     const targetName = getMirroredJointName(sourceName)
-    if (!targetName) continue
+    if (!targetName || !scope.has(sourceName)) continue
     next[targetName] = clampJointRotation(targetName, mirrorRotation(pose[sourceName] ?? ZERO_ROTATION))
     next[sourceName] = clampJointRotation(sourceName, mirrorRotation(pose[targetName] ?? ZERO_ROTATION))
   }
