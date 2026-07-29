@@ -2,6 +2,7 @@ import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { supportedLanguages } from '../i18n'
+import type { FrameMaskSource } from '../scene/frameMask'
 import { useFiguresStore, type BackgroundTone } from '../store/figuresStore'
 import { useUIStore } from '../store/uiStore'
 
@@ -17,6 +18,8 @@ export function Toolbar() {
   const lastSavedAt = useUIStore((state) => state.lastSavedAt)
   const rulerVisible = useUIStore((state) => state.rulerVisible)
   const toggleRuler = useUIStore((state) => state.toggleRuler)
+  const frameMaskSource = useUIStore((state) => state.frameMaskSource)
+  const setFrameMaskSource = useUIStore((state) => state.setFrameMaskSource)
 
   // O histórico do `zundo` é um store vanilla à parte do `figuresStore` — sem
   // esta assinatura os botões não saberiam quando habilitar/desabilitar.
@@ -33,6 +36,10 @@ export function Toolbar() {
 
   const handleSceneNameChange = (event: ChangeEvent<HTMLInputElement>) => {
     renameScene(event.target.value)
+  }
+
+  const handleFrameMaskChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    setFrameMaskSource(event.target.value as FrameMaskSource)
   }
 
   const savedTime =
@@ -89,6 +96,18 @@ export function Toolbar() {
         <label className="toolbar__field toolbar__field--checkbox" title={t('toolbar.rulerHint')}>
           <input type="checkbox" checked={rulerVisible} onChange={toggleRuler} />
           {t('toolbar.ruler')}
+        </label>
+
+        {/* Um controle só para as duas saídas: o instantâneo e a animação têm
+            resoluções independentes, e duas máscaras ao mesmo tempo não teriam
+            sentido na mesma tela. */}
+        <label className="toolbar__field" title={t('toolbar.frameMaskHint')}>
+          {t('toolbar.frameMask')}
+          <select value={frameMaskSource} onChange={handleFrameMaskChange}>
+            <option value="off">{t('toolbar.frameMaskOff')}</option>
+            <option value="snapshot">{t('toolbar.frameMaskSnapshot')}</option>
+            <option value="animation">{t('toolbar.frameMaskAnimation')}</option>
+          </select>
         </label>
 
         <div className="toolbar__actions">

@@ -117,7 +117,7 @@ describe('ScenesPanel', () => {
       environment: { background: 'medium', grid: true },
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
-      nextKeyframeNumber: 1,
+      nextSnapshotNumber: 1,
     })
 
     const user = userEvent.setup()
@@ -164,7 +164,7 @@ describe('ScenesPanel', () => {
       environment: { background: 'medium', grid: true },
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
-      nextKeyframeNumber: 1,
+      nextSnapshotNumber: 1,
     })
 
     const user = userEvent.setup()
@@ -194,7 +194,7 @@ describe('ScenesPanel', () => {
       expect(screen.queryByRole('button', { name: 'Salvar workspace em pasta' })).not.toBeInTheDocument()
       expect(
         screen.getByText(
-          'Este navegador não suporta escolher pasta — use os arquivos individuais (workspace.json + joint-limits.json + .glb) para abrir um workspace salvo.',
+          'Este navegador não suporta escolher pasta — use os arquivos individuais (workspace.json + joint-limits.json + poses.json + .glb) para abrir um workspace salvo.',
         ),
       ).toBeInTheDocument()
     })
@@ -212,12 +212,15 @@ describe('ScenesPanel', () => {
               environment: { background: 'medium', grid: true },
               cameraBookmarks: [],
               nextCameraBookmarkSeq: 1,
-              nextKeyframeNumber: 1,
+              nextSnapshotNumber: 1,
             },
           },
         ],
         activeSceneId: 'scene-1',
         jointLimits: {},
+        poses: [],
+        animations: [],
+        clips: [],
       })
 
       const user = userEvent.setup()
@@ -236,6 +239,9 @@ describe('ScenesPanel', () => {
         scenes: [],
         activeSceneId: null,
         jointLimits: { 'knee.L': { x: { min: 0, max: 45 } } },
+        poses: [],
+        animations: [],
+        clips: [],
       })
 
       const user = userEvent.setup()
@@ -305,12 +311,15 @@ describe('ScenesPanel', () => {
               environment: { background: 'medium', grid: true },
               cameraBookmarks: [],
               nextCameraBookmarkSeq: 1,
-              nextKeyframeNumber: 1,
+              nextSnapshotNumber: 1,
             },
           },
         ],
         activeSceneId: 'scene-1',
         jointLimits: {},
+        poses: [],
+        animations: [],
+        clips: [],
       })
 
       const user = userEvent.setup()

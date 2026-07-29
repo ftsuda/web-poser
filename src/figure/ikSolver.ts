@@ -29,14 +29,21 @@ export interface IKChainDefinition {
   joints: readonly [string, string]
   /** Junta cuja posição no mundo é conduzida até o alvo. */
   endEffector: string
+  /**
+   * Direção de referência do giro do cotovelo/joelho (`swivelDeg` = 0), no
+   * frame do PAI da junta-base (o tronco) — assim ela acompanha o boneco, e
+   * "para trás" continua sendo para trás com ele deitado ou girado.
+   * Anatomicamente: cotovelo aponta para trás, joelho para a frente.
+   */
+  swivelZero: readonly [number, number, number]
 }
 
 /** Cadeias de IK suportadas, indexadas pela própria junta-efetuador (pulso/tornozelo) — mesmo vocabulário já usado por `selectedJointName`. */
 export const IK_CHAINS: Record<string, IKChainDefinition> = {
-  'wrist.L': { joints: ['shoulder.L', 'elbow.L'], endEffector: 'wrist.L' },
-  'wrist.R': { joints: ['shoulder.R', 'elbow.R'], endEffector: 'wrist.R' },
-  'ankle.L': { joints: ['hip.L', 'knee.L'], endEffector: 'ankle.L' },
-  'ankle.R': { joints: ['hip.R', 'knee.R'], endEffector: 'ankle.R' },
+  'wrist.L': { joints: ['shoulder.L', 'elbow.L'], endEffector: 'wrist.L', swivelZero: [0, 0, -1] },
+  'wrist.R': { joints: ['shoulder.R', 'elbow.R'], endEffector: 'wrist.R', swivelZero: [0, 0, -1] },
+  'ankle.L': { joints: ['hip.L', 'knee.L'], endEffector: 'ankle.L', swivelZero: [0, 0, 1] },
+  'ankle.R': { joints: ['hip.R', 'knee.R'], endEffector: 'ankle.R', swivelZero: [0, 0, 1] },
 }
 
 /** Mapa reverso: qualquer junta que faça parte de uma cadeia (base, intermediária ou efetuador) → a chave da cadeia (`IK_CHAINS`). Usado para saber se a junta selecionada pertence a um membro com IK disponível. */
@@ -71,10 +78,89 @@ function quaternionToClampedDegrees(jointName: string, quaternion: THREE.Quatern
   })
 }
 
+/**
+ * Base ortonormal do plano perpendicular ao eixo base→alvo: é nele que o
+ * cotovelo/joelho passeia quando as duas pontas do membro estão paradas — o
+ * único grau de liberdade que sobra (ver DECISOES.md #44). `zero` é a direção
+ * de `swivelDeg = 0`; `quarter` completa a base, a 90°.
+ *
+ * A referência da cadeia é levada para o mundo pelo frame do PAI da
+ * junta-base. Quando ela fica paralela ao eixo (braço apontado exatamente
+ * para trás), a projeção degenera e caímos para o "para cima" do tronco e,
+ * em último caso, para o "para o lado" — a mesma escada de fallback que o
+ * solver já usa para o plano de dobra.
+ */
+function swivelBasis(
+  axis: THREE.Vector3,
+  parentWorldQuat: THREE.Quaternion,
+  chain: IKChainDefinition,
+): { zero: THREE.Vector3; quarter: THREE.Vector3 } {
+  const candidates = [chain.swivelZero, [0, 1, 0] as const, [1, 0, 0] as const]
+
+  for (const candidate of candidates) {
+    const reference = new THREE.Vector3(...candidate).applyQuaternion(parentWorldQuat)
+    const perpendicular = reference.clone().addScaledVector(axis, -reference.dot(axis))
+    if (perpendicular.lengthSq() > EPSILON) {
+      const zero = perpendicular.normalize()
+      return { zero, quarter: new THREE.Vector3().crossVectors(axis, zero).normalize() }
+    }
+  }
+
+  const zero = new THREE.Vector3(0, 0, 1)
+  return { zero, quarter: new THREE.Vector3().crossVectors(axis, zero).normalize() }
+}
+
+/**
+ * Giro atual do cotovelo/joelho, em graus, na mesma referência que
+ * `solveIKChain` usa com `swivelDeg`. É medido da pose, não guardado em lugar
+ * nenhum: o controle da UI lê daqui e escreve resolvendo, então os dois nunca
+ * saem de sincronia (e um ângulo que os limites não permitem simplesmente não
+ * aparece).
+ */
+export function getSwivelAngle(figure: Figure, chain: IKChainDefinition): number {
+  const [baseJointName, midJointName] = chain.joints
+  const { joints } = buildJointFrames(figure)
+  const baseGroup = joints.get(baseJointName)
+  const midGroup = joints.get(midJointName)
+  const endGroup = joints.get(chain.endEffector)
+  if (!baseGroup?.parent || !midGroup || !endGroup) return 0
+
+  const basePos = new THREE.Vector3()
+  const midPos = new THREE.Vector3()
+  const endPos = new THREE.Vector3()
+  baseGroup.getWorldPosition(basePos)
+  midGroup.getWorldPosition(midPos)
+  endGroup.getWorldPosition(endPos)
+
+  const axis = endPos.clone().sub(basePos)
+  if (axis.lengthSq() < EPSILON) return 0
+  axis.normalize()
+
+  const toMid = midPos.clone().sub(basePos)
+  const radial = toMid.addScaledVector(axis, -toMid.dot(axis))
+  if (radial.lengthSq() < EPSILON) return 0
+
+  const parentWorldQuat = new THREE.Quaternion()
+  baseGroup.parent.getWorldQuaternion(parentWorldQuat)
+  const { zero, quarter } = swivelBasis(axis, parentWorldQuat, chain)
+
+  return THREE.MathUtils.radToDeg(Math.atan2(radial.dot(quarter), radial.dot(zero)))
+}
+
+export interface IKSolveOptions {
+  /**
+   * Giro do cotovelo/joelho em torno do eixo base→alvo, em graus. Ausente =
+   * mantém o plano de dobra atual (continuidade ao arrastar o alvo, que é o
+   * comportamento desde o #12).
+   */
+  swivelDeg?: number
+}
+
 export function solveIKChain(
   figure: Figure,
   chain: IKChainDefinition,
   targetWorldPosition: readonly [number, number, number],
+  options: IKSolveOptions = {},
 ): IKSolveResult {
   const [baseJointName, midJointName] = chain.joints
   const { outer, joints } = buildJointFrames(figure)
@@ -131,12 +217,43 @@ export function solveIKChain(
   )
   const baseAngle = Math.acos(cosBase)
 
+  const baseParentWorldQuat = new THREE.Quaternion()
+  baseGroup.parent.getWorldQuaternion(baseParentWorldQuat)
+
+  // Giro pedido pelo controle (DECISOES.md #44): com as duas pontas do membro
+  // paradas, o cotovelo/joelho tem UM grau de liberdade — a volta em torno do
+  // eixo base→alvo. É esse ângulo, que o solver sempre decidiu sozinho logo
+  // abaixo, que passa a poder vir de fora.
+  const { zero: swivelZeroDir, quarter: swivelQuarterDir } = swivelBasis(dirToTarget, baseParentWorldQuat, chain)
+  const requestedSwivel = options.swivelDeg
+  if (requestedSwivel !== undefined) {
+    const rad = THREE.MathUtils.degToRad(requestedSwivel)
+    const poleFromSwivel = swivelZeroDir
+      .clone()
+      .multiplyScalar(Math.cos(rad))
+      .addScaledVector(swivelQuarterDir, Math.sin(rad))
+    return solveWithPole(poleFromSwivel)
+  }
+
+  return solveWithPole(null)
+
+  /**
+   * Resolve a cadeia com um plano de dobra dado (giro pedido) ou herdado da
+   * pose atual (`null`). Fechada sobre tudo o que já foi medido acima, para
+   * que os dois caminhos compartilhem exatamente a mesma geometria.
+   */
+  function solveWithPole(requestedPole: THREE.Vector3 | null): IKSolveResult {
+    if (!baseGroup?.parent || !midGroup || !endGroup) {
+      throw new Error(`Cadeia de IK inválida: "${baseJointName}" → "${midJointName}" → "${chain.endEffector}"`)
+    }
+
   // Eixo perpendicular ao plano de dobra: tenta manter a junta intermediária
   // do lado de onde já estava (continuidade visual ao arrastar o alvo), com
   // um eixo de referência fixo como fallback quando a pose atual já está
   // alinhada com o alvo (produto vetorial degenerado).
   const currentDir = currentMidPos.clone().sub(basePos).normalize()
-  let poleDir = currentDir.clone().addScaledVector(dirToTarget, -currentDir.dot(dirToTarget))
+  let poleDir =
+    requestedPole ?? currentDir.clone().addScaledVector(dirToTarget, -currentDir.dot(dirToTarget))
   if (poleDir.lengthSq() < EPSILON) {
     // Braço/perna já esticado na direção do alvo — usa o eixo de dobra atual
     // como referência (continuidade), em vez de um vetor global arbitrário.
@@ -177,8 +294,6 @@ export function solveIKChain(
   const midLimitsForSign = getJoint(midJointName).limits
   const flexesNegative = midLimitsForSign.x !== undefined && midLimitsForSign.x.max <= 0
   const hingeSign = flexesNegative ? 1 : -1
-  const baseParentWorldQuat = new THREE.Quaternion()
-  baseGroup.parent.getWorldQuaternion(baseParentWorldQuat)
   const parentWorldQuatInverse = baseParentWorldQuat.clone().invert()
   // Offset local até a junta intermediária sempre aponta em -Y neste
   // esqueleto (braço/perna retos "para baixo" na pose de repouso, ver
@@ -229,9 +344,10 @@ export function solveIKChain(
   const achievedEndPos = new THREE.Vector3()
   endGroup.getWorldPosition(achievedEndPos)
 
-  return {
-    rotations: { [baseJointName]: baseRotation, [midJointName]: clampedMidRotation },
-    remainingDistanceM: achievedEndPos.distanceTo(target),
-    reached,
+    return {
+      rotations: { [baseJointName]: baseRotation, [midJointName]: clampedMidRotation },
+      remainingDistanceM: achievedEndPos.distanceTo(target),
+      reached,
+    }
   }
 }

@@ -10,10 +10,30 @@
  * automaticamente, sem ação do usuário, como o resto do autosave.
  */
 
+import { FRAME_MASK_SOURCES, type FrameMaskSource } from '../scene/frameMask'
+
 const UI_PREFERENCES_KEY = 'virtual-mockup:ui:v1'
 
-/** Painéis laterais recolhíveis, na ordem em que aparecem no `AppShell`. */
-export const PANEL_KEYS = ['figures', 'properties', 'camera', 'keyframes', 'scenes'] as const
+/** Aceita só os três valores conhecidos: um arquivo editado à mão não pode ligar uma máscara inexistente. */
+function isFrameMaskSource(value: unknown): value is FrameMaskSource {
+  return FRAME_MASK_SOURCES.includes(value as FrameMaskSource)
+}
+
+/**
+ * Painéis recolhíveis, na ordem em que aparecem no `AppShell` — os seis
+ * laterais mais a barra da linha do tempo (`timeline`), que é do RODAPÉ e não
+ * uma coluna, mas recolhe pelo mesmo mecanismo e persiste no mesmo lugar
+ * (item 29).
+ */
+export const PANEL_KEYS = [
+  'figures',
+  'properties',
+  'camera',
+  'snapshots',
+  'animation',
+  'scenes',
+  'timeline',
+] as const
 
 export type PanelKey = (typeof PANEL_KEYS)[number]
 
@@ -22,6 +42,15 @@ export type CollapsedPanels = Record<PanelKey, boolean>
 export function createExpandedPanels(): CollapsedPanels {
   return Object.fromEntries(PANEL_KEYS.map((key) => [key, false])) as CollapsedPanels
 }
+
+/**
+ * Painéis que nascem RECOLHIDOS na primeira visita: a Animação e a barra da
+ * linha do tempo. Com sete colunas, seis painéis abertos já espremem o
+ * viewport, e o animador é o único que não faz parte do fluxo de posar e
+ * capturar — a barra do rodapé, pela mesma razão, não tira altura de quem só
+ * está posando.
+ */
+const COLLAPSED_BY_DEFAULT: readonly PanelKey[] = ['animation', 'timeline']
 
 export interface UIPreferences {
   collapsedPanels: CollapsedPanels
@@ -33,11 +62,26 @@ export interface UIPreferences {
    * ganho, já que a régua não é conteúdo da composição.
    */
   rulerVisible: boolean
+  /**
+   * Qual saída a máscara de enquadramento está mostrando — nenhuma, a do
+   * instantâneo (PNG) ou a da animação (MP4). Mesmo raciocínio da régua: é
+   * apoio de tela, não conteúdo da composição.
+   */
+  frameMaskSource: FrameMaskSource
+  /**
+   * Se aplicar uma pose em dupla também põe o outro boneco na metade
+   * correspondente (DECISOES.md #41). Ligado de fábrica — é o comportamento
+   * que o usuário pediu naquele item; desligar é para quem quer montar o par à
+   * mão.
+   */
+  pairPoseEnabled: boolean
 }
 
-/** Padrão de fábrica: tudo expandido, régua desligada. */
+/** Padrão de fábrica: tudo expandido menos o animador, régua e máscara desligadas, par automático ligado. */
 function createDefaults(): UIPreferences {
-  return { collapsedPanels: createExpandedPanels(), rulerVisible: false }
+  const collapsedPanels = createExpandedPanels()
+  for (const key of COLLAPSED_BY_DEFAULT) collapsedPanels[key] = true
+  return { collapsedPanels, rulerVisible: false, frameMaskSource: 'off', pairPoseEnabled: true }
 }
 
 /** Lê as preferências, sempre devolvendo um objeto completo (defaults para o que faltar ou estiver corrompido). */
@@ -67,10 +111,17 @@ export function loadUIPreferences(): UIPreferences {
       : {}
   ) as Record<string, unknown>
 
+  // Lê os DOIS valores, não só `true`: com um painel que nasce recolhido,
+  // aceitar apenas `true` faria o `false` gravado ao expandi-lo ser ignorado, e
+  // ele voltaria recolhido a cada sessão.
   for (const key of PANEL_KEYS) {
-    if (stored[key] === true) preferences.collapsedPanels[key] = true
+    if (typeof stored[key] === 'boolean') preferences.collapsedPanels[key] = stored[key]
   }
   if (source.rulerVisible === true) preferences.rulerVisible = true
+  if (isFrameMaskSource(source.frameMaskSource)) preferences.frameMaskSource = source.frameMaskSource
+  // Lê os dois valores, e não só `true`: o padrão aqui é ligado, então aceitar
+  // apenas `true` faria o desligamento gravado ser ignorado a cada sessão.
+  if (typeof source.pairPoseEnabled === 'boolean') preferences.pairPoseEnabled = source.pairPoseEnabled
   return preferences
 }
 

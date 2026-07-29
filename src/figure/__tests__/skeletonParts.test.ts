@@ -110,19 +110,47 @@ describe('simetria L/R', () => {
     ),
   ]
 
-  it('juntas pareadas têm as mesmas peças e o mesmo estilo de osso nos dois lados — exceto a ponta do polegar em thumb2.*, a única peça quiral da mão (ver abaixo)', () => {
+  /**
+   * Duas exceções, as duas na mão e as duas verificadas em testes próprios
+   * logo abaixo: a ponta do polegar (`thumb2.*`, girada para lados opostos) e
+   * o bloco de 3 dedos (`fingers*.*`, deslocado para o lado do mindinho de
+   * cada mão desde o #45). Fora delas, os dois lados usam a MESMA lista.
+   */
+  const CHIRAL_HAND_BASES = ['thumb2', 'fingersBase', 'fingersMid', 'fingersTip']
+
+  it('juntas pareadas têm as mesmas peças e o mesmo estilo de osso nos dois lados — exceto as peças quirais da mão (ver abaixo)', () => {
     for (const base of pairedBases) {
-      if (base === 'thumb2') continue
+      if (CHIRAL_HAND_BASES.includes(base)) continue
       expect(getJointParts(`${base}.R`)).toEqual(getJointParts(`${base}.L`))
       expect(getBoneStyle(`${base}.R`)).toEqual(getBoneStyle(`${base}.L`))
     }
     expect(getBoneStyle('thumb2.R')).toEqual(getBoneStyle('thumb2.L'))
   })
 
-  it('nenhuma peça de junta pareada tem deslocamento lateral (X) — com a mão alinhada aos eixos (DECISOES.md #25), nem o pino do dorso precisa mais de espelho', () => {
+  it('só o bloco de 3 dedos tem deslocamento lateral (X), e ele é exatamente espelhado entre as mãos', () => {
     for (const base of pairedBases) {
-      for (const part of getJointParts(`${base}.L`)) {
-        expect(part.offset?.[0] ?? 0).toBe(0)
+      const comDeslocamento = getJointParts(`${base}.L`).filter((part) => (part.offset?.[0] ?? 0) !== 0)
+      if (!base.startsWith('fingers')) {
+        // Com a mão alinhada aos eixos (#25), nem o pino do dorso precisa de espelho.
+        expect(comDeslocamento).toEqual([])
+        continue
+      }
+      expect(comDeslocamento.length).toBeGreaterThan(0)
+      const partsR = getJointParts(`${base}.R`)
+      getJointParts(`${base}.L`).forEach((partL, i) => {
+        const { offset: offsetL, ...restL } = partL
+        const { offset: offsetR, ...restR } = partsR[i]
+        expect(restR).toEqual(restL)
+        expect(offsetR?.[0] ?? 0).toBeCloseTo(-(offsetL?.[0] ?? 0), 6)
+      })
+
+      const styleL = getBoneStyle(`${base}.L`)
+      const styleR = getBoneStyle(`${base}.R`)
+      if (styleL.kind === 'blade' && styleR.kind === 'blade') {
+        const { offsetX: offsetXL, ...baseL } = styleL
+        const { offsetX: offsetXR, ...baseR } = styleR
+        expect(baseR).toEqual(baseL)
+        expect(offsetXR ?? 0).toBeCloseTo(-(offsetXL ?? 0), 6)
       }
     }
   })

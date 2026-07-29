@@ -992,3 +992,994 @@ Pedido do usuário: em poses em par, com dois bonecos na cena, aplicar a pose nu
 **Aviso no painel** (`posePairAuto`, chave nova nos dois idiomas), mostrado só quando aplicar vai mesmo mexer no outro boneco — pose em par E exatamente dois bonecos.
 
 **Validação:** 33 testes novos, suíte em **1043 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real sem erro de console: oito pares montados só clicando "Aplicar pose" no primeiro boneco (o segundo estava deslocado de propósito), com a posição e a rotação resultantes lidas nos campos do painel e conferindo com a tabela, mais dois casos com o boneco de origem girado 40° — inclusive o "colo", que é o caso da composição por matriz.
+
+## 42. Biblioteca de poses do usuário e travamento de juntas
+
+Pedido do usuário: implementar o salvar/carregar que viabiliza a biblioteca de poses (item A.1 do plano) e o travamento de juntas (item A.5). Três decisões foram confirmadas com ele antes de começar — uma delas é justamente a que o plano marcava com ❓.
+
+### Biblioteca de poses
+
+**Uma pose salva guarda o ASSENTAMENTO, não só as juntas** (decisão do usuário). Junto com as rotações vão a inclinação do boneco e a altura do quadril — exatamente os dois campos que `PosePresetPlacement` já carrega nas poses de fábrica (#30). Sem eles, salvar uma pose deitada e reaplicá-la traria o boneco de volta em pé e atravessando o chão; com eles, as poses do usuário ficam tão capazes quanto as de fábrica. O que a pose NUNCA guarda é onde o boneco está no chão (X/Z), a altura, a cor e o nome: isso é identidade e encenação de cada boneco, e é a mesma regra que `applyPosePreset` já seguia.
+
+**`preservesHeading` é derivado, não gravado.** Um boneco sem inclinação (X e Z zerados) está em pé, e aí o giro em Y dele não faz parte da pose — é para onde ele estava encarando na cena, e aplicar preserva. Gravar o campo num arquivo editável à mão só criaria a chance de ele contradizer a rotação; a rotação é a fonte da verdade, e a leitura recalcula.
+
+**A altura é desfeita na captura.** O `groundOffsetM` é dividido pela escala do boneco ao salvar e multiplicado pela de quem recebe ao aplicar, para que a mesma pose salva de um boneco de 1,50 m assente corretamente num de 1,90 m.
+
+**A biblioteca é do WORKSPACE, não da cena.** É o que permite montar uma pose numa cena e reaplicá-la em qualquer boneco de qualquer outra — e é por isso que ela não entra em `.glb` nenhum e sobrevive a trocar de cena. Persistência pelo padrão já construído no #29: arquivo próprio `poses.json` na pasta, apontado pelo manifesto, sanitizado na leitura, mais o autosave em `localStorage`. Salvar e remover uma pose entram no histórico de undo, como salvar e remover um snapshot de cena — as duas coisas são conteúdo do workspace.
+
+**UI: o mesmo combo.** As poses do usuário aparecem num grupo "Minhas poses" no combo das poses de fábrica, com o valor prefixado (`saved:`) para não colidir com as chaves. Escolher e aplicar uma pose passa a ser um gesto só, venha ela de onde vier; "Remover da biblioteca" só aparece com uma pose do usuário escolhida.
+
+### Travamento de juntas
+
+**Uma regra só, sem exceções a memorizar** (decisão do usuário, entre três alcances possíveis): junta travada não muda por NADA automático — slider, gizmo, teclado, IK, sorteio, espelhar/inverter, aplicar pose (de fábrica ou da biblioteca) e aplicar pose importada de arquivo. Em troca da simplicidade, o painel mostra quantas juntas estão travadas na visão da raiz, para o efeito nunca ficar inexplicável. Isso habilita o fluxo que o item do plano pedia: travar os braços e testar várias poses de perna.
+
+**A trava é estado de TRABALHO, não conteúdo da cena** (a decisão que o plano marcava com ❓). Ela vive na sessão e no autosave do navegador; o `.glb` continua contendo apenas a pose, e reabrir uma cena salva traz tudo destravado. Consequência coerente: a trava também fica fora do histórico de undo — travar não é uma edição do boneco, e desfazer uma edição não pode reabrir a proteção que o usuário fechou.
+
+**O IK para o membro inteiro, em vez de aplicar meia solução.** Não é preguiça: o solver é analítico de DOIS ossos e não sabe resolver com um deles preso. Escrever só a metade destravada levaria o punho para um lugar que ninguém pediu — pior do que não mexer. Com uma junta da cadeia travada, `applyIKTarget` registra o alvo, marca "não alcançado" (o gizmo mostra que o arrasto não teve efeito) e não escreve pose nenhuma. O painel avisa antes, para não ler como "o IK está quebrado".
+
+**Detalhes que só aparecem ao integrar:** a `root` não pode ser travada (é colocação do boneco na cena, não pose); duplicar um boneco leva as travas junto (a cópia tem a mesma pose a proteger); remover o boneco leva as travas dele; e carregar uma cena PODA as travas de bonecos que não estão nela — ids de boneco são gerados por cena, então uma trava órfã recairia sobre um boneco diferente com o mesmo id. Numa pose em dupla, o parceiro também é protegido: as duas metades passam pelo mesmo `mergeLockedJoints`.
+
+### Validação
+
+79 testes novos, suíte em **1122 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real sem erro de console: pose deitada salva na biblioteca e aplicada num segundo boneco (que manteve o próprio X e recebeu inclinação -90° e altura -0,79 m), cotovelo travado em -120° sobrevivendo a "Correndo" e ao sorteio com o slider desabilitado e o aviso na tela, "Destravar todas" devolvendo o controle, e biblioteca e travas intactas depois de recarregar a página (autosave).
+
+## 43. Mistura entre duas poses — e por que o quatérnio foi reprovado
+
+Pedido do usuário: o item A.6 do plano, um slider que interpola duas poses, "de maneira simples". 0% é a pose que o boneco tem, 100% é a pose escolhida no combo (de fábrica ou da biblioteca). **Não é animação:** o resultado é uma pose estática única, sem linha do tempo nem quadros — a mistura é só a forma de chegar até ela, e o que fica gravado é a pose final, como qualquer outra edição.
+
+### O plano previa quatérnio. A medição reprovou.
+
+O item trazia uma ressalva técnica ("interpolar ângulos de Euler pode passar por orientações estranhas em rotações grandes; provavelmente interpolar por quatérnio") e pedia validação numérica antes. Feita a medição, **o risco é o oposto do previsto**:
+
+- **Interpolar por EIXO nunca sai dos limites articulares.** Cada eixo tem uma faixa `[min, max]`, e um valor entre dois valores válidos é válido — a faixa é convexa. Medido em 6 pares de poses × 41 passos × todas as juntas: a correção do clamp sobre o resultado é **0,000000°**. O clamp literalmente nunca tem o que fazer.
+- **O quatérnio sai da faixa, e feio.** A pose deste modelo não é uma orientação livre: é um conjunto de ângulos por eixo, cada um com sua faixa. O caminho mais curto entre duas orientações passa fora dessa caixa, e ao voltar para Euler cai numa representação equivalente porém fora do limite. Caso concreto medido: `elbow.R` na mistura entre "clinche" e "alongamento à frente" dá **x = +99°** com limite `[-150, 0]` — o clamp então puxa para 0 e o braço ESTICA sozinho no meio da mistura.
+- **Em salto visível:** o maior deslocamento entre dois passos consecutivos do slider foi de **0,562 m** no quatérnio contra **0,033 m** por eixo (par "mãos na cintura" → "comemorando").
+
+Ou seja: interpolar por eixo é ao mesmo tempo o método mais simples e o único que respeita o contrato do modelo. A ressalva do plano valeria para um rig de orientações livres — não para este, onde a pose É um conjunto de sliders por eixo. O item do plano foi corrigido junto com esta entrega.
+
+### A invariante que amarra tudo: 100% é "Aplicar pose"
+
+As duas pontas são resolvidas para o boneco ANTES de misturar — a rotação do root já com o giro de encenação embutido (regra do `preservesHeading`) e a altura do quadril já multiplicada pela escala da altura dele. Com isso, a mistura em 100% dá exatamente o mesmo resultado que o botão "Aplicar pose", e o slider vira um superconjunto dele em vez de um terceiro jeito de posar com resultado próprio. Há teste travando isso para poses em pé e deitadas.
+
+### As pontas são capturadas uma vez
+
+A base é lida no PRIMEIRO evento do slider e guardada com uma chave (boneco + pose alvo). Reler a pose atual a cada evento faria cada passo partir do resultado do anterior — e arrastar de volta para 0% não devolveria a pose original. Trocar de boneco ou de pose alvo recomeça a mistura naturalmente, pela chave, sem efeito nenhum para limpar estado. Aplicar ou sortear também reinicia: a pose do boneco mudou, a base guardada não vale mais.
+
+### Correção de chão: o meio do caminho é o produto
+
+A altura do quadril interpola em linha reta, mas a geometria das pernas não. Medido: no meio do caminho de "em pé" para "ajoelhado" o boneco **afunda 17 cm no chão**, embora as duas pontas estejam perfeitamente assentadas. Como o ponto intermediário é justamente o que esta funcionalidade entrega, isso seria entregar uma pose quebrada.
+
+A correção sobe apenas o afundamento **extra** — o que a mistura criou, descontado o que as pontas já tinham. É essa formulação que preserva as duas invariantes: 0% e 100% ficam intactos mesmo quando o usuário deixou o boneco enterrado de propósito. E ela nunca BAIXA o boneco: o problema é atravessar o chão, não flutuar (uma pose de voo continua voando). Depois da correção, a junta mais baixa fica em 0,000 m ao longo de todo o caminho nos cinco pares medidos.
+
+Detalhe menor no mesmo espírito: a rotação do root interpola pelo **menor arco** (de 170° para -170° são 20°, não 340°), porque ela não tem limites — é a colocação do boneco na cena, e dá a volta completa. As juntas não precisam disso: os limites já as mantêm no caminho curto.
+
+### Validação
+
+31 testes novos, suíte em **1153 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real sem erro de console: `hip.L` percorrendo 0 → -12 → -25 → -37 → -50 em passos de 25% (linear, como esperado), voltar a 0% devolvendo a pose original, 100% e "Aplicar pose" dando a mesma altura, e a mistura para uma pose deitada girando o boneco de 0° a -90° com o pé apoiado no chão no meio do caminho — 30 cm acima de onde a interpolação linear pura o teria deixado.
+
+## 44. Giro do cotovelo/joelho (IK), e o aviso de alcance que mentia
+
+Dois pedidos na mesma leva, os dois vindos da avaliação de "travar o punho e posicionar o braço pelo cotovelo".
+
+### O aviso corrigido
+
+Com uma junta da cadeia travada (#42), o painel mostrava *dois* avisos ao arrastar o alvo: o da trava e o antigo "Alvo fora de alcance — **aproximação mais próxima aplicada**". O segundo mentia: com a cadeia travada nada é aplicado, a pose sai referencialmente idêntica. Agora ele só aparece quando a cadeia está livre; travada, quem explica é o aviso da trava.
+
+### O que a avaliação do pedido mostrou
+
+O pedido era "travar o punho e mover o braço a partir do cotovelo, com o tronco e o punho parados". Duas conclusões:
+
+1. **Metade já existia.** O alvo do IK **já é** o punho preso no espaço: enquanto o alvo não se move, a mão não sai do lugar. E o tronco também nunca se move — a cadeia é `[shoulder, elbow]`, o solver nunca escreve no `chest`. Não havia nada a construir dessa metade.
+2. **O que faltava é um grau de liberdade só.** Com o ombro parado e a mão presa no alvo, o cotovelo não fica livre: ele percorre uma **circunferência** em torno do eixo ombro→mão. É o giro (*pole vector*), e o solver **já decidia esse ângulo sozinho** desde o #12 — herdando o da pose atual para dar continuidade ao arrastar o alvo. Expor o controle foi alimentar esse parâmetro de fora, sem tocar na geometria.
+
+**O verbo, porém, tinha de ser outro.** "Travar" no app significa *não escreva nesta junta* — proteção. "Prender no espaço" significaria o oposto: *escreva o que for preciso nas outras juntas para este ponto não sair do lugar* — restrição. Pior: manter a mão apontando para o mesmo lado enquanto o cotovelo gira exigiria escrever no próprio punho, o contrário da regra única do #42. Por isso o controle novo não usa a trava: ele usa o alvo do IK, que já é o pino, e a trava continua significando só uma coisa.
+
+### A volta inteira não existe — e é isso que a implementação respeita
+
+Medição feita antes de implementar (12 combinações de membro e alvo, giro varrido de -180° a 175° em passos de 5°):
+
+- A faixa alcançável é **contígua**, não esburacada: **85° a 220° de arco no braço** e **25° a 105° na perna**, conforme os limites do ombro/quadril. Um cotovelo real também não dá a volta.
+- **Fora dela o efetuador escapa até 88 cm do alvo.** A rotação da base é grampeada pelos limites e o braço inteiro sai de lugar — o oposto do que o controle promete.
+
+Daí a regra da ação: **só aplica se a mão continuar no alvo** (tolerância de 1 cm; dentro da faixa o erro medido é 0,0 mm, fora dela ≥ 18 cm — qualquer corte entre os dois classifica igual). Recusar deixa o membro parado na borda da faixa, como um slider de junta que bate no limite, em vez de arrancar a mão do lugar.
+
+### O ângulo é lido da pose, nunca guardado
+
+`getSwivelAngle` mede o giro atual a partir das posições das juntas; o controle exibe esse valor e escreve resolvendo. Não há estado intermediário para sair de sincronia: um ângulo que os limites não permitem simplesmente não aparece no controle. A propriedade que sustenta isso está travada em teste — **medir o giro e reaplicá-lo reproduz a mesma pose, com 0,0 mm de erro no efetuador**, em 12 combinações de pose e membro.
+
+A referência do zero (`swivelZero`, por cadeia) vive no frame do **pai da junta-base**, ou seja, no tronco: cotovelo para trás, joelho para a frente. Assim o ângulo acompanha o boneco — girar o boneco inteiro não muda o número —, com a mesma escada de fallback que o solver já usava para o caso degenerado (membro apontado exatamente na direção da referência).
+
+### Validação
+
+16 testes novos, suíte em **1169 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real sem erro de console: giro inicial lido em 48°, +30° aceito, +60° **recusado** (borda da faixa), -40° aceito, 180° recusado — e o alvo do IK com os **mesmos três valores em todas as linhas**, que é a promessa central; ombro travado deixa o controle desabilitado; e com a cadeia travada só o aviso da trava aparece.
+
+## 45. Dedo indicador separado, e a adução do polegar que faltava
+
+Pedido do usuário: modelar polegar e indicador individualmente e deixar os três dedos restantes no bloco existente. A avaliação prévia mediu a mão antes de mexer nela, e a medição partiu o trabalho em dois passos — o segundo é o pedido, o primeiro é a condição para ele valer alguma coisa.
+
+### Passo 1: a adução do polegar ia só até 40°
+
+Varredura de 4.845 poses de polegar contra 1.200 do indicador hipotético: com `thumb1.z` limitado a 40°, a menor distância possível entre a ponta do polegar e a ponta do indicador era **2,61 cm**. Ou seja, separar o indicador não produziria pinça nenhuma — o polegar não alcança a linha dele. O contato aparece a partir de ~75° (0,07 cm) e é exato em 80° (0,04 cm); a 60° sobram 1,17 cm, a espessura de um lápis.
+
+A mesma medição denunciou um defeito que já existia: no punho fechado a ponta do polegar parava em X = -6,4 cm, **2,4 cm fora da borda da mão** (meia-largura 4,0 cm). O polegar fechava AO LADO do punho, embora o comentário do preset dissesse "por cima dos dedos" desde a fase 2 — o preset já usava 35° dos 40° disponíveis, e o teto era o limite, não a escolha.
+
+Daí a faixa de `thumb1.z` ir a 80° (espelhada: -80° no lado R) e o punho fechado ser reajustado para `thumb1 { x: 40, z: 75 }, thumb2 { y: -65 }` — valores medidos, não estimados: a ponta cai em (-0,032, -0,047, -0,052), com 2,0 cm de folga do eixo das falanges no plano YZ, exatamente a soma da meia-espessura da lâmina (0,0095) com o raio da ponta do polegar (0,0115). Repousa sobre os dedos, que é o que o comentário sempre prometeu.
+
+### Passo 2: o indicador
+
+Três juntas por mão (`indexBase/Mid/Tip`), com **um grau de liberdade só** (flexão em X), os mesmos limites e os mesmos comprimentos de falange do bloco. Manter o comprimento é decisão, não descuido: o alvo antropométrico da mão (0,183 m do punho à ponta) está calibrado no bloco desde o #25, e encurtar só o indicador exigiria uma razão que não temos como medir aqui — inventá-la seria pior que a simetria.
+
+**A repartição da fileira dos nós.** A palma tem 8,0 cm na linha dos nós. O indicador fica com o quarto radial (o lado do polegar), centrado em X = ∓0,030; o bloco dos outros três fica com os 6,0 cm restantes, centrado a 1,0 cm do lado oposto. Larguras com 1 mm de recuo de cada lado deixam uma fresta de 2 mm entre os dois — visível, e é ela que faz o indicador ler como dedo à parte quando a mão está aberta.
+
+**O pivô não se move; só o desenho.** Deslocar a junta `fingersBase` 1 cm em X inclinaria a lâmina da palma em 6,7° (`atan(0,010/0,085)`), porque o osso é desenhado entre as duas juntas. Então as juntas do bloco continuam em X = 0 e quem sai do centro é a geometria, via um `offsetX` novo nas lâminas. Isso é **exato, não aproximado**: a flexão dos dedos gira em torno do eixo X, e esse eixo é a própria fileira dos nós — a posição X do pivô sobre a própria linha de rotação não muda o movimento em nada. Já o indicador não precisa de deslocamento: quem está fora do centro é a junta dele.
+
+**O sinal do deslocamento é uma armadilha, e está travado em teste.** As lâminas são orientadas por uma rotação de 180° que alinha o +Y do molde ao -Y do osso, e essa rotação inverte o X local. Por isso o `offsetX` é somado ao PONTO MÉDIO do osso (espaço local da junta pai), não à geometria: assim o sinal que se lê no `skeleton.ts` é o sinal que aparece na tela. Um teste de renderização (`Figure.test.tsx`) lê a posição da malha e exige +0,01 no lado L e -0,01 no R.
+
+**Poses de mão.** As quatro existentes fecham o indicador junto com o bloco (o gesto não muda). Duas novas: **apontando** (punho fechado, indicador estendido) e **pinça** (as duas pontas encostadas). E as cinco poses de corpo que apontam — apontar à frente, para cima, para baixo, ao longe, para o outro — deixaram a "mão-faca" do #36, que existia só porque apontar com dedo era impossível, e passaram a apontar com o dedo. Para isso o campo `hands` de um preset de corpo passou a aceitar `{ L, R }`: aponta a mão do gesto, a outra continua aberta, descansando. `apresentando` e `quem, eu?` seguem de mão aberta de propósito — são gestos de palma. `polegar para trás` continua com o polegar, que é o que a pose é.
+
+### Compatibilidade: o punho salvo que viraria um "apontando"
+
+Arquivo gravado antes disto — cena, `.glb`, biblioteca de poses, autosave — não tem as juntas `index*`, e a leitura ignora junta ausente: o indicador nasceria **esticado** no meio de um punho fechado. `withLegacyIndexFinger` copia o ângulo do bloco para o indicador na leitura, o que reproduz o gesto antigo exatamente (lá, um número comandava os quatro dedos). A decisão é por MÃO: basta o arquivo trazer uma junta `index*` daquele lado para a mão inteira passar intacta — preencher pela metade inventaria um gesto que ninguém salvou. Um ponto só, usado pelas cenas (`figureFromExtras`, que também atende o import de `.glb`) e pela biblioteca de poses (`sanitizeSavedPoses`).
+
+### Validação
+
+O esqueleto foi de 32 para 38 juntas, e a maior parte da conferência saiu de graça: os testes tabelados de espelho L/R, limites, peças e convenção de sinal passaram a cobrir as novas sozinhos. Só duas travas precisaram mudar de forma, porque o bloco virou quiral: elas agora exigem que o deslocamento lateral seja **exatamente espelhado** entre as mãos, em vez de proibir deslocamento.
+
+26 testes novos, suíte em **1192 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Validado no Chrome real sem erro de console: as seis juntas do indicador aparecem no combo, as seis poses de mão estão lá, e os ângulos aplicados batem — aberta (0/0), fechada (85/85), **apontando (indicador 0, bloco 85)**, pinça (50/35, polegar em -80). Na pose de corpo "apontando à frente", indicador direito em 0 com o bloco direito em 85, e a mão esquerda inteira em 0.
+
+## 46. Câmera no vocabulário de fotografia: lente em milímetros, enquadramento, ângulo e movimento A→B
+
+Pedido do usuário, com duas tabelas de referência anexadas (faixas de distância focal e seus efeitos; tamanhos de plano e ângulos de câmera). O objetivo declarado é facilitar o registro de keyframes.
+
+### A inconsistência resolvida antes de começar: qual lado do sensor
+
+O `fov` de uma `PerspectiveCamera` do three.js é **vertical**, e a captura de keyframe troca o `aspect` da câmera para o da resolução escolhida (`KeyframeCapture.tsx`) — 16:9, 1:1 ou o que o usuário pedir. Converter milímetros pela LARGURA do sensor (36 mm, o padrão do Blender) faria a mesma lente enquadrar diferente na tela e no PNG, porque o vertical mudaria com a proporção.
+
+Por isso a conversão é ancorada na ALTURA do sensor full-frame: `FOV = 2·atan(12/f)`. Assim "50 mm" significa sempre o mesmo enquadramento vertical, e capturar em quadrado recorta as laterais — exatamente o que um recorte quadrado faz numa foto full-frame. A conversão é exata nos dois sentidos (medido: `mm → FOV → mm` reproduz o valor com 8 casas).
+
+### Três controles independentes, que se compõem
+
+- **Lente** (`lens.ts`): decide a compressão de perspectiva. Botões 14/24/35/50/85/100/200 mm, com a família da tabela no rótulo de ajuda (grande angular, padrão, retrato, super teleobjetiva).
+- **Tamanho do plano** (`shotFraming.ts`): decide o recorte — alvo e distância. Os cortes são medidos nos MARCOS do boneco, lidos do esqueleto na pose atual: o plano médio corta na cintura (`spine`), o primeiro plano nos ombros (clavículas), e o alto da cabeça (o topo do ovo, +0,15 local) é sempre a borda de cima. O plano geral usa a caixa de todas as juntas, então um boneco deitado enquadra diferente de um em pé. O **plano detalhe** é a junta selecionada — é o que este app tem de específico para apontar; sem junta escolhida, é o rosto.
+- **Ângulo**: decide de que ALTURA se olha (elevação: 0° no nível dos olhos, -30° contra-picado, +30° picado, 90° vista aérea). O azimute — o lado de onde a câmera já olhava — é preservado, a mesma regra que a tecla `F` já seguia: mudar o ângulo não tira o usuário do lado que ele escolheu.
+
+**A composição é o que torna os milímetros previsíveis.** Com um plano ativo, trocar a lente REENQUADRA: a câmera se afasta o quanto for preciso para o mesmo trecho do corpo continuar ocupando a tela. É o efeito que o item 11 do plano queria — 24 mm e 200 mm no mesmo primeiro plano mudam a distorção do rosto e a compressão do fundo, não o recorte (conferido no navegador, lado a lado).
+
+### Ângulo holandês e por cima do ombro (os dois que não encaixavam)
+
+O **holandês** não é posição, é inclinação: o topo da tela girado em torno do próprio eixo de visão. Com a câmera inclinada, a órbita do mouse passa a girar em torno do eixo torto — o `OrbitControls` orbita em volta do `camera.up`. O usuário optou por incluir mesmo assim; o painel avisa disso enquanto a inclinação está ativa e oferece "Endireitar". A faixa vai a ±45°: além disso não é ângulo holandês, é câmera de cabeça para baixo. E o **bookmark passou a guardar o `up`**, senão uma vista salva inclinada voltaria endireitada — campo opcional, e arquivo gravado antes disto não ganha um `up` inventado.
+
+O **por cima do ombro** exige dois bonecos: a câmera fica atrás e ao lado da cabeça de quem está selecionado, olhando para a cabeça do outro. É o único preset que resolve posição E distância sozinho — a distância é a que os dois bonecos já têm entre si, e impor um tamanho de plano por cima disso desmancharia o enquadramento. Com um boneco só, o botão fica desabilitado.
+
+### Movimento entre dois pontos
+
+Mesmo desenho da mistura de poses (#43): as duas pontas são estados completos e o slider anda entre elas, com 0% sendo exatamente A e 100% exatamente B. Cada ponta guarda **a câmera inteira** — posição, alvo, inclinação e lente —, e por isso os quatro botões pedidos (aproximar, afastar, orbitar, transladar) são só ATALHOS que geram B a partir de A. Quem quiser um *dolly zoom* marca A perto com grande angular e B longe com teleobjetiva: a lente interpola junto (conferido no navegador: 24 mm → 69 mm → 200 mm, exatamente a média geométrica no meio).
+
+**A interpolação é feita nas coordenadas do controle, não na posição bruta.** Alvo em linha reta, direção por arco e distância/lente em progressão geométrica. Interpolar a posição direto faria a câmera cortar caminho por dentro de uma órbita — a corda em vez do arco, mergulhando na direção do alvo — e faria um zoom parecer rápido no começo e lento no fim. Numa meia-volta exata não há eixo de giro implícito, e o quatérnio escolheria um qualquer: aí o giro é forçado em torno da vertical do mundo, que é o caminho que se espera ao rodear um boneco.
+
+### Validação
+
+62 testes novos, suíte em **1253 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+Uma mudança de configuração foi necessária: o `testTimeout` do Vitest subiu de 5 s (padrão) para 20 s. Não é regressão — os casos pesados (os 200 sorteios de `randomPose`, os arquivos de painel que remontam a UI a cada interação) levam ~4 s isolados e passavam dos 5 s por disputa de CPU com a suíte já em ~1250 testes paralelos.
+
+Validado no Chrome real sem erro de console: os sete botões de lente aplicam a distância focal pedida; o mesmo primeiro plano em 24 mm e em 200 mm mantém o recorte e muda a distorção; os quatro ângulos reposicionam a câmera preservando o lado; a inclinação de 25° aparece no horizonte e o aviso da órbita torta acompanha; o slider só libera com as duas pontas marcadas; e o dolly zoom fecha em 24/69/200 mm nas três posições.
+
+## 47. Termo em inglês no botão, tradução como legenda
+
+Pedido do usuário, logo depois do #46. O motivo está nas próprias tabelas de referência que ele passou: elas têm uma coluna "Parâmetro (Inglês)" e outra "Tradução" porque o termo em inglês **é o texto que se digita num gerador de imagem**. Traduzi-lo no botão obrigava a traduzir de volta na hora de usar.
+
+Então esses botões passaram a mostrar duas linhas: o TERMO em cima (`Close-Up`, `Low Angle`, `Bird's-Eye View`, `Over-the-Shoulder`, `Zoom In`, `Rotate`…) e a tradução embaixo, menor e esmaecida, como legenda.
+
+**Os termos ficam FORA do i18n**, em mapas junto do domínio (`SHOT_TERMS`/`ANGLE_TERMS` em `shotFraming.ts`, `MOVE_TERMS` em `cameraMove.ts`, `LENS_FAMILY_TERMS` em `lens.ts`). Não é descuido: um texto que precisa ser idêntico em qualquer idioma da interface não é uma tradução — se fosse uma chave de i18n, alguém traduziria o dicionário `en` de volta para "português" um dia sem perceber que quebrou a serventia. Estão travados por teste contra a tabela.
+
+**A legenda muda de papel entre os idiomas**, e isso é intencional. Em pt-BR ela é a tradução ("Primeiro plano"); em inglês, traduzir seria repetir o botão, então ela vira uma glosa curta do efeito da tabela ("Face and shoulders", "From below: imposing"). Nos dois casos a segunda linha explica a primeira.
+
+**Escopo:** só o vocabulário que vem das tabelas (tamanhos de plano, ângulos, famílias de lente) e os quatro verbos de movimento, que o usuário também escreveu em inglês no pedido. As ações do próprio app — "Marcar A", "Limpar", "Endireitar" — e as vistas ortográficas que já existiam continuam traduzidas: não são termos de prompt.
+
+O nome acessível de cada botão passou a ser a junção das duas linhas ("Close-Up Primeiro plano"), o que é a leitura certa para quem usa leitor de tela; os testes casam pelo termo.
+
+Suíte em **1256 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos; conferido no Chrome real sem erro de console.
+
+### Correção na sequência: botão habilitado que não fazia nada
+
+O usuário relatou que os botões de enquadramento "não funcionavam" — e não funcionavam mesmo, sem boneco SELECIONADO. O painel só os desabilitava quando a cena estava vazia, mas enquadrar é sempre sobre um boneco: com um na cena e nenhum selecionado, o rig não tinha o que medir e o clique morria em silêncio. Agora os planos, os ângulos e o por cima do ombro dependem da seleção, e a dica diz qual dos dois passos falta ("Adicione um boneco" ou "Selecione um boneco"). Junto, o rig deixou de cair no primeiro boneco da lista quando não havia seleção no por cima do ombro — o painel promete o boneco selecionado, e o fallback contradizia a promessa.
+
+## 48. Sem seleção, o enquadramento é do conjunto
+
+Pedido do usuário logo depois da correção do #47: quando nenhum boneco está selecionado, mirar no ponto médio de todos os bonecos da cena — "usar este recurso para enquadramentos que fazem sentido funcionar desta maneira".
+
+**Quais fazem sentido** (`GROUP_SHOT_KEYS`): plano geral extremo, plano geral e plano médio. Primeiro plano e plano detalhe ficam de fora de propósito — um close no "meio de todo mundo" é um close no ar entre as pessoas, e o plano detalhe já é definido pela junta selecionada, que também exige um boneco. O "por cima do ombro" continua exigindo seleção: quem está em primeiro plano é o boneco escolhido, e sem essa escolha não há de que ombro olhar.
+
+O painel passou a decidir o botão pela mesma função do domínio (`canApplyShot`) que o rig usa para agir, e a dica explica a diferença em vez de só dizer que falta alguma coisa. Os ângulos acompanham o conjunto: bastam bonecos na cena.
+
+### O que a versão ingênua erra
+
+A distância sai da **altura** enquadrada, porque o `fov` do three.js é vertical. Só que a altura de um grupo não diz nada sobre a largura dele: quatro bonecos lado a lado têm a altura de um só. A primeira versão convertia a largura da caixa do conjunto em altura equivalente pelo `aspect` da tela — e no navegador o boneco da ponta apareceu cortado mesmo assim.
+
+O erro: essa conta mede a largura **no plano do alvo**, e quem está mais perto da câmera ocupa mais tela. Com os bonecos em diagonal, o da frente estoura o quadro enquanto a conta diz que cabe.
+
+A versão correta é `fitDistance`: para cada canto da caixa do conjunto, medido a partir do alvo, o afastamento lateral (`q·direita`) não depende da distância da câmera, mas a profundidade sim (`q·visão + d`). Disso sai em forma fechada o `d` mínimo que põe aquele canto dentro do tronco de visão, sem iterar — e vale o maior dos cantos, comparado com a distância que o tamanho do plano pediria. De brinde, a vista aérea de um grupo passou a funcionar: olhando reto de cima, a "altura" do grupo vira profundidade e só a conferência de quadro salva o enquadramento.
+
+### O plano médio corta os braços, não as pessoas
+
+Com a caixa do corpo inteiro, três bonecos de braços abertos empurravam a câmera para trás até o "plano médio" sair igualzinho ao plano geral — o vão de braço a braço é do tamanho da altura do boneco. Mas o plano médio corta os braços abertos pelo mesmo motivo que corta as pernas: é um recorte. O que não pode faltar é o **tronco** de cada um.
+
+Então o plano médio do grupo usa uma caixa diferente: a coluna de cada boneco, da cintura mais baixa à cabeça mais alta, com a largura dos ombros (`shoulderSpanM`, medido de `shoulder.L` a `shoulder.R` — não estimado). Na vertical ele não confere quadro nenhum, porque cortar é o serviço dele.
+
+### Compatibilidade
+
+Com **um** boneco só, o enquadramento de conjunto é numericamente idêntico ao do boneco selecionado, nos três planos — travado por teste. Selecionar ou não o único boneco da cena não pode mexer na câmera. O caminho do boneco selecionado não mudou em nada: a conferência de quadro é exclusiva do conjunto, porque um primeiro plano precisaria da largura do ROSTO e a caixa disponível é a do corpo.
+
+Suíte em **1276 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Conferido no Chrome real com três bonecos e nenhum selecionado, sem erro de console: os três planos abertos habilitados e os dois fechados não; plano geral com todos dentro do quadro (foi assim que o corte do boneco da ponta apareceu na primeira versão); plano médio cortando na cintura com os três troncos inteiros; contra-picado sobre o conjunto; e, ao selecionar um boneco, o plano geral volta a ser só dele.
+
+## 49. Contra-picado limitado pelo chão
+
+Pedido do usuário logo depois do #48: o contra-picado não pode pôr a câmera abaixo do plano horizontal. Estava mesmo furando o chão — dava para ver o boneco por baixo do piso, com a grade acima da linha do horizonte.
+
+A causa é que os 30° da tabela eram aplicados sempre, e **quanto mais longe a câmera está, mais fundo os mesmos 30° a levam**: num primeiro plano, a 1,5 m do rosto, 30° descem 75 cm e sobra chão; num plano geral, a 4 m, descem 2 m e a câmera acaba um metro abaixo do piso.
+
+A solução não foi empurrar a câmera de volta para cima depois (isso desmancharia o enquadramento), e sim **limitar a inclinação**: `elevationAboveGround` resolve qual é o maior mergulho que ainda deixa a câmera no chão (`asin((0 − altura do alvo) / distância)`) e usa o que for menos fundo entre esse e os 30° da tabela. O contra-picado continua sendo contra-picado — a câmera segue abaixo do que enquadra —, só que com o ângulo que couber: −30° inteiros num primeiro plano, cerca de −12° num plano geral, quase nada num plano geral extremo, onde a câmera está a vinte metros.
+
+**A restrição é circular no enquadramento de conjunto** (#48): a distância decide o quanto se pode inclinar, e a inclinação nova muda a caixa a caber e portanto a distância. Como cada passada só SOBE a câmera, poucas repetições fecham; e um último aperto do limite contra a distância final garante a câmera no chão ou acima dele, sem depender de a repetição ter convergido. No caminho do boneco selecionado não há circularidade: a distância vem só do tamanho do plano, então uma passada resolve exatamente.
+
+Os outros ângulos não mudam — nível dos olhos, picado e vista aérea nunca descem. E o enquadramento também não: limitar a inclinação não mexe na distância do plano, o que está travado por teste (o plano geral em contra-picado fica à mesma distância do plano geral no nível dos olhos).
+
+Suíte em **1280 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Conferido no Chrome real, sem erro de console: o primeiro plano mantém os 30° e olha por baixo do queixo; o plano geral de um boneco e os três planos abertos do grupo param exatamente na linha do chão, com o horizonte rente aos pés e nada visto por baixo do piso.
+
+## 50. O vocabulário de câmera completo
+
+O usuário pediu sugestões de outros enquadramentos pré-definidos e mandou implementar todas. São seis famílias novas, mais três correções que só apareceram olhando o resultado no navegador.
+
+### A lacuna maior não era um plano faltando
+
+Era o **lado**. Até aqui todo plano herdava o azimute de onde a câmera estivesse, e os presets ortográficos que existiam são do MUNDO e ainda trocam a projeção. Não havia como pedir "3/4 de frente deste boneco, em perspectiva, mantendo o plano" — que é a vista padrão de quem desenha figura humana.
+
+`ORIENTATION_KEYS` resolve isso: `Front View`, `Three-Quarter Front`, `Profile View`, `Three-Quarter Back`, `Back View`, girando a partir da FRENTE do boneco. A frente sai do +Z local da raiz (o lado do nariz e dos olhos, `skeleton.ts`), achatado no chão — é o quadril que diz para onde o corpo aponta, não a cabeça. Qual dos dois lados fica a cargo de onde a câmera já está, pelo mesmo princípio dos ângulos: pedir "perfil" de quem está à direita dá o perfil direito, não um lado sorteado. Com isso um *turnaround* (itens 12 e 13 do plano) vira uma descrição reproduzível.
+
+### A escada de planos, e o que "Wide Shot" queria dizer
+
+Entraram `Full Shot`, `Cowboy Shot` (corta no meio da coxa) e `Medium Close-Up` (no peito). Os cortes saem de marcos medidos — a coxa é o meio entre quadril e joelho, o peito é a junta `chest`.
+
+E **`Wide Shot` mudou de sentido**, de propósito: era "corpo justo com 15% de folga", que é o que a literatura chama de *full shot*. Manter os dois nomes para o mesmo enquadramento seria dois botões com o mesmo resultado. Agora `Wide Shot` mostra o boneco NO ambiente (ocupando ~55% da tela) e `Full Shot` é o corpo justo de antes. Quem tinha um plano geral salvo vai vê-lo mais aberto — é a única mudança de comportamento desta entrega.
+
+### Altura de câmera é uma família diferente de ângulo
+
+`Ground / Knee / Hip / Shoulder Level`. Parece redundante com contra-picado e picado, e não é: **ângulo é inclinação, altura é posição**. Trinta graus a dois metros descem 1 m; a vinte metros descem 10 m e furariam o chão (foi o #49). "Na altura do joelho" dá o mesmo resultado em qualquer distância. Como as duas respondem à mesma pergunta, escolher uma desliga a outra.
+
+### Worm's-Eye saiu de graça do limite do chão
+
+A vista de verme pede −90° e o limite do #49 a segura no piso. Não precisou de caso especial nenhum: é a vista aérea de cabeça para baixo, e o chão define sozinho o "mais baixo que dá".
+
+### Composição, POV, two shot e contracampo
+
+`Rule of Thirds` sobe o sujeito para o terço de cima; `Lead Room` o empurra para o lado oposto ao que ele olha. Compor fora do centro custa tela — deslocar o quadro em 1/6 exige 1/3 a mais de espaço para nada sair pela borda oposta —, e o `Lead Room` acompanha o quanto o boneco está de perfil: de frente para a câmera não há lado para abrir, e o deslocamento é naturalmente zero, sem caso especial.
+
+No `POV Shot` a câmera avança nove centímetros à frente dos olhos em vez de nascer neles. A alternativa seria esconder o boneco, mas `visible` é conteúdo: entra no undo e sobreviveria ao preset. Um passo à frente resolve sem efeito colateral. E o olhar sai da CABEÇA, não do corpo — o pescoço pode estar torcido, e é o olhar que define um POV.
+
+`Reverse Angle` é meia-volta na câmera viva, então compõe com qualquer vista. `Dolly Zoom` e `Crane` entraram como geradores de ponta B: o dolly zoom afasta a câmera e alonga a lente na mesma proporção, o que mantém o sujeito do mesmo tamanho porque o `fov` sai de `2·atan(12/f)`.
+
+### Três defeitos que só o navegador mostrou
+
+**O two shot punha um boneco atrás do outro.** Estava geometricamente certo — a conferência de quadro garantia que os dois cabiam —, mas caber não é aparecer: olhado do eixo em que os dois estão alinhados, o da frente tapa o de trás. Agora o two shot escolhe a direção perpendicular à linha que liga o par, do lado em que a câmera já estava.
+
+**A câmera na altura do joelho ia parar dentro da pelve.** Este só aparecia com a lente padrão do app (26 mm), muito mais aberta que os 50 mm dos testes: com uma grande angular o plano médio fica a menos de um metro do corpo, e não havia como descer até o joelho sem entrar no boneco. A regra do #49 — limitar a vista, nunca o enquadramento — não servia aqui, porque uma vista de dentro do boneco não serve para nada. A distância ganhou um piso: o suficiente para alcançar a altura pedida passando a pelo menos uma largura de ombros do eixo do corpo. É a única troca em que a altura vence o tamanho do plano, e vence pouco.
+
+**O painel virou um paredão de botões.** Com plano, ângulo, altura, lado, composição e vistas, os trinta botões precisavam de rótulos de família — sem eles não dá para saber o que COMPÕE com o quê e o que SUBSTITUI o quê.
+
+### O pedido virou objeto
+
+`computeShotView` tinha sete argumentos posicionais e ia para doze. Virou `ShotRequest`, um objeto — nenhuma chamada com doze posições se lê. Foi a maior mudança mecânica da entrega e valeu por si.
+
+Suíte em **1318 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Conferido no Chrome real sem erro de console: os oito degraus da escada, as cinco vistas relativas ao boneco, as quatro alturas, a vista de verme, as duas composições, POV com um segundo boneco à frente do olhar, two shot com os dois lado a lado, contracampo, e o dolly zoom fechando em 26/51/103 mm nas três posições do slider.
+
+## 51. Enquadramento por combo, com botão de confirmar
+
+Pedido do usuário logo depois do #50, e a razão está no que o #50 produziu: trinta botões num painel de 240 px de largura. O mecanismo é o mesmo do combo de poses (#36) — escolher no combo não faz nada, só o botão aplica —, e pelo mesmo motivo: navegar pela lista com o teclado não pode sair mexendo na câmera a cada opção.
+
+**Quatro combos e um botão, não quatro botões.** Plano, altura, lado e composição se COMPÕEM num enquadramento só, então há um "Aplicar enquadramento" que compromete tudo de uma vez. Aplicar peça por peça faria a câmera pular quatro vezes antes de o usuário terminar de montar o que queria. No store, as cinco ações granulares viraram um `applyFraming` que enfileira um comando só.
+
+**Ângulo e altura foram para o MESMO combo**, em dois grupos. As duas respondem "de que altura se olha" e só uma pode valer — com botões isso precisava de comentário e de um `pressed` calculado; num combo é evidente por construção, e a exclusão mútua deixou de ser uma regra a manter.
+
+**A composição virou uma escolha de quatro**, em vez de dois interruptores independentes: centralizado, terço de cima, espaço à frente, ou os dois. As combinações válidas ficam à vista.
+
+**As vistas da cena ficaram num combo separado, com botão próprio.** Elas SUBSTITUEM o enquadramento em vez de compor com ele — resolvem posição e distância sozinhas —, e cada uma tem a sua exigência: POV precisa de seleção, over-the-shoulder e two shot precisam de dois bonecos, e o two shot ainda precisa de um plano aplicado, que é o tamanho que ele usa. O botão segue a vista escolhida e a dica diz o que falta.
+
+**O termo em inglês continua vindo primeiro**, agora antes de um travessão (`Close-Up — Primeiro plano`), porque `<option>` não tem duas linhas. A regra do #47 não muda: o que vai para o prompt é o que está antes do travessão. Os botões que sobraram — os movimentos — continuam com termo em cima e legenda embaixo.
+
+**Escopo:** só os enquadramentos, como pedido. Lente (botões numéricos de milímetros), movimento e inclinação holandesa continuam como estavam — não são escolhas de uma lista, e o slider da inclinação é contínuo.
+
+Duas coisas que só apareceram no navegador: os combos estouravam a largura do painel (um `<select>` não encolhe abaixo do conteúdo sem `min-width: 0`, e as opções são longas), e o rótulo "Vistas" colidia com o "Vistas ortográficas" que já existia no mesmo painel — virou "Vistas da cena".
+
+Suíte em **1316 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Conferido no Chrome real sem erro de console: escolher no combo não move a câmera, o botão aplica, o enquadramento composto (americano + altura do joelho + 3/4 de frente + terços) sai num movimento só, e o combo de vistas aplica two shot e POV.
+
+## 52. Mini animador: as quatro decisões que o pedido deixou em aberto
+
+Pedido do usuário em 2026-07-27: um mini animador que interpola entre vários keyframes — bonecos posicionados + posição de câmera + duração em milissegundos — e exporta MP4, reusando o mecanismo de interpolação já existente e avaliando a `mediabunny` para o vídeo. O plano completo está em `PLANO.md` > "Mini animador (fase 10)"; aqui ficam só as decisões, que ele tomou depois de eu levantar três inconsistências entre o pedido e o código.
+
+**Isto muda o escopo declarado do projeto.** O topo do `PLANO.md` dizia, desde a primeira linha, "**Fora de escopo:** geração de animações", e a seção de ideias repetia a restrição. A mudança é deliberada e do usuário; o texto do plano foi atualizado nos três lugares em vez de ficar contradizendo o que passou a existir.
+
+**"Keyframe" já estava ocupado, e o usuário escolheu devolver a palavra.** No app, keyframe era a imagem PNG exportada: o painel "Keyframes", o `kf001.png`, a tecla `Espaço`, o campo `keyframeCounter` do formato da cena. Havia três saídas — chamar os marcos da animação de outra coisa, aceitar a ambiguidade, ou renomear o PNG. Ele escolheu a terceira: o PNG vira **instantâneo**/`snapshot` e "keyframe" passa a significar o que a palavra significa em todo lugar. É a opção mais cara (mexe em pastas, componentes, store, i18n, nome de arquivo e um campo persistido) e a única que não deixa dívida de vocabulário. O campo gravado passa a ser `snapshotCounter`, com leitura do `keyframeCounter` antigo como fallback, sem subir a versão do schema; o prefixo do arquivo vai de `kf###` para `snap###` continuando a mesma contagem por cena.
+
+**A correção de chão sai na animação e fica na mistura.** O `blendPoses` (#43) levanta o boneco quando a pose intermediária afunda — medido em 17 cm no caminho de "em pé" para "ajoelhado". Mas o pedido diz, com todas as letras, que atravessar o chão não é problema e que quem resolve é o usuário com os keyframes certos. Reusar o mecanismo como está entregaria um movimento vertical que ninguém pôs nos keyframes; então a correção vira opção, ligada por padrão (o slider de mistura não muda) e desligada pelo animador. De quebra sai o custo de reconstruir as 32 juntas de cada boneco a cada quadro só para medir o afundamento.
+
+**Um buraco que só a animação revela:** `BlendablePose` carrega `positionY` e mais nada de posição — a mistura de poses nunca precisou de X/Z porque acontece parada no lugar. Uma animação precisa, e o amostrador interpola a posição inteira. Não é defeito do #43: é o mecanismo sendo usado num eixo para o qual não tinha sido pedido.
+
+**A animação vive no workspace, como a biblioteca de poses (#42), não na cena.** `localStorage` mais um `animations.json` na pasta, ao lado do `poses.json` e do `joint-limits.json`; entra no undo e no autosave, e **não** viaja no `.glb`. Consequência aceita: o `.glb` continua sem canais de animação glTF, o que mantém intacta a ida e volta com o Blender já validada na fase 6.
+
+**A exportação do PNG também passa a esconder o destaque da junta selecionada.** O pedido diz que o vídeo tem de mostrar exatamente o que sairia numa imagem exportada — e hoje não mostraria: a captura esconde grade e gizmos por nome de objeto, mas o destaque amarelo é cor de material, aplicada por prop no `Figure.tsx`, e sai no PNG. Em vez de duas regras diferentes, o usuário escolheu corrigir a captura: uma opção só ("Ocultar grade/gizmos") esconde as três coisas, nas duas saídas. É a única das quatro decisões que muda o comportamento de um recurso já entregue.
+
+**`mediabunny` aprovada (1.51.0).** Licença **MPL-2.0** — copyleft fraco, por arquivo: como dependência não modificada, não alcança o nosso código. Vale contrastar com a `mannequin.js`, descartada no início do projeto justamente por licença (GPL-3.0): a diferença aqui é real, não é a mesma situação. Zero dependências de runtime, TypeScript puro, tree-shakable e funcional offline depois de empacotada — a regra de "nenhuma dependência de rede em runtime" continua valendo. O `CanvasSource` lê o nosso próprio canvas WebGL e o `add(timestamp, duration)` devolve promessa de contrapressão, que é a forma exata do laço quadro a quadro. Descartada a `mp4-muxer` do mesmo autor: só empacota, deixaria a codificação em WebCodecs cru por nossa conta, e a `mediabunny` é a sua evolução.
+
+**A exportação é quadro a quadro, não gravação de tela.** `canvas.captureStream()` + `MediaRecorder` seria menos código, mas grava em tempo real: a taxa de quadros passaria a depender da velocidade da máquina e o mesmo projeto sairia diferente a cada exportação. Renderizando quadro a quadro com o relógio nas nossas mãos, o arquivo é função apenas dos keyframes — e uma máquina lenta só demora mais, nunca produz outro vídeo.
+
+**Consequência assumida, não escondida:** a interpolação existente é linear em `t`, então a velocidade é constante dentro de cada trecho e muda de golpe em cada keyframe. É o que a premissa "usar o mecanismo já existente" pede. Suavização de entrada/saída fica anotada como ideia, não construída.
+
+### 52.1. O que a execução acrescentou (2026-07-27)
+
+**A medição prevista no plano foi feita, e não mandou trocar de caminho.** A dúvida era se publicar a cena amostrada como estado React a cada quadro (≈500 objetos com 5 bonecos) seria caro demais, com o caminho imperativo — escrever nos `Group`s vivos — como saída. Medido no Chrome real (headless, 1600×900, 5 bonecos, dois keyframes bem distantes, janelas de 5 s): **mediana de 166,7 ms por quadro com a cena parada e 166,6 ms tocando**. Ou seja, a reprodução não acrescentou **um único intervalo de vsync** ao tempo por quadro; o custo do commit ficou abaixo da resolução da própria medição (16,7 ms), e portanto muito abaixo do limite de ~30 ms que mandaria trocar. O tempo por quadro naquele ambiente é da rasterização por software do headless, não do animador — num navegador com GPU ele cai, e a conclusão só melhora. O caminho imperativo continua anotado como saída, agora sem motivo para usá-lo.
+
+**Esconder os apoios de tela virou um passe POR QUADRO, não um antes do laço.** Era o desenho óbvio esconder uma vez, exportar e restaurar no fim. Mas entre um quadro e outro há um commit de React (o `flushSync` que põe a cena do quadro) e o `update` do `TransformControls`, e qualquer um dos dois pode reacender um overlay no meio da exportação. Um passe pela árvore por quadro é ruído perto de renderizar a cena, e elimina a classe inteira de bug.
+
+**O laço de exportação não recebe "desenhe" e "codifique" separados.** A primeira versão tinha `drawFrame` e `sink.addFrame` como dois passos do laço — e estava errada: `renderAtResolution` devolve o canvas ao tamanho da janela logo depois do `render`, então o codificador leria um quadro do tamanho errado. Os dois viraram um `encodeFrame` só, que renderiza e entrega no mesmo passo síncrono e devolve a contrapressão. O contrato ficou explícito no tipo, em vez de ser uma regra a lembrar.
+
+**A linha do tempo tinha de NAVEGAR, não só marcar posição.** Na primeira versão, arrastar o slider só mudava um número: nada aparecia na tela, porque só a reprodução amostrava a animação. Isso torna a linha do tempo decorativa — e é justamente com ela que se confere um trecho sem esperar a animação tocar inteira. Arrastar virou um comando (`seek`) que o player atende amostrando aquele instante e pondo o resultado na tela, sem tocar na cena de trabalho. É deliberadamente diferente de "Ir para", que existe para AJUSTAR um keyframe e por isso carrega o retrato para a cena de verdade.
+
+**Capturar sempre larga a pré-visualização.** O retrato é da cena de TRABALHO, e a pré-visualização é da animação: capturar com a animação na tela deixaria o usuário vendo uma coisa e gravando outra. Capturar (e regravar) passou a parar a reprodução e a limpar a pré-visualização antes, para que o que está na tela seja o que vai para o keyframe.
+
+**Um buraco de estado que só aparece encurtando um trecho:** a linha do tempo pode ficar parada além do fim da animação (bastava reduzir uma duração), e o painel mostrava "2,0 s de 0,6 s". O instante exibido passou a ser sempre grampeado ao total, e apertar "tocar" com a linha do tempo no fim recomeça do zero — que é também o que se espera ao tocar de novo.
+
+**Peso da `mediabunny`, medido e não estimado:** o bundle vai de 1.456,60 kB para 1.616,44 kB, ou **+159,84 kB (+41,45 kB comprimido)**, com o *tree-shaking* deixando só o caminho de escrita de MP4. Continua valendo o aviso de chunk >500 kB que o `three` já provocava.
+
+**Verificado no Chrome real, sem erro de console:** três keyframes capturados com poses e enquadramentos diferentes, "ir para" devolvendo a cena ao retrato, reprodução na tela e um **MP4 de verdade** — `Corrida.mp4`, 265.512 bytes, caixa `ftypisom`, 15 quadros a 24 fps de uma animação de 0,6 s a 1080×1080. Os codecs disponíveis naquele navegador eram `avc1`, `av01` e `vp09`; a ordem de preferência escolheu H.264, como planejado.
+
+**Dois ajustes de UI que só o navegador mostrou:** o rótulo "Nome" do painel colidia com o nome do boneco e o da cena (virou "Nome da animação" — mesma classe do "Vistas" do #51), e os botões "Renomear" e "Regravar" saíam cortados na largura de 240 px. E uma decisão de layout: com **sete** colunas, o painel de Animação nasce **recolhido** — é o único que não faz parte do fluxo de posar e capturar. Isso obrigou a corrigir a leitura das preferências, que só aceitava `true`: um painel recolhido por padrão precisa que o `false` gravado ao expandi-lo também valha, senão ele voltaria recolhido a cada sessão.
+
+## 53. Máscara de enquadramento, e a caixa da pose em dupla
+
+Pedido do usuário em 2026-07-27, logo depois da fase 10: construir a máscara de *letterbox* que o #52 tinha deixado anotada e não construída, e uma caixa para ligar/desligar a montagem automática do par (#41). Duas escolhas foram levadas a ele antes de começar; as duas recomendações foram aceitas.
+
+### Máscara de enquadramento
+
+**O problema é antigo e o #52 só o tornou visível.** A exportação — PNG desde a fase 5, MP4 desde a fase 10 — troca a proporção da câmera em `applyOutputAspect`. Ou seja: o enquadramento composto na tela **nunca** foi o do arquivo, e a diferença cresce quanto mais a janela se afasta da resolução de saída. Com sete painéis abertos numa tela de 2400×1250, a área de desenho fica em 1166×1186 — quase quadrada — enquanto a saída padrão é 16:9. Compor ali e exportar era um chute.
+
+**Um controle só, na Toolbar, com três estados** (decisão do usuário entre três desenhos): *sem máscara* / *do instantâneo* / *da animação*. As duas resoluções são independentes — dá para ter um PNG 4K quadrado e um vídeo Full HD —, e uma caixa em cada painel abriria a pergunta "e se as duas estiverem ligadas?". Um seletor não tem essa pergunta. Fica ao lado da régua, que é a outra preferência de tela, e é persistido no mesmo `virtual-mockup:ui:v1`.
+
+**Escurecer por fora, com contorno fino** (decisão do usuário entre três aparências), como Blender e Maya: tarja opaca esconderia o que está logo fora do quadro, que é justamente o que se quer ver ao decidir se cabe; só contorno se perde em cena clara.
+
+**A máscara SOZINHA mentiria.** Este é o ponto que o item anotado no #52 não previa. Desenhar um retângulo 16:9 dentro de uma janela quase quadrada e escurecer o resto sugere que o arquivo é aquele recorte — e não é: a exportação preserva o campo de visão **vertical** e ALARGA o horizontal, então o arquivo contém laterais que a janela nunca chegou a mostrar. Para o retângulo dizer a verdade, a câmera tem de se afastar até o quadro inteiro caber. O fator é exato e sai numa linha: **altura do retângulo ÷ altura da janela** (1 quando a saída é mais estreita que a janela — aí só sobra dos lados, e basta cobrir a sobra).
+
+**O afastamento é `setViewOffset`, não `camera.zoom`.** `zoom` já tem dono: é por ele que o `CameraRig` faz a câmera ortográfica equivaler à distância da perspectiva (`computeOrthographicZoom`). Disputar o mesmo campo quebraria a projeção ortográfica ou obrigaria a multiplicar o fator da máscara em cada um dos cinco pontos em que o `CameraRig` escreve `zoom`. `view` é um canal separado, funciona igual nas duas câmeras e some com um `clearViewOffset` — o teste trava que a ortográfica se afasta pelo fator certo **com o `zoom` dela intocado**.
+
+**A exportação suspende o afastamento — e é isso que mantém a promessa de pé.** `applyOutputAspect` limpa o deslocamento de vista antes de renderizar e o devolve depois. Sem isso o arquivo sairia com as próprias barras da máscara desenhadas nele. Como `applyOutputAspect` é a peça única compartilhada por PNG e MP4 (#52), a garantia vale para as duas saídas de graça.
+
+**As barras são DOM, não objeto de cena.** Duas consequências que se somam: nada ali pode vazar para o arquivo (o PNG e o MP4 leem o buffer do WebGL, que a máscara nunca toca), e o véu sai de um `box-shadow` só, sem geometria nem material novos. `pointer-events: none` mantém órbita e seleção funcionando por baixo.
+
+**Compensação do arrasto de deslocamento, que só apareceu ao pensar no uso.** O `OrbitControls` calcula quanto andar a partir do `fov` e da altura do elemento (confirmado no fonte do `three-stdlib`) e **não** consulta o deslocamento de vista — então, com a câmera afastada, a cena andaria `fit` vezes menos que o cursor e o ponto sob o mouse escorregaria. `panSpeed` multiplica o delta em pixels antes dessa conta, então `1/fit` cancela o afastamento exatamente. Girar e aproximar não precisam de nada: um é radianos por pixel, o outro é fator de escala, e nenhum depende da extensão do quadro.
+
+### Caixa da pose em dupla
+
+**Uma opção do store, não uma leitura do store de UI.** `applyPosePreset` ganhou um terceiro parâmetro opcional (`{ pairPartner }`), com o padrão sendo montar o par — todo o comportamento do #41 continua valendo para quem chama sem dizer nada. Quem decide é o painel. O caminho contrário (o store espiando o `uiStore`) acoplaria conteúdo a preferência de tela e tornaria o comportamento de uma ação do store dependente de estado invisível para quem a chama.
+
+**A caixa só aparece quando há um par para montar** — pose em dupla E exatamente dois bonecos —, que é a mesma condição do aviso do #41; fora disso, marcar não mudaria nada. Como a escolha é persistida, quem prefere montar à mão não precisa desmarcar de novo a cada pose. O aviso troca junto com a caixa: marcado, ele diz que o outro boneco vai ser posado; desmarcado, diz que ele fica intocado e que a distância a usar está na dica da pose logo acima.
+
+**Desmarcada, o parceiro fica idêntico — não "quase".** O teste compara a **identidade do objeto**, não os campos: aplicar a pose não pode nem recriar o boneco parceiro, senão ele entraria no histórico de undo como se tivesse mudado.
+
+**Persistência com a leitura dos dois valores.** O padrão desta preferência é LIGADO, então aceitar só `true` na leitura (como o arquivo fazia originalmente para a régua) faria o desligamento ser esquecido a cada sessão — o mesmo defeito corrigido no #52.1 para o painel que nasce recolhido. Ficou explícito no comentário, porque é a segunda vez que essa armadilha aparece.
+
+### Verificação
+
+**23 testes novos, suíte em 1.434 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Peso: **+4,13 kB no bundle** (1.616,44 → 1.620,57 kB).
+
+**No Chrome real, sem nenhum erro de console**, numa área de desenho de 1166×1186 (quase quadrada, o caso difícil):
+
+- Máscara 16:9 medida em **1,7778** de proporção, centrada (265,1 px acima × 265,2 px abaixo); trocando a resolução do instantâneo para quadrada ela vira **1,0000**; trocando a fonte para a animação em 4K ela acompanha a resolução do vídeo.
+- **O PNG exportado saiu byte a byte idêntico com e sem máscara** (100.368 bytes nos dois) — a prova de que o afastamento não contamina o arquivo.
+- **O que a máscara delimita é o que o arquivo contém:** a silhueta do boneco medida dentro do retângulo claro na tela e no PNG de 1920×1080 gravado em seguida difere no máximo **0,12% do quadro** (0,0012 no topo, 0,0005 à direita) — cerca de 1 px em 1080.
+- **Arrasto de deslocamento:** 200 px de arrasto moveram a cena **176,4 px sem máscara e 174,7 px com** (1% de diferença, ruído da medição por centroide). Sem a compensação teriam sido ~97,5 px, já que o afastamento ali era de 0,553.
+- **Pose em dupla:** desmarcada, aplicar "Aperto de mão" deixou o segundo boneco em Z = 0; marcada, ele foi para **0,755 m**, a distância da tabela do #41. As duas preferências sobreviveram a recarregar a página.
+
+**Um rótulo ambíguo, de novo.** "Enquadramento" na Toolbar colidia com o fieldset "Enquadramento" do painel de Câmera — terceira vez que isso aparece (o "Vistas" do #51, o "Nome" do #52.1). Virou "Máscara de enquadramento". Vale registrar o padrão: rótulo curto e genérico num app com sete painéis quase sempre já existe em outro lugar.
+
+## 54. Fim da reprodução devolve a cena, e o keyframe intermediário
+
+Dois pedidos do usuário em 2026-07-28: parar a animação ao chegar ao fim da linha do tempo, e um botão para criar um keyframe intermediário na posição do slider.
+
+### O que "parar no fim" queria dizer
+
+**A reprodução já parava** — o laço tem `pause()` desde a fase 10, e conferi no Chrome antes de mexer: o slider estaciona em 2,0 s de 2,0 s e o botão volta a "Tocar", e assim fica. (Uma primeira sonda minha sugeriu o contrário; era artefato de medição — as leituras via Playwright levaram 1,3 s de uma animação de 2 s, e a última caiu depois do fim. A sonda foi refeita amostrando dentro da própria página.)
+
+Levado isso ao usuário, o que faltava era outra coisa: **a pré-visualização continuava presa na tela**. Enquanto ela está lá, o `Viewport` renderiza o retrato da animação no lugar da cena de trabalho — então editar não aparece em lugar nenhum, e era preciso apertar "Parar" para voltar a trabalhar. Chegar ao fim passou a **largar a pré-visualização**.
+
+**A câmera fica onde a animação terminou, e a linha do tempo também.** Não é "Parar" (que rebobina): o enquadramento final é justamente o que se quer conferir depois de assistir, e o slider no fim diz onde a animação acabou. O que sai de cena é só o retrato dos bonecos.
+
+**Pausar e navegar continuam segurando a pré-visualização**, de propósito: ali o usuário está PEDINDO para ver um instante. Só a chegada automática ao fim solta — que é onde não há gesto nenhum dizendo "continue me mostrando isto".
+
+### Keyframe intermediário
+
+**Cortar um trecho não pode mudar a animação** (decisão do usuário entre dividir a duração e empurrar o resto para frente). O keyframe novo guarda exatamente o que já se via naquele instante, e a duração do trecho cortado se reparte entre as duas metades: o total e o instante de todos os outros keyframes não se mexem. É um ponto de ajuste, não uma edição — e é o que permite usá-lo do jeito natural: inserir, "ir para", corrigir só o que incomodava naquele meio do caminho.
+
+**Isso só é verdade porque a interpolação tem propriedade de semigrupo** — e verificar isso foi o trabalho de verdade. Distância e lente andam em progressão geométrica, a direção da câmera anda por arco, a pose anda por eixo e o giro do root pelo menor arco: em todas, cortar no meio e reinterpolar cada metade reproduz o mesmo caminho. Confirmado por medição, não por argumento: cada junta, cada eixo, posição, alvo e lente batem a 1e-9 em onze instantes ao longo do trecho.
+
+**Menos um canal, e ele obrigou a uma peça nova.** O topo da tela (`up`) é interpolado em linha reta e só então reendireitado contra a direção de visão. Guardar no keyframe o valor JÁ reendireitado faz cada metade partir de outro lugar da reta original — **medido: 1,46° de desvio de orientação num par comum e 3,29° com ângulo holandês entre as pontas**, ou seja, o horizonte inclinaria diferente no meio do trecho e a promessa seria falsa. O `splitCameraView` guarda o valor da reta, **antes** de reendireitar, e com isso o desvio cai para o piso da medida (~1e-6 grau, que é a resolução de um `acos` em ponto flutuante duplo). Não muda nada do que se vê: os dois vetores geram o MESMO plano com a direção de visão, e é o plano que define a orientação — o `lookAt` reendireita sozinho. Um teste trava justamente isso: os vetores `up` são diferentes e a orientação é idêntica.
+
+**Errei a métrica antes de acertar o código.** A primeira versão do teste comparava vetor `up` com vetor `up` e acusou 16,8° de "desvio" logo depois da correção — medindo a representação, não a imagem. A comparação certa é entre as bases ortonormais das câmeras, que é o que o espectador vê.
+
+**O corte tem de cair estritamente dentro de um trecho.** Em cima de um keyframe não há o que dividir, e uma metade de duração zero seria grampeada para 1 ms por `clampKeyframeDuration` — alongando a animação justamente na operação que promete não mexer nela. O botão fica desabilitado nesses casos, e também durante a reprodução, onde o instante mudaria entre ver o botão e clicá-lo.
+
+**Inserir navega até o keyframe novo.** É o passo seguinte natural (inserir → ajustar), e é o que põe na tela o que se vai editar. Diferente de "Ir para", que carrega o retrato para a cena de trabalho, aqui basta a navegação: o keyframe acabou de ser criado a partir do que já estava na tela.
+
+### Verificação
+
+**20 testes novos, suíte em 1.454 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**No Chrome real, sem erro de console:**
+
+- Depois de a animação chegar ao fim, **aplicar uma pose mudou a tela** — a prova direta do pedido, já que com a pré-visualização presa a edição não apareceria.
+- O botão fica desabilitado no instante 0 e no fim, e habilitado no meio do trecho.
+- Inserir a 600 ms de um trecho de 1000 ms deixou as durações em **600 e 400**, com o total intacto; inserir de novo a 300 ms compôs para **300, 300 e 400**.
+- E a prova visual da promessa: os quadros renderizados em 200, 400, 600 e 800 ms saíram **pixel a pixel idênticos** antes e depois da inserção.
+
+## 55. O vídeo saía errado — e as três funcionalidades da mesma leva
+
+Pedido do usuário em 2026-07-28: copiar a câmera de um keyframe vizinho, copiar a pose de um boneco para outro, fixar padrões (lente 35 mm, 60 fps, 720p) e **investigar por que o último quadro aparecia rapidamente no início do vídeo**.
+
+### O defeito do vídeo, que era maior que o sintoma
+
+**O sintoma relatado era a ponta de um problema sério: o arquivo exportado não era a animação.** Medido com um experimento comparável ponto a ponto — mesma cena, mesma câmera, mesma resolução, mesmo caminho de renderização — pondo o boneco a percorrer a tela da esquerda para a direita e medindo o centroide da silhueta em cada quadro:
+
+| | quadros medidos (0 = borda esquerda, 1 = direita) |
+| --- | --- |
+| PNG do app (referência) | 0,259 · 0,334 · 0,420 · 0,519 · 0,633 · 0,758 · 0,896 |
+| MP4, **antes** | **0,518** · 0,258 · 0,258 · 0,258 · 0,375 · 0,375 · 0,375 |
+| MP4, **depois** | 0,258 · 0,334 · 0,420 · 0,516 · 0,627 · 0,747 · 0,872 |
+
+Ou seja: o primeiro quadro do arquivo era a **cena de trabalho** (0,518 contra 0,523 medidos nela) e o resto avançava **aos saltos**, repetindo imagens. O que o usuário via como "o último quadro aparece rápido no começo" é a explicação exata: no fluxo normal, a cena de trabalho na hora de exportar É o último keyframe — acabou de ser capturado dela.
+
+**A causa: dois reconciliadores de React, e um deles é assíncrono.** O `<Canvas>` do `@react-three/fiber` não desenha os filhos pelo React do DOM; ele tem um reconciliador próprio e entrega a cena com `root.render(children)` — chamado **dentro de uma função `async`**, depois de um `await configure(...)`. Duas consequências que se somam:
+
+1. O `flushSync` do `react-dom` **não esvazia a fila do R3F**. O laço de exportação chamava `flushSync`, achava que a cena do quadro já estava na árvore, e renderizava a anterior.
+2. Mesmo o `flushSync` do próprio `@react-three/fiber` **não alcança** o que chega pela prop `children`, porque aquele `root.render` acontece num microtask, fora de qualquer flush.
+
+**A correção tem duas partes, e a segunda é estrutural.** Trocar para o `flushSync` do `@react-three/fiber` acabou com os saltos, mas sobrou **exatamente um quadro de atraso** (medido: `vídeo[i+1] == referência[i]`, com diferença de 0,0006 — o vídeo ganhava um quadro espúrio no começo e perdia o último). O conserto de verdade foi tirar os bonecos do caminho dos `children`: o novo `SceneFigures.tsx` assina as lojas **de dentro** do `<Canvas>`, então mudar a pré-visualização vira trabalho direto no root do R3F, que o `flushSync` dele esvazia na hora. Com as duas partes, o arquivo passou a bater com a referência quadro a quadro, com diferença máxima de **0,0009** — ruído de compressão H.264.
+
+**Por que isso passou na fase 10.** A validação de lá conferiu dimensões, duração, caixa `ftypisom` e ausência de pixels amarelos — nunca **o conteúdo quadro a quadro**. É a lição da entrega: para um arquivo gerado, conferir metadados não é conferir o arquivo.
+
+**Sonda descartada no caminho:** a primeira medição usou `requestVideoFrameCallback` durante a reprodução e, em headless, entregou dois quadros de treze. A segunda comparou o vídeo com **capturas de tela** do app, e misturou a diferença de proporção (tela 1166×1186 × arquivo 1080×1080) com o atraso. Só a terceira — PNG exportado pelo app, na mesma resolução do vídeo — isolou uma coisa da outra.
+
+### Copiar a câmera do keyframe vizinho
+
+`copyAnimationKeyframeCamera(animationId, keyframeId, ±1)`: leva **só** a câmera, deixando o retrato dos bonecos e a duração do trecho intactos — o teste compara a identidade do objeto `figures`, não os campos. É o gesto de "segura o enquadramento": um trecho em que a câmera fica parada e só a cena se move. Dois botões por card, desabilitados nas pontas.
+
+### Copiar a pose de um boneco para outro
+
+Passa pelo **mesmo caminho da biblioteca de poses** (#42) — `captureFigurePose` seguido de `withPose` —, e é isso que dá de graça todas as regras certas: vai o assentamento (juntas, inclinação do corpo e altura do quadril, esta desfeita da escala da origem e refeita na do destino, medido em 1,50/1,70 no teste); não vão o lugar no chão, a altura, a cor nem o nome; um boneco em pé preserva o giro de encenação de quem recebe; e as **juntas travadas do destino continuam intactas**. Copiar e "salvar na biblioteca e aplicar" dão exatamente o mesmo resultado, por construção.
+
+Na UI (escolha do usuário entre três desenhos): um combo de destino mais um botão "Copiar", no painel de Propriedades, que só aparece havendo outro boneco na cena. O destino escolhido é reconferido a cada render em vez de guardado — remover o boneco de destino deixaria um id órfão.
+
+### Padrões
+
+- **Lente 35 mm** (`DEFAULT_FOCAL_MM`), de onde passa a sair o `CAMERA_DEFAULTS.fov`: 37,849° verticais, contra os 26,991° dos 50 mm anteriores. É a grande angular discreta do repórter — abre o bastante para corpo inteiro com ambiente, sem a distorção de rosto das ultra grandes angulares.
+- **60 fps de padrão, com o seletor mantido** (decisão do usuário): 24 e 25 continuam ali para casar com material de cinema e PAL.
+- **720p acrescentado à lista e padrão só do VÍDEO** (decisão do usuário). O instantâneo continua nascendo em Full HD: o PNG é referência para desenhar, e ali resolução alta é o que se quer. A exportação renderiza um quadro por vez, então a resolução multiplica direto a espera — daí o vídeo começar mais baixo. A lista de presets é a mesma dos dois painéis; só o ponto de partida difere (`DEFAULT_VIDEO_RESOLUTION_PRESET`).
+
+### Verificação
+
+**17 testes novos, suíte em 1.471 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**No Chrome real, sem erro de console:** a lente nasce em 35 mm, o animador em 60 fps e 720p, o instantâneo em Full HD, e a lista mostra as quatro resoluções; copiar a pose levou o joelho do boneco 2 de 0° para 40° (o valor do boneco 1) sem tirá-lo de X=2; copiar a câmera do keyframe anterior trocou a lente do keyframe 2 de 85 mm para 24 mm **deixando o joelho em 6°**; e o vídeo exportado voltou a bater com o PNG de referência em todos os quadros.
+
+## 56. Redutor/acelerador global da animação
+
+Pedido do usuário em 2026-07-28: um multiplicador de velocidade preenchido à mão, aplicado a **toda a linha do tempo**, sem separação por keyframe, que muda a velocidade da geração do vídeo (exemplos dados: 0,5 reduz 50%; 1,15 aumenta 15%).
+
+**A inconsistência do enunciado, levada ao usuário:** o pedido dizia "uma casa decimal", mas o exemplo `1.15` tem duas — com uma casa, 1,15 viraria 1,2 e o vídeo sairia 4% mais curto do que o exemplo pede. O usuário escolheu **duas casas, de 0,05 em 0,05**, e a faixa de **0,1 a 5,0**.
+
+**É multiplicador de VELOCIDADE, não de duração.** O vídeo dura `linha do tempo ÷ velocidade`: a 0,5 fica o dobro de comprido, a 1,15 fica em 87% — que é o que "reduzir 50%" e "aumentar 15%" querem dizer. Por isso `animationOutputDurationMs` divide.
+
+**A linha do tempo não se mexe.** A velocidade é a taxa com que se anda por ela, não uma reescrita dela: os keyframes continuam nos mesmos instantes, as durações digitadas em cada card continuam valendo o que dizem, e o "inserir keyframe aqui", o slider e o "ir para" nem sabem que ela existe. Assim, mudar a velocidade de uma animação pronta não desmancha nenhum ajuste fino de tempo — e voltar a 1,00 devolve exatamente o que havia.
+
+**Onde ela vive (escolha do usuário entre duas):** é campo da **animação**, e não ajuste de painel como fps e resolução. Entra no undo, no autosave e no `animations.json`, e por isso a mesma animação rende o mesmo vídeo amanhã — um ajuste de ferramenta voltaria a 1,00 a cada recarregamento, e o vídeo sairia diferente sem ninguém ter mexido nele. Cada animação tem a sua.
+
+**Duas partes na implementação:**
+
+- **Reprodução na tela:** o relógio anda `Δreal × velocidade`, e a velocidade é lida **a cada quadro** — mexer no campo com a animação tocando vale na hora, sem parar e tocar de novo.
+- **Exportação:** a linha do tempo de quadros é gerada sobre a duração **de saída** (`frameTimeline(animationOutputDurationMs(...))`) e cada quadro é amostrado por `sampleAnimationOutput`, que converte o relógio do arquivo para o da animação (`tempo do vídeo × velocidade`). A 0,5 são o dobro dos quadros, cada um meio passo adiante — câmera lenta de verdade, e não a mesma coisa com quadros repetidos.
+
+**Detalhes que os testes fixam:** `clampAnimationSpeed` arredonda à grade de 0,05 e devolve o valor exato de duas casas (sem o arredondamento final, `23 × 0,05` daria 1.1500000000000001 no campo); `animationOutputDurationMs` **não** arredonda, porque é a divisão exata que faz o último quadro cair em cima do último keyframe; sair do campo vazio devolve o valor anterior em vez de virar o mínimo; e `animations.json` sem o campo (arquivo gravado antes disto) abre em 1,00 — que é o que quem montou aquela animação viu na tela.
+
+### Verificação
+
+**19 testes novos, suíte em 1.490 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**No Chrome real, sem erro de console**, com um boneco atravessando a tela e o centroide da silhueta medido em cada quadro do MP4 (linha do tempo de 800 ms a 25 fps):
+
+| velocidade | quadros | duração do arquivo | dica do painel |
+| --- | --- | --- | --- |
+| 1,00 | 21 (21 esperados) | 0,84 s | 0.8s |
+| 0,50 | 41 (41 esperados) | 1,64 s | 1.6s |
+| 2,00 | 11 (11 esperados) | 0,44 s | 0.4s |
+
+E o caminho andado é o mesmo: os quadros **pares** do vídeo a 0,5 repetem a rampa inteira da velocidade normal com diferença máxima de **0,0005** (ruído de compressão) — o dobro de quadros cobrindo o mesmo percurso, que é a definição de câmera lenta.
+
+A reprodução na tela foi medida pela **taxa**, não pelo tempo total: em renderização por software (headless), montar e desmontar a pré-visualização custa mais de um segundo e varia a cada rodada, então a mesma velocidade foi medida em duas linhas do tempo (2 s e 6 s) e o custo fixo cancelado na diferença. Os 4 s a mais de linha do tempo levaram **3.831 ms** a 1,00, **7.981 ms** a 0,50 e **1.959 ms** a 2,00 — contra 4.000, 8.000 e 2.000 esperados.
+
+Persistência conferida no navegador: 1,35 digitado sobrevive a **Ctrl+Z** (volta a 1,00), a refazer e a **recarregar a página**.
+
+## 57. Ferramentas de criação de poses padrão
+
+Pedido do usuário em 2026-07-28: implementar os itens 1, 3 e 4 do levantamento sobre como otimizar a criação de poses. O diagnóstico que os motivou está registrado ali: o ritual de arquivos já é seguro (paridade pt-BR/en tem teste, `POSE_PRESET_LABEL_KEYS` é um `Record` completo, grupos e pares valem nos dois sentidos, e quatro invariantes já rodam sobre as 71 poses). **O custo estava em inventar os números às cegas** — como o próprio preset `fighting` documenta: "saíram de uma busca numérica que planta as DUAS pontas de pé no chão ao mesmo tempo (com o quadril em 0,90 o pé de trás flutuava 7 cm)".
+
+### `seatOnGround` — a busca numérica virou função (item 3)
+
+`src/figure/poseGround.ts`. Dá o `groundOffsetM`/`hipHeightM` que assenta uma pose no chão.
+
+**A referência de "encostado" não é y=0, e isso não é detalhe.** A junta mais baixa do boneco em pé fica a **0,0100 m** do chão (medido), porque a junta é o centro de uma esfera e a geometria do pé desce abaixo dela. Assentar "com a junta mais baixa em zero" enterraria toda pose em pé nesse centímetro. Por isso a folga é **medida da pose neutra** em vez de fixada — e o assentamento da pose em pé dá exatamente zero, por construção.
+
+Diferença para a correção de chão do `poseBlend` (#43): aquela **só levanta**, de propósito (o problema de uma mistura é atravessar o chão, não flutuar). Esta levanta e baixa — flutuar é o erro mais comum de quem monta pose à mão. Medido nos dois sentidos: tornozelo estendido afunda a ponta do pé 5,7 cm (assento +6,7 cm); dobrar os dois joelhos com o quadril parado pendura o boneco a 36,5 cm (assento −35,5 cm).
+
+**Confronto com as 71 poses afinadas à mão:** mediana de **3,4 mm**, **59 das 71 dentro de 1 cm**. E as 9 que divergem mais de 5 cm são **exatamente** as que não pisam no chão — `superman`, `jumping`, `running` (fase de voo), `carriedCradle`, `carriedPiggyback`, `groundChokeGiving`, `groundChokeTaking`, `rearChokeSeated`, `lyingSpreadSupine` —, todas divergindo para baixo, porque o cálculo tentaria plantá-las no chão. Isso está travado por teste, e vale como **detector**: uma pose nova que apareça nessa lista sem estar no ar (ou carregada por outro boneco) tem assentamento errado.
+
+### `poseCodegen` — posar no app e colher o preset (item 1)
+
+`src/figure/poseCodegen.ts` mais o CLI `tools/pose-para-preset.mjs` (`npm run pose:preset -- poses.json`).
+
+O caminho mais curto já estava quase pronto e ninguém usava: **`SavedPose` carrega exatamente os quatro dados que um preset precisa** — `pose`, `rotation`, `groundOffsetM` e o `preservesHeading` derivado deles. Faltava a tradução. Agora se posa no app (gizmo com limites, IK, espelho, travas — o editor certo), salva-se na biblioteca, exporta-se o workspace e o bloco de preset sai pronto para colar.
+
+Cinco coisas que uma cópia crua do JSON perderia, e que o tradutor sabe:
+
+1. O preset é **parcial** — emitir os eixos zerados de 32 juntas faria um bloco ilegível.
+2. `elbow.*.y` ausente **não é zero**: é a torção neutra do antebraço (±90, #25). Copiar o valor cru apagaria a convenção do arquivo.
+3. As juntas da mão saem da pose e viram `hands: 'fist'` quando batem com uma pose de mão pronta — inclusive `{ L, R }` diferentes, como as poses de apontar (#45).
+4. `hipHeightM = STANDING_HIP_HEIGHT_M + groundOffsetM`, não o deslocamento guardado.
+5. `rotation` presente ou ausente é o que decide o `preservesHeading` do preset.
+
+**O teste que sustenta a ferramenta:** para **todas as 71 poses**, gerar o bloco a partir da pose resolvida e reexpandi-lo — com uma implementação independente das regras, escrita no teste — devolve a mesma pose, junta por junta e eixo por eixo, dentro do passo de arredondamento (0,1°). Colocação e direção também sobrevivem à ida e volta.
+
+Os avisos são o resto: pose acima do assentamento calculado (`superman` avisa 104,0 cm), pose atravessando o chão (com o nome do teste que vai reprovar) e mão que não bate com pose pronta. O CLI ainda imprime as seis coisas que só a mão faz — chave na união, grupo, i18n nos dois idiomas, `POSE_PRESET_LABEL_KEYS`, teste de intenção e, se for o caso, o pareamento.
+
+### Folha de contato (item 4)
+
+`tools/folha-de-contato.mjs` (`npm run poses:folha`): aplica todas as poses do combo e monta um PNG único com a grade — a revisão do catálogo inteiro numa olhada, e uma linha de base para quando o esqueleto mudar.
+
+**Duas escolhas de método, decididas por medição e não por gosto** — a primeira tentativa saiu mecanicamente correta e visualmente inútil:
+
+- **Cada célula é um INSTANTÂNEO do app, não uma captura de tela.** Posar exige o boneco selecionado, então a captura de tela põe o gizmo de seleção em todas as células; o instantâneo passa pelo `hideOverlaysOnCapture`, que já esconde grade, gizmos e o destaque da junta.
+- **Câmera em perspectiva com "plano geral", fixa.** As três candidatas foram renderizadas lado a lado com três poses extremas (T-pose, deitada, voando): a ortográfica de frente transforma toda pose deitada num borrão, a ortográfica de 3/4 sequer enquadra (o boneco sai minúsculo), e a perspectiva com plano geral lê bem nas três. Fixa em todas as células de propósito: é a câmera fixa que faz a folha **comparar** as poses — enquadrar pose a pose deixaria cada célula bonita e a folha inútil.
+
+São duas folhas: a vista **padrão** (o plano geral como ele vem — já um 3/4 de frente) e a **girada**, o mesmo enquadramento mais 40° de órbita, perto do perfil, que é o que deixa ler a profundidade dos chutes, socos e poses sentadas. O arrasto do giro é **calculado** a partir da geometria do `OrbitControls` (2π por altura do elemento), não estimado. Os nomes dizem o que a folha é, e não o que se gostaria que fosse: o enquadramento não é uma vista frontal estrita.
+
+**O Playwright continua fora do `package.json`.** A validação em navegador sempre rodou de fora, e pendurar os navegadores no `npm install` de quem só quer usar o app seria caro; a ferramenta aceita `--playwright=<caminho>` e, sem ele, explica como instalar.
+
+## 58. Apoiar no chão e espelho ao vivo
+
+Pedido do usuário em 2026-07-28: implementar os itens **33** e **3** da lista de propostas, com o lembrete de "não esquecer a referência invertida dos membros direito e esquerdo".
+
+### Apoiar no chão (item 33)
+
+`seatFigureOnGround(figureId)` no `figuresStore`, em cima do `seatOnGround` do #57. Mexe **só na altura**: onde o boneco está no chão é encenação de quem monta a cena, e a pose não é tocada. É conteúdo — entra no undo, como qualquer edição de posição.
+
+**O botão aparece nas DUAS seções do painel** (raiz selecionada e junta selecionada). A primeira versão o pôs só na seção de posição, e a validação no navegador esbarrou nisso na hora: depois de dobrar os dois joelhos, quem está posando tem uma JUNTA selecionada, e teria de voltar à raiz só para apoiar o boneco — atrito exatamente no momento em que a ação é necessária. As duas seções são exclusivas, então nunca há dois botões na tela.
+
+### Espelho ao vivo (item 3)
+
+`liveMirrorEnabled` + `toggleLiveMirror`, interceptando **`setJointRotation`** — que é o caminho de TODA edição de junta: slider, gizmo, teclado e o resultado do IK. Interceptar ali é o que faz o modo valer em todos eles sem que nenhum precise saber que ele existe.
+
+**A referência invertida, que é o ponto todo.** As juntas pareadas do esqueleto são espelhadas só em POSIÇÃO (offset X negado), sem espelhar a rotação — então o mesmo valor numérico em Y/Z produz o movimento anatômico **oposto** nos dois lados (#14). Copiar o valor cru erraria até 0,95 m de posição de junta (medido no #30). O que se escreve no par é a **reflexão sagital `(x, −y, −z)`**, reusando o `mirrorRotation` do `poseMirror.ts` — reusar, e não reescrever, é o que garante que o modo ao vivo e o botão "copiar direito → esquerdo" nunca divirjam.
+
+O polegar é a demonstração mais crua disso, e virou teste: o mesmo movimento vai de 0 a **+80** no lado esquerdo e de 0 a **−80** no direito. Copiar cru não erraria "um pouco" — cairia fora da faixa do destino, seria grampeado a zero, e o polegar direito simplesmente não se mexeria.
+
+Três decisões menores, todas com teste:
+
+- **A rotação inteira é espelhada, não o eixo mexido.** O slider manda um eixo por vez; espelhar só ele deixaria o outro lado meio espelhado.
+- **Junta travada ganha do espelho** (#42: junta travada não muda por NADA automático). Vale para o destino: editar a esquerda com a direita travada mexe só na esquerda.
+- **É modo de trabalho, não conteúdo.** Fica fora do `partialize`, logo fora do undo — como as travas. Diferente delas, **não sobrevive a recarregar a página**: um modo que reescreve o outro lado a cada edição não pode voltar ligado sem ninguém ter pedido.
+
+### Verificação
+
+**18 testes novos** (15 de loja, 3 de painel), suíte em **1.671 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**No Chrome real, sem erro de console:** um boneco erguido à mão para Y=0,5 voltou a 0 ao apoiar; com os dois joelhos dobrados a 90°, apoiar **baixou** o boneco para Y=−0,355 — o mesmo valor que o teste de unidade mede, e a prova de que a função desce, e não só sobe. Com o espelho ligado, `shoulder.L z = 35` escreveu `shoulder.R z = −35`; com `shoulder.R` travado, a esquerda foi para 10 e a direita ficou em −35; desligado, a esquerda foi para −20 e a direita continuou onde estava.
+
+## 59. Zerar por grupo e copiar só um membro
+
+Pedido do usuário em 2026-07-28: os itens **4** e o resto do **2** da lista de propostas.
+
+### Zerar por grupo (item 4)
+
+`resetJointGroup(figureId, group)` e um bloco de seis botões — tronco, cabeça, os dois braços, as duas pernas —, com os rótulos dos MESMOS grupos que o combo de seleção de junta já usa: quem se acostumou com eles não aprende nomes novos.
+
+**"Zerar" é voltar à pose NEUTRA, não a zeros literais**, e a diferença é visível: `elbow.*.y` tem torção neutra de ±90 (#25), então escrever zero deixaria o antebraço com a palma para trás. A regra vem reusada do reset por junta (fase 9, item 6), que já resolvia isso — medido no navegador: zerar o braço direito devolveu `elbow.R.y = −90`, e não 0.
+
+A mão vai junto com o braço, porque `JOINT_GROUPS` já a inclui — e um "zerar só as mãos" à parte seria redundante: a pose de mão "aberta" já é exatamente a neutra.
+
+Duas escolhas menores: junta travada sobrevive ao reset (#42), e **grupo inteiro travado deixa o botão desabilitado** em vez de virar um botão inerte — mesma escolha do slider de junta travada. Com tudo travado a ação nem empilha passo de undo.
+
+### Copiar só um membro (resto do item 2)
+
+`copyFigurePose(fromId, toId, group?)`. Sem grupo, é o que já existia: a pose inteira pelo caminho da biblioteca de poses, com assentamento. Com grupo, **só aquelas juntas — e a colocação de quem recebe não é tocada**.
+
+Essa diferença é a decisão do item, não um detalhe de implementação: o assentamento (inclinação do corpo e altura do quadril) é propriedade da pose INTEIRA, e aplicá-lo por causa de um braço tiraria o boneco do chão onde ele estava. Copiar ângulos de junta também dispensa a captura e a reescala do `captureFigurePose`, porque ângulo não depende da altura do boneco — só o assentamento depende, e ele justamente não viaja.
+
+Na UI, um combo "O que copiar" ao lado do destino, com "Pose inteira" mais os seis grupos, e a dica do botão trocando junto para dizer o que vai (e o que não vai) acontecer.
+
+### Verificação
+
+**14 testes novos** (11 de loja, 3 de painel), suíte em **1.685 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**No Chrome real, sem erro de console:** zerar o braço direito levou `shoulder.R.x` de −55 a 0 e `elbow.R.x` de −80 a 0, deixando `elbow.R.y` em **−90** (a torção neutra) e a perna esquerda intacta em 45°; com pescoço e cabeça travados o botão "Cabeça" apareceu desabilitado; e copiar só o braço esquerdo levou `shoulder.L.x = −70` para o outro boneco **sem** mexer no joelho dele nem tirá-lo de X=2.
+
+**Um erro que a validação pegou:** o teste de painel usava `getByRole('button', { name: 'Copiar', exact: true })`, e `exact` não existe nas opções do Testing Library (existe no Playwright). O Vitest não faz checagem de tipos, então os 57 testes passaram; foi o `tsc` da build que reprovou — e, como a build falhou, o preview continuou servindo o pacote antigo e a sonda não achou os controles novos. Vale como lembrete: sonda que não acha um controle novo pode estar olhando para uma build velha.
+
+## 60. Trechos de animação prontos (solo e em dupla)
+
+Pedido do usuário em 2026-07-28: trechos de animação predefinidos, análogos às poses de fábrica — andando, pulando e correndo como cenas individuais; dança, aperto de mão, cavalinho, pegando no colo, clinche, soco, chute e os três mata-leões (em pé, sentado, deitado) como cenas em dupla. Complemento na mesma conversa: **os mata-leões começam com os dois em pé, o adversário já de costas**, e entra um trecho a mais — **empurrar pelo ombro e girar** — em que B termina de costas para A, servindo de entrada para qualquer golpe por trás. Decidido junto (perguntas feitas antes de implementar): o trecho entra **no final da linha do tempo atual**; as duplas escolhem os papéis em **dois combos** no painel; andar/correr/pular **deslocam o boneco pelo espaço**; e a **câmera atual fica congelada** em todos os keyframes gerados.
+
+### O modelo: passos declarados sobre as poses que já existem
+
+`src/animation/animationClips.ts` — 14 trechos (3 individuais + 11 duplas), cada um de 5 a 15 passos (89 no total), cada passo = pose de fábrica + desvios parciais (`overrides`) + colocação. Três decisões estruturais:
+
+- **As poses-chave dos encontros não foram redigitadas**: o instante de contato de cada golpe/carga usa as poses em par de `posePresets.ts` na MESMA distância medida de `posePairs.ts` (soco 0,629, chute 0,815, aperto 0,755, clinche 0,40, mata-leão 0,39/0,45/0,10, cavalinho −0,16, colo 0,28) — travado por teste: mudou a tabela do par, o teste do trecho acusa. A composição de rotação por matriz saiu de `resolvePairedRotation` para a função exposta `composePlacementRotation`, reusada pelos trechos (somar graus em Y rolaria o corpo das poses deitadas).
+- **Referencial do trecho = boneco do papel A**: tudo é declarado com A na origem olhando +Z; aplicar gira deslocamentos e rotações pelo heading atual de A e parte da posição dele. "Andar para a frente" é a frente que o usuário deu ao boneco (validado no teste: A a 90°, andar avança em +X). Deslocamentos no chão escalam pela altura (média das duas escalas nas duplas, como na montagem de pares).
+- **A referência invertida dos membros L/R (lembrada pelo usuário, #14) entra pelos espelhos, não à mão**: a passada oposta do andar/correr é `mirror: true` — espelho sagital exato da pose inteira (`swapPoseSides` + `(x,−y,−z)` nas juntas centrais). Exceção deliberada: as passadas de quem CARREGA (cavalinho/colo) espelham só as pernas, declaradas nos dois lados à mão — espelhar o corpo inteiro trocaria os braços de lado e desfaria a pegada.
+
+### Assentamento numérico em vez de altura chutada
+
+Um passo pode pedir `seat: true`: o deslocamento vertical sai do `poseGround.ts` (#57) com a pose e a rotação daquele passo — é o que os agachamentos do salto, as fases de luta e as passadas usam. `liftM` dá a folga das fases aéreas (corrida +0,08) e `hipHeightM` explícito vale para o que é para ficar no ar (ápice do salto a 1,25; quem é carregado). A medição de TODOS os 89 passos pegou dois erros antes de qualquer teste: a passada do cavalinho afundava o carregador 5,4 cm (perna de trás re-varrida numericamente até o assentamento coincidir com o do preset, −0,036 vs −0,040) e o "debater-se" do mata-leão sentado usava `hip.L −75` — sentado com a perna horizontal em −90, ERGUER a perna é flexionar MAIS (−105); −75 enterrava o pé 34 cm no chão.
+
+### Aplicação: uma edição, cena de trabalho intacta
+
+`appendAnimationClip` (figuresStore) monta um keyframe por passo — retrato da cena ATUAL com os papéis substituídos, então quem não participa aparece parado em todos os passos — e acrescenta tudo num único `set`: **um Ctrl+Z remove o trecho inteiro**. A cena de trabalho não muda (só a animação ganha keyframes). O comando passa pelo `animationStore`/`AnimationPlayer` como a captura, porque só o player lê a câmera viva; dupla sem dois bonecos DISTINTOS é recusada sem tocar em nada. No painel, um fieldset "Trechos prontos": combo agrupado (individuais/duplas), dica por trecho, combos de papel A/B (B não lista o boneco de A; escolhas caem no padrão se o boneco sair de cena) e o botão com as mesmas condições da captura.
+
+Detalhes que valem registro: os ciclos de andar/correr/dança terminam NA pose do primeiro passo (adicionar o trecho duas vezes emenda sem solavanco — na dança o giro de 360° embrulha para 0 pelo `cleanDegrees`); e o giro do empurrão anda 60° por keyframe sempre no mesmo sentido porque a interpolação da rotação do boneco é pelo menor arco (`lerpAngle`) — passos < 180° nunca giram ao contrário.
+
+### Verificação
+
+**51 testes novos** (28 do módulo, 9 da ação no store, 4 de painel + locales/estrutura), suíte em **1.726 testes / 73 arquivos** verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**No Chrome real, sem erro de console:** "Andando" criou 9 keyframes, "Soco" somou 15, "Mata-leão deitado" somou 22; os combos de papel apareceram só na dupla, com B sem listar o boneco de A; a linha do tempo tocou 3 s; **um** Ctrl+Z removeu os 9 keyframes do trecho recém-adicionado; e as capturas de tela conferiram o impacto do soco (punho no rosto, B arqueado), a chave sentada (A ajoelhado atrás de B sentado) e o mata-leão no chão (A por baixo com as pernas em volta, B por cima) — com o boneco que não participa parado em T-pose onde estava.
+
+## 61. Guarda de luta: cotovelo direito baixado
+
+Pedido do usuário em 2026-07-28: na pose "Luta", deixar o cotovelo direito mais baixo.
+
+Medido antes de mexer: o braço de trás (`shoulder.R {x:-70, y:70, z:-70}`) punha o punho junto ao queixo, mas o COTOVELO ficava em **1,499 m — acima da linha do ombro — e 33 cm aberto** para o lado: braço de "asa", não guarda. A primeira varredura, presa só ao punho, não resolvia: o cotovelo gira num cone em volta da linha ombro–punho, e o ponto mais baixo desse cone ainda ficava alto e aberto.
+
+Re-resolvido com as mesmas penalidades explícitas que consertaram o clinche (#37) — **cotovelo pelo menos 18 cm ABAIXO do punho e a no máximo 26 cm da linha média** —, varrendo `shoulder.R` e `elbow.R` em passos de 5° com refino de 1°. Resultado: `shoulder.R {x:-94, y:37, z:20}` (o `z` na adução máxima de +20, colando o braço ao corpo) com `elbow.R` inalterado em −135. Medido: cotovelo desce de 1,499 para **1,237 m** (18,9 cm abaixo do punho, 25 cm da linha média) e o punho fica a **2 mm** de onde estava — a guarda não muda, só o cotovelo desce.
+
+A mudança propaga sozinha para os trechos de animação (#60): os passos de guarda do soco, do chute e do clinche usam o preset, não uma cópia.
+
+### Verificação
+
+Suíte em **1.726 testes** verdes (as travas da pose — punho na altura do rosto, à frente dele, pés plantados — seguem valendo); `tsc -b`, `eslint .` e `npm run build` limpos. Conferido no Chrome real, sem erro de console, de frente e de lado: os dois cotovelos apontam para baixo e o antebraço de trás fica quase vertical com o punho no queixo.
+
+## 62. Poses e trechos de dança pop (K-pop)
+
+Pedido do usuário em 2026-07-28: "3 poses e animações associadas para 3 posições comuns de dança do K-pop", seguindo o processo registrado em `CRIACAO-PRESETS.md`. Antes de implementar, 3 perguntas: quais movimentos (recomendei coração/robô/apontar, avisando que um V-sign clássico não dá para fazer — o modelo de mão não separa o dedo médio dos outros dois); onde encaixar as poses no catálogo; se cada animação seria um trecho novo independente ou uma variação da "Dança" genérica já existente. Respostas do usuário: **4** poses (acrescentou "onda de ombro" à recomendação), **novo grupo** "Dança pop", e **4 trechos solo independentes**.
+
+### As 4 poses (`src/figure/posePresets.ts`, grupo `kpop`)
+
+Todas resolvidas por varredura numérica com sweep grosso (passo 5–15°) e refino fino (passo 1°), a mesma técnica do #37/#61 — nenhum ângulo estimado a olho:
+
+- **`kpopFingerHeart`** (coração com os dedos): mão em `pinch` (já existente no catálogo — as pontas do polegar e indicador já se tocam, é literalmente a forma do gesto) erguida perto do rosto. Alvo: punho a (0,12; 1,57; 0,13), com as mesmas penalidades do #61 (cotovelo abaixo do punho, perto da linha média). Resultado: punho a **5,2 cm** do alvo, cotovelo **5,4 cm** abaixo dele e a **16 cm** da linha média.
+- **`kpopBoxArms`** (braços de robô): ombro na horizontal para o lado, cotovelo em ângulo reto, antebraço na VERTICAL — o "cactus arms". Não tinha alvo de contato; a busca teve dois pontos-alvo (cotovelo na altura do ombro, punho 0,245 m acima dele) e fechou com **custo zero**: `shoulder.R {x:-90, y:0, z:-90}`, `elbow.R {x:-90}`. Achado no processo: o eixo Z do ombro do lado R abduz com sinal **negativo** — usar o valor positivo da convenção L direto no lado R (sem passar pelo `symmetric()`) trava no limite do outro sentido (adução) e deixa o braço quase parado, foi o primeiro resultado errado da varredura.
+- **`kpopPointDance`** (apontar com o quadril deslocado): reaproveita a base de apoio já resolvida de `model` (peso na perna esquerda) com o braço já resolvido de `pointUp` (aponta para cima) — nenhum número novo para as pernas. Medido: punho a (−0,106; 1,839; 0,127), chão a 0,0127 m (2,7 mm de folga a mais que o neutro — a mesma divergência que `model` já tem sem `hipHeightM` declarado).
+- **`kpopShoulderWave`** (onda de ombro): o levante vem da CLAVÍCULA (`clavicle.R.z`, que só sobe, nunca desce — mesma junta do `headDown`), no máximo do catálogo (20°), mais uma inclinação de tronco na mesma direção. Medido: ombro direito **12 cm** mais alto que o esquerdo, pernas intocadas.
+
+### Os 4 trechos (`src/animation/animationClips.ts`, solo)
+
+Cada pose ganhou um trecho curto (5 a 7 passos) que entra no gesto, dá um "pulso" ou alterna o lado, e volta a ficar em pé — nenhum desloca o boneco no chão. Dois usam `mirror: true` para a própria alternância de lado ser o passo de dança (o espelho sagital exato já trocava o braço/quadril de lado sozinho, sem redigitar nada): `kpopPointDance` alterna qual perna sustenta o peso e qual mão aponta; `kpopShoulderWave` alterna qual ombro isola, simulando a onda viajando de um lado a outro. `kpopBoxArms` ganhou dois overrides pequenos (`ROBOT_ARM_DOWN_L/R`) que recolhem um braço de cada vez ao neutro, por cima da pose — o "pêndulo" do robô. Todos os 21 passos foram medidos no chão ANTES do teste (mesma disciplina do #60): nenhum flutua ou afunda além da folga da própria pose de base.
+
+### Verificação
+
+**+8 testes de pose** (geometria das 4 + mão do gesto certa em cada lado) e **+4 testes de trecho** (deslocamento zero, bookends em pé, espelho sagital exato, braço recolhido no robô), suíte em **1.764 testes** verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**No Chrome real, sem erro de console:** as 4 poses aplicadas pelo combo (capturas conferindo a silhueta — braços em ângulo reto do robô, isolamento visível do ombro, quadril deslocado do apontar); os 4 trechos adicionados em sequência a uma animação nova somaram exatamente **25 keyframes** (7+7+5+6, o total dos passos declarados).
+
+## 63. Joelhada na barriga com cambalhota
+
+Pedido do usuário em 2026-07-28, com uma foto de referência (captura de um jogo de luta): implementar as poses em dupla de uma joelhada na barriga e um trecho de animação em que os dois começam em repouso, A crava o joelho e B dá uma cambalhota no ar em torno do joelho de A, caindo sentado de costas para ele.
+
+### O par de poses: `kneeStrikeGiving` / `kneeStrikeTaking`
+
+Resolvido na mesma ordem do soco/chute (#37): primeiro a reação (corpo dobrado, cabeça puxada para baixo, mais fechado que `kickTaking` — golpe de clinche, bem mais perto), medida a altura assentada da barriga (junta `spine`, 1,030 m); depois a perna que golpeia, varrida até o **JOELHO** (não o pé — a joelhada golpeia com a própria junta) bater nessa altura, com penalidades de ficar perto da linha média (≤8 cm) e bem projetado à frente (≥15 cm). Fechou com **0,0 cm de erro de altura**, 6,5 cm da linha média e 36,5 cm à frente do quadril. Os braços reaproveitam o grip de duas mãos já resolvido do `clinch` (mesmos ângulos, sem alvo novo — o alcance geométrico da pose é só o joelho). Encaixe do par: **gapM = 0,3653 m** — bem mais perto que soco (0,629) e chute (0,815), consistente com ser um golpe de clinche.
+
+### O trecho `kneeStrike`: cambalhota sem giro espúrio
+
+Os dois começam **em repouso** (`standing`, não em guarda — pedido explícito do usuário, diferente dos outros golpes), aproximam-se pela guarda até o clinche (mesma pose e distância de `clinch`, 0,4 m, reaproveitada) e A crava o joelho no encaixe medido. Daí em diante, B "voa": a cambalhota é pura rotação sobre a mesma pose dobrada de `kneeStrikeTaking`, com `hipHeightM` subindo e descendo (pico 1,35 m) e pousando sentado (`sittingLegsForward`, com a cabeça tombada de lado — atordoado).
+
+**O ponto que exigiu verificação numérica, não só visual:** compor `rotation.x` (o giro da cambalhota) com `turnDeg: 180` (o giro que já vinha da colocação "de frente um para o outro") faz `composePlacementRotation` — que é por MATRIZ — devolver o ângulo espalhado entre eixos DIFERENTES a cada passo (ex.: contato vira `{x:0,y:180,z:0}`, decolagem vira `{x:90,y:0,z:180}` — o giro migrou de Y para Z entre um passo e o outro, embora seja a MESMA rotação física composta com o MESMO turnDeg). Como o player interpola cada eixo (x/y/z) **separado** pelo menor arco (`lerpAngle`, `poseBlend.ts`), um Y saltando de 180 para 0 bem no instante em que X sai do zero rasgaria um giro espúrio no meio da decolagem — pego ANTES de escrever qualquer teste, comparando a sequência real resolvida (script no scratchpad) contra a esperada.
+
+Correção: a partir do contato, `rotation` passa a ser declarado por EXTENSO como `{x, y:0, z:180}` (em vez de só `turnDeg:180` sobre a pose em pé) — verificado por matriz que é a MESMA rotação física (diferença de 1e-16), mas agora com Y e Z **parados** em todos os passos do ar e só X variando, sempre −90° por passo (180→90→0→−90→−180). A única fronteira que ainda troca de convenção é a entrada no golpe (clinche → contato), onde a pose TAMBÉM muda inteira (200 ms, o instante do impacto) — aceito, é o único lugar que sobrou depois de eliminar a fronteira de dentro do próprio voo, que era a que importava.
+
+Fisicamente, B nunca gira em Y: continua olhando para -Z do início ao fim (a mesma direção de quando encarava A antes do golpe). É a POSIÇÃO que muda de lado — B decola à frente de A (z > 0,2), passa por cima dele no pico (a ≤15 cm da posição dele) e aterrissa atrás (z < 0,2) — e é isso, não nenhum giro de Y, que faz o resultado ler como "de costas para A" na aterrissagem.
+
+### Verificação
+
+**+2 poses e +1 trecho**, suíte crescendo de 1.764 para **1.786 testes** (todos os novos: geometria do par, rotação eixo a eixo do trecho, posição decolando à frente/pousando atrás, orientação física do pouso comparada por matriz, altura subindo e descendo), tudo verde; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**No Chrome real, sem erro de console:** o par aplicado com dois bonecos em cena encaixou automaticamente (joelho na barriga, grip na cabeça); o trecho `kneeStrike` somou **8 keyframes**; as capturas dos 3 keyframes-chave confirmaram visualmente a sequência inteira — contato (joelho cravado), pico (B de cabeça para baixo sobre A) e pouso (B sentado atrás de A, de costas para ele).
+
+## 64. Chave de braço sentada (empurrão/puxão) + trecho `armLock`
+
+Pedido do usuário em 2026-07-28/29, desta vez com uma foto de referência que eu li ERRADA na primeira tentativa (interpretei como um piledriver invertido — o usuário corrigiu: "Não tem lutador de ponta cabeça"). A partir daí o pedido passou a ser só por TEXTO: A agachado atrás de B sentado, uma perna travando a perna direita dele e o joelho nas costas; A prende o braço direito de B (o próprio braço direito por cima) e segura o punho dele com a mão esquerda; empurra com o peso do corpo (B curva para a frente) e depois puxa o punho rapidamente para trás (a coluna de B gira para a esquerda e arqueia para trás, no limite da articulação). Perguntei 3 rodadas de esclarecimento (leitura da imagem, estrutura da entrega — 2 poses de par + 1 trecho — e o que exatamente "dobra" no puxão) antes de implementar.
+
+### As 4 poses novas: `armLockPushGiving`/`Taking` e `armLockPullGiving`/`Taking`
+
+Duas poses de A (o mesmo agarre parado — pernas e braço "prende" IGUAIS nos dois instantes, só o tronco e o braço da chave mudam) e duas de B (o instante do empurrão e o do puxão final).
+
+- **Pernas de A**: esquerda de base (mesmos ângulos de `rearChokeKneeling`), direita ativa — `hip.R`/`knee.R` varridos (sweep coarse 10°/refino por coordenada 1°) até o **joelho** chegar à altura da coluna de B. `hipHeightM` de A: **0,5212** (igual nas duas poses — a perna não muda entre elas).
+- **Pernas de B**: as duas esticadas à frente (`sittingLegsForward`), a direita é o alvo do travamento. **Limitação assumida, medida e documentada**: o encaixe perna-contra-perna do travamento em si não foi resolvido numericamente — ficaria a mais de 0,5 m um do outro com a perna ativa nesta posição (a perna que "trava" é a mesma que sobe para golpear as costas, pressionando a base da coxa presa, não o tornozelo).
+- **Braço da chave em B** (`shoulder.R`/`elbow.R`): varrido contra um alvo declarado "atrás do tronco" (a 0,10 m de profundidade — mesma ordem de grandeza da meia-espessura do peito usada em `groundChokeGiving`/`Taking`, ~0,104 m), a alturas diferentes: no empurrão, na coluna (spine); no puxão, no meio das costas (upperChest) — mais alto e mais fundo, com `shoulder.R.y` no LIMITE de 90°, literalmente "no limite da articulação".
+- **Braço que segura o punho em A** (`shoulder.L`/`elbow.L`): varrido contra o punho DIREITO de B já montado na chave — 0,7 cm de erro no empurrão, 8,9 cm no puxão (o punho sobe e aprofunda bastante entre os dois instantes, e a mesma varredura por coordenadas não converge igualmente bem nos dois).
+- **Braço que prende em A** (`shoulder.R`/`elbow.R`, o "gancho" por cima do braço de B): posicionado por razão anatômica, não por varredura — ver a lição de câmera abaixo, foi o que precisou de ajuste depois da primeira validação visual.
+- **Sinal do giro do tronco confirmado numericamente** (não deduzido): `spine.y` POSITIVO gira o corpo para a ESQUERDA — verificado calculando a direção "de frente" da coluna sob rotação (vetor `(sinθ, cosθ)` no plano XZ) e conferindo que ela se desloca para o lado do X positivo, que é o lado esquerdo do próprio corpo (`hip.L` mora em X positivo).
+
+Encaixe do par (`posePairs.ts`): **gapM = 0,238 m**, `facing: false` (os dois olham para o mesmo lado, A atrás — mesma família de `rearChokeKneeling`/`rearChokeSeated`), reaproveitado igual nos dois pares (push e pull): é o mesmo agarre parado, só a força muda de direção.
+
+### A lição da câmera: o ângulo padrão engana
+
+A primeira validação visual (screenshot na vista 3/4 padrão do app) pareceu MOSTRAR A sentado em cima da cabeça de B, os braços formando um laço acima das duas cabeças — um resultado que bateu os alvos numéricos (erro de poucos cm nos dois contatos) mas parecia claramente errado de olhar, o sintoma que o `CRIACAO-PRESETS.md` avisa ("bateu o alvo mas fica errado de olhar? o alvo estava incompleto"). Medindo a causa (altura da cabeça de A vs. de B): A kneeling tem a cabeça 33-35 cm ACIMA da de B sentado — esperado dado que A ajoelhado tem o quadril bem mais alto (0,52 m) que B sentado com as pernas esticadas (0,05-0,20 m), mas a vista 3/4 (quase de frente para as duas cabeças) exagerava a leitura.
+
+Trocando para as vistas ortográficas do painel de câmera (Esquerda/Topo/Frente, em vez de arrastar o mouse na órbita — que não girou nada nestas telas headless), o perfil de lado mostrou a pose CORRETA: A claramente agachado atrás, tronco curvado sobre as costas de B, joelho cravado — a vista 3/4 é que era enganosa, não a pose. Ainda assim, ajustei o braço "prende" de A (`shoulder.R` de `{x:-70,y:60,z:-10}` para `{x:-25,y:40,z:-15}`, `elbow.R` de −90 para −100) para baixar o gancho e tirar o efeito de "laço" acima das cabeças, sem mexer nos dois contatos já resolvidos (joelho e punho ficam noutro ramo cinemático, não mudam).
+
+### O trecho `armLock`
+
+5 passos (o mínimo da faixa 5-15): repouso em pé → A se aproxima andando (`walking`, `seat: true`) enquanto B senta (`sittingLegsForward`) → os dois já no lugar (`kneelingBoth`/`sittingLegsForward`) → a chave fecha no encaixe medido (`armLockPushGiving`/`Taking`, 0,238 m) → o puxão final (`armLockPullGiving`/`Taking`, mesmo encaixe). B fica parado em `at: [0, 0,238]` do início ao fim — quem se desloca é A, vindo de trás, mesmo padrão de `rearChokeSeated`/`rearChokeGround`.
+
+### Verificação
+
+**+4 poses e +1 trecho**, suíte crescendo de 1.786 para **1.815 testes**: geometria das 4 poses (grupo/mão/limites), o encaixe do joelho na coluna e do punho no punho preso (nos dois instantes), o trecho com B parado e A se deslocando, e o encaixe do puxão final na tabela de encaixes — tudo verde; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**No Chrome/dev real, sem erro de console:** o par aplicado com dois bonecos encaixou automaticamente nos dois instantes; o trecho `armLock` somou **5 keyframes**; capturas nas vistas 3/4, lateral, superior e frontal confirmaram a leitura correta da pose (crouch atrás, joelho na coluna, chave no braço, puxão arqueando/girando o tronco) nos dois instantes.
+
+## 65. Nove itens de animação: bancada, régua no rodapé, grupos e biblioteca de trechos
+
+Pedido do usuário em 2026-07-29, na sequência da revisão que acrescentou os itens 36–39 ao `PLANO.md`: **implementar os itens 27, 28, 29, 30, 34, 36, 37, 38 e 39**, "seguindo uma ordem lógica das atividades". A ordem executada foi a que a própria avaliação de conflitos daquela revisão indicou — 36 (a base) → 34 → 28 → 27 → 29 → 38 → 37 → 39 → 30 —, e os itens que dependiam de decisão do usuário já vinham decididos do texto do plano.
+
+**Ajuste pedido no meio da execução:** o item 29 (régua da linha do tempo) mudou de lugar — "posicionar a régua na parte inferior da tela, não precisa ficar no mesmo painel de animação e com possibilidade de expandir/contrair". Foi implementado assim, e o texto do item no plano foi corrigido.
+
+### 36 — a animação de trabalho, e a inconsistência que o pedido escondia
+
+O enunciado original era "não será obrigatório salvar uma animação primeiro". Levado ao usuário antes de escrever: **não existia passo de salvar**. `Criar` era o que fazia a animação existir, e a persistência (undo, autosave e `animations.json`) já era automática desde a fase 10 — o que incomodava era o batismo antecipado. Decisão dele: criação preguiçosa, com a possibilidade de **nomear e guardar** uma cópia para reabrir depois, e **reabrir sobrescreve a "default"**.
+
+- **`WORKING_ANIMATION_ID = 'working'`** (`animation.ts`): id reservado da animação de trabalho. Ela é uma animação como qualquer outra — entra no undo, no autosave e no `animations.json` desde o primeiro keyframe; o que o id distingue é o PAPEL. As demais são a biblioteca.
+- **Criar e capturar no MESMO `set`**, e portanto no mesmo passo de undo (`withTargetAnimation`): sem isso, um Ctrl+Z depois da primeira captura deixaria uma animação vazia para trás. Vale para a captura, para os trechos prontos, para os trechos salvos e para os keyframes do movimento de câmera.
+- **Abrir substitui a bancada** num único passo de undo — o contrato que os snapshots de cena já tinham (#11). `saveAnimationToLibrary`, `openAnimationFromLibrary` e `overwriteSavedAnimation` são as três ações novas.
+- **`activeAnimationId` saiu do `animationStore`.** Com a bancada única, "qual está aberta" deixou de existir como pergunta: painel e player resolvem a de trabalho por `findWorkingAnimation`. Estado que só podia divergir foi removido em vez de mantido em dia.
+- **Migração de graça:** animações de um autosave antigo entram como biblioteca (nenhuma tem o id reservado), e a bancada nasce na primeira captura.
+
+### 34 — o movimento A→B da câmera vira keyframes
+
+`appendCameraMoveKeyframes`: dois keyframes com a MESMA cena e as duas câmeras do movimento, no fim da linha do tempo, numa edição de undo. O `Movimento A→B` (#46) e o animador sempre usaram o mesmo `interpolateCameraView` e não se falavam; agora o botão está no próprio painel de câmera, ao lado do slider que monta o movimento. Os dois retratos são o mesmo objeto: um travelling move a câmera, não os bonecos.
+
+### 28 e 27 — pausa, pose do vizinho, laço e ciclo
+
+- **`copyAnimationKeyframeFigures`** é o simétrico exato de `copyAnimationKeyframeCamera` (#55): segura a POSE e deixa só a câmera se mover.
+- **`duplicateAnimationKeyframe`**: a cópia entra logo depois com a MESMA duração — dois retratos iguais são uma pausa, e ela dura o mesmo que o trecho que chegou ali, um valor que o usuário já escolheu.
+- **`closeAnimationCycle`**: copia o primeiro keyframe para o fim, com a duração do último trecho (a cadência em vigor no fim). **Sem o rótulo do primeiro** — ver item 38.
+- **Laço (`advancePlayheadMs`)**: função pura, e é ela que carrega a regra — sem laço, chegar ao fim para; com laço, o EXCEDENTE reentra pelo começo (`raw % total`), para o ciclo emendar no passo em que estava mesmo depois de um quadro lento. Só na tela: o MP4 continua com uma passada.
+
+### 29 — a régua saiu do painel e virou barra de rodapé
+
+`TimelineBar.tsx`, peça nova do `AppShell`, largura inteira, recolhível pelo mesmo mecanismo dos painéis (`PANEL_KEYS` ganhou `timeline`) e **nascendo recolhida**, pela mesma razão do painel de Animação: quem está só posando não perde altura de viewport.
+
+- **A divisão ficou clara:** no painel fica o que é EDIÇÃO (capturar, lista de keyframes, velocidade, exportar); na barra, o que é NAVEGAÇÃO (régua, transporte, pular keyframe, laço).
+- **Marcas dos keyframes** por `<datalist>` — o jeito nativo de o próprio controle mostrar onde eles estão — e passo de 1 ms no slider, em vez dos 10 ms de antes.
+- **`stepFrameMs` não arredonda o resultado ao milissegundo**, e um teste trava isso: a 60 fps o quadro dura 16,666… ms, e arredondar fazia o instante reentrar como 1,9999 quadro — a seta emperrava no mesmo quadro. Entre dois quadros, cada seta cai no vizinho daquele lado; em cima de um, anda exatamente um.
+
+### 38 — grupos são uma LEITURA da lista, não um objeto
+
+Rótulo opcional por keyframe (`label?`, campo aditivo e sanitizado); keyframes **consecutivos** com o mesmo rótulo formam um grupo, com cabeçalho recolhível no painel e faixa na régua. Não há entidade "grupo" com intervalo a manter consistente a cada inserir/mover/remover — o que elimina a classe inteira de bugs de faixa órfã.
+
+- **Duas regras de unicidade, e são diferentes de propósito.** `uniqueKeyframeLabel` (edição à mão) ACEITA o rótulo do grupo vizinho, porque ali o usuário está estendendo um grupo; `freeKeyframeLabel` (trecho inserido) recusa qualquer repetição, porque acrescentar "Andando" duas vezes tem de dar dois grupos ("Andando 1" e "Andando 2"), e não um bloco de dez keyframes. A primeira versão usava só a primeira regra e emendava os dois trechos — pego pelo teste do sufixo.
+- **Herança:** o keyframe inserido pelo corte (#54) herda o rótulo do ANTERIOR (senão partiria o grupo em dois, e a inserção promete não mudar nada); o duplicado herda por ser cópia; o que fecha o ciclo (#27) **não** herda, porque está no fim e o grupo do começo não continua ali.
+- **De graça:** o trecho pronto inserido já nasce rotulado com o próprio nome, e o sufixo resolve a segunda inserção sozinho — o grupo mais comum sai sem ninguém digitar nada.
+
+### 37 — checkboxes só nos trechos individuais
+
+`appendAnimationClip` passou a aceitar uma LISTA no papel A: cada boneco marcado executa o trecho inteiro, ancorado na própria posição e no próprio heading. Em dupla continua um combo por papel — decisão do usuário, e a razão é medida: os encaixes vêm par a par de `posePairs.ts`, e dois "A" cairiam exatamente no mesmo ponto. O padrão é o boneco selecionado marcado, para o gesto de um clique continuar existindo.
+
+### 39 — trechos do usuário: papéis, sem câmera, reancorados
+
+`clipLibrary.ts` + `clips.json` (manifesto, autosave e undo), no molde da biblioteca de poses (#42).
+
+- **Guarda os keyframes literais SEM a câmera** (decisão do usuário): ao inserir, congela a câmera viva em todos, exatamente a regra dos trechos de fábrica (#60) — um trecho salvo se comporta como um pronto, em vez de sequestrar o enquadramento de quem o aplica.
+- **Papéis, não bonecos**, e só é papel **quem se mexe na faixa**: um figurante parado o tempo todo era cenário, não parte do trecho. (Se ninguém se mexe, todos entram — é uma pausa gravada de propósito.)
+- **Reancoragem completa:** posição e heading passam a ser relativos ao boneco do papel 0, com o deslocamento GIRADO pela diferença de heading e reescalado pela razão de altura; a altura do quadril acompanha a escala do próprio boneco. As mesmas regras de `applyPosePreset` e dos trechos de fábrica.
+- **Recorte por faixa escolhida à mão** (decisão do usuário), inclusive nas duas pontas; menos de dois keyframes não vira trecho — isso é uma pose, e para pose já existe biblioteca.
+- **Um papel só cai nas checkboxes do 37**; dois ou mais, um combo por papel. Era o `?` que o item deixou em aberto.
+
+### 30 — miniatura por keyframe, em memória
+
+`keyframeThumbnailStore.ts`: cache `keyframeId -> dataURL`, fora do conteúdo — era a recomendação embutida no próprio item, e a razão continua valendo: dataURL dentro do `Animation` incharia o `animations.json` e entraria no undo a cada captura. Renderizadas sob demanda pelo player (o único lugar com canvas vivo), a 160×90, reusando `renderAtResolution` + `hideSceneOverlays`; a bancada e o enquadramento voltam ao que eram. Abrir outra animação limpa o cache: ids de keyframe são únicos DENTRO de uma animação, e o `k1` de uma mostraria a miniatura do `k1` da outra.
+
+### Verificação
+
+**+132 testes**, suíte de 1.815 para **1.947**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**No Chrome real (`npm run preview`), sem nenhum erro de console:** painel e barra nascendo recolhidos; captura criando a animação de trabalho sozinha (2 keyframes); salvar na biblioteca, remover um keyframe e reabrir devolvendo os 2; trecho "Andando" aplicado aos DOIS bonecos marcados de uma vez (+9 keyframes); segunda inserção virando o grupo "Andando 2"; recolher o grupo escondendo os 9 cards; 20 marcas na régua e as faixas dos grupos desenhadas; pular keyframe e o passo de um quadro (1000 → 1017 ms a 60 fps, medido no valor do slider); duplicar e fechar o ciclo; um trecho salvo de 2 papéis reaplicado (+4 keyframes, reancorado na posição atual — conferido em 2,0 m); 17 miniaturas em `data:image/jpeg`; o movimento A→B virando 2 keyframes; e a reprodução ainda tocando depois do fim com o laço ligado.
+
+**Nota de automação:** o `selectOption('2')` do Playwright casa por valor **ou** por rótulo, e os combos de faixa mostravam o número do keyframe (rótulo "2" no índice 1) — a primeira leitura do probe pareceu um bug do app que não existia. Os rótulos passaram a mostrar número **e** instante ("2 — 1.0s"), o que resolve a ambiguidade e ainda diz mais a quem lê.
+
+## 66. Rolagem horizontal nos painéis e a ordem de Animação e Instantâneos
+
+Pedido do usuário em 2026-07-29: tirar a rolagem horizontal do painel de Propriedades (os controles "Copiar pose para" e "O que copiar" na mesma linha) e do painel de Animação (os botões da biblioteca na mesma linha), pondo cada um em sua própria linha; e trocar a posição dos painéis, deixando **Animação antes de Instantâneos** da esquerda para a direita.
+
+### Por que a barra aparecia
+
+`.panel` tem `overflow-y: auto` e nada declarado no eixo X. Pelo CSS, `overflow-x: visible` **não sobrevive** a um `overflow-y` que não seja `visible`: ele computa para `auto`. Ou seja, todo painel já era um contêiner de rolagem horizontal esperando um filho largo demais — o conteúdo não vazava para fora, ganhava barra. Com 240 px de largura e 0,75 rem de padding sobram ~13,5 rem úteis, e qualquer fila de dois selects rotulados ou de quatro botões passa disso.
+
+### Copiar pose: coluna, e o `min-width` do select
+
+`.properties-panel__copy-pose` era `display: flex` em linha com dois `.properties-panel__field` (cada um já um flex de rótulo + controle) mais o botão. Virou coluna. Só isso não bastava: `.properties-panel__field input` tinha `width: 100%`, mas **o `select` não tinha regra nenhuma** e um `<select>` não encolhe abaixo da opção mais comprida ("Perna esquerda", nomes de boneco) sem `min-width: 0` — voltaria a empurrar o painel na primeira lista longa. A regra foi escrita com escopo no bloco de copiar pose, e não no `.properties-panel__field` inteiro, para não mexer em selects de outras seções que hoje cabem.
+
+### Biblioteca de animações: uma PILHA, não uma quebra oportunista
+
+A primeira tentativa foi `flex-wrap: wrap` com `flex: 1 1 6rem`, esperando dois botões por linha. Medido no navegador, deu **um por linha** — a base de 6 rem ficou a ~2 px de caber dois dentro do `fieldset`. Um layout que depende de uma folga de 2 px muda sozinho com uma tradução mais curta ou outra fonte.
+
+E dois por linha era pior de qualquer forma: sobram ~95 px por botão e "Regravar a salva" sai cortado — exatamente o que obrigava o `padding: 0.25rem 0.2rem` e a fonte de 0,72 rem da versão anterior, que existiam para espremer três botões numa linha. Então o resultado virou explícito: `flex-direction: column`, cada botão com a largura toda, padding e corpo de fonte de volta ao tamanho dos outros botões do painel.
+
+A classe foi renomeada de `animation-panel__row` para **`animation-panel__buttons`** (três usos no `AnimationPanel.tsx`): um seletor chamado "row" que renderiza uma coluna é a espécie de pista falsa que custa caro no próximo refactor.
+
+### Ordem dos painéis
+
+`AppShell.tsx`: `<AnimationPanel />` passou à frente de `<SnapshotPanel />` — a ordem do DOM é a do layout, já que os painéis são irmãos num flex row. Animação fica ao lado de Câmera, que é de onde vêm os keyframes (item 34), e Instantâneos — que é saída, não edição — encosta em Cenas. Um teste no `AppShell.test.tsx` trava a lista inteira pelos `aria-label` dos `aside`, porque essa ordem agora é requisito e não decoração.
+
+De quebra, `.panel--animation` entrou na lista dos painéis à direita do viewport que se separam pela borda **esquerda**: faltava lá, e o `border-right` herdado de `.panel` desenhava linha dupla contra o vizinho.
+
+### Verificação
+
+Suíte de 1.947 para **1.948** (o teste de ordem), todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+No Chrome real (`npm run preview`), sem erro de console, medindo `scrollWidth - clientWidth` de cada painel: **Propriedades 0 e Animação 0** (eram positivos), ordem lida do DOM igual a `Bonecos, Propriedades, Câmera, Animação, Instantâneos, Cenas`, os dois selects de copiar pose confirmados em linhas diferentes pelas caixas delimitadoras, e os quatro botões da biblioteca ocupando quatro linhas com a mesma borda direita.
+
+**Achado não pedido, deixado como está:** o painel de **Câmera** ainda estoura 19 px — um `<fieldset>` do bloco "Enquadramento". É o mesmo defeito, em painel que o pedido não citava; fica registrado para ser tratado à parte.
+
+## 67. Botões do card, captura fixa no topo e papel-cebola (item 31)
+
+Pedido do usuário em 2026-07-29, em duas partes: arrumar os botões de cada card de keyframe em quatro linhas fixas e deixar "Capturar keyframe" mais largo, destacado **e grudado no topo** ("a rolagem só ocorre depois dele"); e implementar o **item 31, papel-cebola**.
+
+### Quatro linhas declaradas, não deduzidas
+
+`Ir para / Regravar`, `Câm ↑ / Câm ↓`, `Pose ↑ / Pose ↓` e `↑ / ↓ / Duplicar / ×`. Cada linha é uma `<div>` no JSX. A versão anterior era uma fila única com `flex-wrap` e um `nth-child(-n + 2)` decidindo quem tinha largura — quebrava sozinha, e qualquer botão novo bagunçava a conta do seletor. Com as linhas declaradas, a leitura também fica por assunto: o que é do keyframe, o que é da câmera, o que é da pose e o que é da ordem da lista. Só a última linha mistura larguras (`--mixed`): setas e `×` levam o próprio símbolo, "Duplicar" fica com a sobra.
+
+### Captura: barra grudada, com o aviso junto
+
+`position: sticky; top: 0` numa faixa que vem ANTES do nome da animação, com margens negativas anulando o padding de `.panel` para tapar de borda a borda o conteúdo que rola por baixo — sem isso sobra uma fresta de cada lado. O botão ganhou cor sólida sobre `--text-h`, que já vira claro no tema escuro (destaque sem variável nova).
+
+O aviso de "por que não dá para capturar" viaja DENTRO da faixa: um botão desabilitado fixo no topo, com o motivo perdido lá embaixo na rolagem, não explica nada.
+
+### Item 31 — papel-cebola
+
+`onionSkin.ts` é só a LEITURA (`anchorKeyframeIndex`, `onionSkinFrames`), testável sem WebGL; `OnionSkin.tsx` desenha; o `animationStore` liga e desliga, como estado de ferramenta (fora do undo e do arquivo, ao lado de `repeat`).
+
+- **O `ghost` do `Figure.tsx`** carrega as três coisas que o item previa (translúcido, sem sombra, sem gizmo) e mais uma que não estava à vista: **o fantasma não pode repetir os nomes de cena**. `CameraRig` acha o boneco por `getObjectByName('figure-<id>')`, que devolve o primeiro da travessia — com nomes repetidos, "enquadrar boneco" mediria a caixa de um keyframe vizinho, e o erro só apareceria como um enquadramento estranho, sem pista de causa. `figure-`, `joint-` e `segment-` são suprimidos no fantasma.
+- **Uma cor por papel** (quente = passado, frio = futuro), a convenção dos programas 2D; `depthWrite` desligado para dois fantasmas se atravessarem sem um recortar o outro.
+- **Fora das saídas de graça:** o grupo se chama `scene-onion-skin` e entrou em `OVERLAY_NAMES`. O PNG e o MP4 já escondem tudo o que está nessa lista — nenhuma regra nova a manter em dia.
+- **Some enquanto toca ou exporta:** durante a reprodução quem manda é a pré-visualização, o âncora muda a cada quadro e os fantasmas piscariam de um keyframe para o outro.
+- **Grupos são leitura, âncora também:** não há "keyframe selecionado" guardado em lugar nenhum — o âncora é calculado do playhead. Em cima de um keyframe, é ele; entre dois, é o de trás.
+
+### O bug que o papel-cebola revelou: "Ir para" não movia o playhead
+
+`goToKeyframe` carregava o retrato do keyframe na cena de trabalho e limpava a pré-visualização, mas **deixava `timeMs` onde estava**. Duas consequências: a régua do rodapé marcava 0,0s enquanto a cena mostrava o keyframe 3 (inconsistência que já existia e que a barra do item 29 pôs à vista), e o papel-cebola — que se ancora no instante — desenhava os vizinhos do keyframe ERRADO.
+
+O sintoma na tela era enganoso: os fantasmas caíam exatamente em cima do boneco e a cena só ficava "lavada", sem nada aparecendo fora do lugar. `requestGoToKeyframe` passou a receber o instante (quem chama já tem `keyframeStartTimesMs` em mãos) e a mover o playhead junto.
+
+### Verificação
+
+**+25 testes**, suíte de 1.947 para **1.972**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+No Chrome real (`npm run preview`), sem erro de console: as quatro linhas do card lidas do DOM na ordem pedida (`[["Ir para","Regravar"],["Câm ↑","Câm ↓"],["Pose ↑","Pose ↓"],["↑","↓","Duplicar","×"]]`), rolagem horizontal do painel em 0, o botão de captura com 36 px de altura e peso 700 continuando no topo depois de rolar 600 px (y 107 → 88, com o painel começando em 64), e o papel-cebola medido por contagem de pixels: no keyframe do meio, quentes 50.460 → 67.043 e frios 479 → 15.435 ao ligar; no primeiro keyframe só o fantasma frio (24.577); tocando, os frios voltam à linha de base (476).
+
+**Duas armadilhas de automação, ambas custaram uma rodada:**
+
+1. **Ler o canvas WebGL de fora não devolve nada.** Sem `preserveDrawingBuffer`, `createImageBitmap(canvas)` fora do `gl.render` dá buffer vazio — a sonda contou zero até no boneco vermelho que estava à vista. A medição passou a usar o SCREENSHOT do Playwright (composto pelo navegador) desenhado num canvas 2D.
+2. **Cena idêntica esconde o fantasma.** Capturar três keyframes sem mudar nada põe os fantasmas exatamente sobre o boneco: parece que a funcionalidade não existe. Variar a POSE entre as capturas é o que torna o papel-cebola visível — e é o caso de uso real.
+
+## 68. Área de transferência de poses
+
+Pedido do usuário em 2026-07-29: copiar temporariamente uma pose para replicar em outra cena ou boneco, **só em memória** (sem persistir entre sessões), no rodapé do painel de Bonecos e com a possibilidade de apagar cada pose capturada.
+
+### Por que um store à parte, e não um campo do `figuresStore`
+
+Não é escolha de arrumação: é a única forma de o recurso funcionar. Carregar uma cena substitui figuras, animações e biblioteca de poses de uma vez — se a área de transferência morasse lá dentro, ela seria apagada exatamente no gesto que ela existe para servir ("copiar aqui, colar na outra cena"). Fora do `figuresStore`, ela sobrevive de graça, e há teste travando isso.
+
+O `poseClipboardStore` também fica naturalmente fora do undo e do autosave, que é o que o "só em memória" pede. Mesmo lugar de `keyframeThumbnailStore` (#65): apoio de trabalho, não conteúdo.
+
+### O que é guardado: a MESMA captura da biblioteca de poses
+
+Cada entrada é uma `SavedPose` de `captureFigurePose` (#42) — juntas mais assentamento, com a altura do quadril já desfeita da escala do boneco de origem. Colar refaz na escala de quem recebe, então a mesma pose assenta igual num boneco de 1,50 m e num de 1,90 m, e uma pose deitada volta deitada. Reusar a captura em vez de escrever uma segunda é o que garante que copiar/colar e "salvar + aplicar" dêem exatamente o mesmo resultado, hoje e depois de qualquer mudança nas regras de assentamento.
+
+`pasteFigurePose` no `figuresStore` é o único acréscimo lá: chama o mesmo `withPose` de `applySavedPose`, com as mesmas juntas travadas do destino e num `set` só (um passo de undo). A ação existe porque colar altera CONTEÚDO — a lista é de ferramenta, o resultado não.
+
+### Onde fica, e por que não em Propriedades
+
+No rodapé do painel de **Bonecos**, como pedido — e a razão sustenta o pedido: a lista é da SESSÃO, não do boneco selecionado. Em Propriedades ela desapareceria a cada troca de seleção, que é precisamente o gesto entre copiar e colar. Copiar age sobre o selecionado; colar aplica no selecionado; sem seleção os dois ficam desabilitados **e o painel diz por quê** — botão apagado sem explicação é o que faz o usuário procurar defeito onde não há.
+
+- **Nomes desambiguados** (`uniqueClipboardName`): duas cópias do mesmo boneco virariam duas linhas idênticas, e aí só o acaso diz qual é qual. O sufixo `(2)` resolve sem obrigar ninguém a digitar. Mesma ideia dos rótulos de grupo de keyframes (#65), regra separada porque aqui não existe o caso "estender o grupo vizinho".
+- **Sem limite de entradas:** cada uma é pequena, todas são apagáveis uma a uma (o pedido), e o painel rola.
+- **O nome cede primeiro no layout:** os dois botões têm largura de conteúdo e o nome trunca com reticências — o painel de Bonecos é o mais estreito (220 px) e um nome longo o empurraria de volta à rolagem horizontal que a #66 acabou de tirar.
+
+### Verificação
+
+**+18 testes**, suíte de 1.972 para **1.990**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+No Chrome real (`npm run preview`), sem erro de console: aviso de lista vazia; duas cópias virando "Boneco 1" e "Boneco 1 (2)"; apagar só a segunda; **trocar de cena preservando a entrada** (remover o boneco, criar outro) e **carregar um snapshot** também preservando; "Colar" desabilitado sem seleção; colar mudando o cotovelo esquerdo de 0° para −60°; **recarregar a página esvaziando a lista**, que é a decisão do usuário; e rolagem horizontal do painel em 0.
+
+**Nota de teste:** a primeira versão do teste de junta travada usou `elbow.L` a +33°, e o cotovelo só dobra para um lado — o valor era grampeado a 0 antes mesmo de colar, e a falha parecia da colagem. Ângulo fora do limite não serve de sentinela.
+
+## 69. Confirmação ao regravar, "Inserir" na barra e o nome da animação junto da biblioteca
+
+Pedido do usuário em 2026-07-29: confirmar antes de regravar um keyframe (por cliques indevidos); mover "Inserir keyframe aqui" para a barra da linha do tempo, com o mesmo destaque de "Capturar keyframe"; e tirar o nome da animação do início do painel, aproximando-o do combo de animação salva.
+
+### Regravar em dois passos
+
+Regravar substitui a pose E a câmera guardadas pelo que está na tela; o Ctrl+Z é a única saída, e num card com oito botões o vizinho de "Regravar" é "Ir para". Vira confirmação em linha: o aviso em vermelho mais `Confirmar`/`Cancelar` no lugar da primeira linha do card — mesmo padrão do "novo workspace" no painel de Cenas (#31), que é a outra ação que um clique não desfaz.
+
+- **Um id em confirmação, não um mapa:** abrir a confirmação de outro card fecha a anterior sozinha. Duas confirmações abertas ao mesmo tempo seriam duas chances de clicar na errada — o problema que o pedido veio resolver.
+- **Só "Regravar" ganha confirmação.** Os outros botões do card ou são reversíveis à vista (mover, duplicar) ou não perdem nada (Ir para). Confirmação em tudo vira ruído, e ruído se clica no automático — que é como o clique indevido acontece.
+
+### "Inserir keyframe aqui" foi para a barra
+
+Ele corta o trecho **no instante do playhead**, e o playhead mora na barra do rodapé (item 29). Com ele no painel, a decisão ("onde estou?") ficava numa ponta da tela e a ação na outra. Foi para o fim da fileira de transporte, com o destaque de `Capturar keyframe` — é a única EDIÇÃO da barra, e por isso a única em destaque ali.
+
+A aparência de destaque virou uma regra só, listando os dois seletores; o que muda entre eles é apenas a ocupação (o do painel toma a largura toda, o da barra mede o próprio texto). Duplicar o bloco de cor faria os dois destaques divergirem no primeiro ajuste de tema.
+
+A regra do `disabled` foi junto sem mudança: em cima de um keyframe ou nas pontas não há trecho a cortar, e tocando o instante mudaria entre ver o botão e clicá-lo. Os três testes que a cobriam mudaram de arquivo com o botão, de `AnimationPanel.test.tsx` para `TimelineBar.test.tsx`.
+
+### O nome da animação desceu para a biblioteca
+
+Ele é do mesmo assunto que o bloco "Biblioteca de animações": é o nome que vira o arquivo MP4 e o padrão de "Nome para guardar", que fica logo abaixo. No topo do painel ele separava o botão de capturar da lista de keyframes sem ter relação com nenhum dos dois — e o topo é o espaço mais caro do painel, agora que a faixa de captura é fixa (#67).
+
+### Verificação
+
+**+3 testes** (a confirmação; os de inserir mudaram de arquivo), suíte de 1.990 para **1.993**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+No Chrome real (`npm run preview`), sem erro de console: o aviso e o par Confirmar/Cancelar aparecendo, cancelar devolvendo o botão "Regravar" e confirmar fechando a confirmação; "Inserir keyframe aqui" com zero ocorrências no painel e uma na barra, com estilo computado **idêntico** ao de "Capturar keyframe" (peso 700, fundo `rgb(8, 6, 13)`, texto branco), desabilitado em cima de um keyframe, habilitado no meio do trecho e levando a lista de 2 para 3 keyframes; o campo do nome dentro do `fieldset` da biblioteca e depois do botão de capturar, a 164 px do combo "Animação salva"; e rolagem horizontal do painel em 0.
+
+## 70. Espelho completo do boneco
+
+Pedido do usuário em 2026-07-29: espelhar o boneco inteiro, e não só braços e pernas — as juntas sem par correspondente devem ter o ângulo invertido, mantendo também o espelhamento dos membros com direita e esquerda.
+
+### A regra já existia; faltava aplicá-la onde não há par
+
+A reflexão sagital `(x, y, z) → (x, -y, -z)` do `poseMirror.ts` (#30) é exata e vale para qualquer junta. Nas pareadas ela é aplicada ao TROCAR de lado; numa junta central não há para onde trocar, e por isso a reflexão se aplica sobre ela mesma. `mirrorPoseFull` é `swapPoseSides` mais esse passo — cinco juntas: `spine`, `chest`, `upperChest`, `neck`, `head`.
+
+Sem ele, um tronco torcido e uma cabeça virada continuavam para o mesmo lado enquanto os braços trocavam: o boneco saía espelhado pela metade, que é a queixa que originou o pedido.
+
+**A raiz fica de fora**, e não por esquecimento: ela não é pose, é a COLOCAÇÃO do boneco — quem a carrega é `figure.rotation`, não `figure.pose` (`Figure.tsx`, `poseLibrary.ts`). Espelhar o heading giraria o boneco na cena e negar X o mudaria de lugar: isso é refletir a CENA em torno do plano do mundo, não o boneco em torno do plano dele. O boneco continua onde está e encarando para onde encarava; o que vira do avesso é o corpo. Há teste travando posição e rotação intactas.
+
+### Verificação numérica, não dedução
+
+A trava principal é a mesma que o espelho parcial já tinha: montando a cinemática direta com uma pose torta dos dois lados **mais** tronco, pescoço e cabeça fora do eixo, cada junta cai na posição de mundo da correspondente com X negado — as pareadas na do par, as centrais na delas mesmas — com erro nulo a 9 casas. O controle negativo mede o que faltava: só trocar os lados deixa as juntas centrais a mais de 2 cm do espelho.
+
+Continua uma involução: aplicar duas vezes devolve a pose original, então serve de alternar.
+
+### Sem escopo, e o guarda que precisou mudar
+
+As três operações de lado obedecem à junta selecionada (`scopeJoint`, #34). O espelho completo **não**: "o boneco todo" é o que o botão promete, e restringi-lo à seleção faria o botão mentir.
+
+Isso expôs um detalhe do bloco de Simetria: ele sumia inteiro quando não havia junta pareada no escopo (com a cabeça selecionada, por exemplo). Manter o espelho completo lá dentro faria a ação sumir justamente onde ela continua válida — pareceria defeito. Agora só as três operações de lado somem; o `fieldset` fica, com o espelho completo e a caixa de espelho ao vivo. **De quebra corrige uma incoerência anterior:** o espelho ao vivo já era documentado como valendo para o boneco todo, e mesmo assim desaparecia conforme a junta selecionada.
+
+### Verificação
+
+**+10 testes**, suíte de 1.993 para **2.003**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+No Chrome real (`npm run preview`), sem erro de console, sobre uma pose de corrida com a cabeça a 25° e o tronco a 12°: **"Inverter lados" deixa a cabeça em 25°** (o buraco relatado); o espelho completo leva a cabeça a −25°, o tronco a −12° e passa o ombro direito (−45°) para o esquerdo; aplicar de novo devolve 25°; e com a cabeça selecionada o botão continua na tela enquanto "Inverter lados" some.
+
+**Nota de teste:** a primeira expectativa escrita supunha o ombro voltando a zero — mas a pose padrão nasce com os braços baixos (z perto de ±90), então o ombro direito recebe o espelho do que o ESQUERDO tinha, e não zero. Usar `mirrorRotation` na expectativa em vez de números escritos à mão também evitou o `-0` que o `toEqual` distingue de `0`.
+
+## 71. Barra da linha do tempo em duas fileiras
+
+Pedido do usuário em 2026-07-29: pôr os botões da barra em duas fileiras, com "Inserir keyframe aqui" acima dos botões de tocar.
+
+`timeline-bar__controls` é uma coluna com duas linhas — inserir em cima, transporte embaixo — ao lado da régua, que continua crescendo com a janela (medido: 2.060 px de régua contra 304 px da coluna de controles).
+
+Além de caber melhor, a divisão diz o que cada fileira é: eram sete controles numa fila só, e o único que EDITA a animação ficava colado no ▶ que anda um quadro. Sozinho na linha, o botão passa a tomar a largura da coluna — medir só o próprio texto deixaria uma sobra torta ao lado do transporte.
+
+Sem mudança de comportamento: mesma regra de `disabled` (em cima de um keyframe, nas pontas ou tocando, não há trecho a cortar) e mesmos testes.
+
+**Verificação:** suíte em **2.003**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. No Chrome real, sem erro de console: as duas linhas confirmadas por caixa delimitadora (inserir acima de "Tocar", mesma coluna, dois topos distintos).
+
+**Nota de ferramenta:** rodar `npx prettier --write` neste arquivo reformatou-o inteiro no padrão do prettier (aspas duplas, ponto e vírgula), que **não** é o do projeto — não há config de prettier aqui, e o estilo do código é aspas simples sem ponto e vírgula. Desfeito com `--single-quote --no-semi --print-width 110`. Neste repositório, formatação é do `eslint`; prettier avulso não.

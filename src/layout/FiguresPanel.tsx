@@ -3,10 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { MAX_FIGURES, useFiguresStore, type Figure } from '../store/figuresStore'
 import { IK_CHAINS } from '../figure/ikSolver'
 import { MAX_HEIGHT_M, MIN_HEIGHT_M } from '../figure/skeleton'
-import { slugifySceneName } from '../keyframe/keyframeNaming'
+import { slugifySceneName } from '../snapshot/snapshotNaming'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { exportFigureToGlb, importFigureFromGlb } from '../persistence/sceneFile'
 import { useIKStore } from '../store/ikStore'
+import { usePoseClipboardStore } from '../store/poseClipboardStore'
 import { importErrorKey } from './fileFeedback'
 import { CollapsiblePanel } from './CollapsiblePanel'
 
@@ -197,6 +198,7 @@ export function FiguresPanel() {
   const [errorKey, setErrorKey] = useState<string | null>(null)
 
   const atLimit = figures.length >= MAX_FIGURES
+  const selectedFigure = figures.find((figure) => figure.id === selectedFigureId)
 
   const handleAdd = () => {
     addFigure(t('panels.figures.defaultName', { index: nextFigureSeq }))
@@ -263,6 +265,83 @@ export function FiguresPanel() {
           ))}
         </ul>
       )}
+
+      <PoseClipboard selectedFigure={selectedFigure ?? null} />
     </CollapsiblePanel>
+  )
+}
+
+interface PoseClipboardProps {
+  selectedFigure: Figure | null
+}
+
+/**
+ * Área de transferência de poses (pedido do usuário), no rodapé do painel de
+ * Bonecos: copiar a pose de um boneco e colar em outro — inclusive **em outra
+ * cena**, que é o que a separa de "Copiar pose para" do painel de Propriedades,
+ * que precisa dos dois bonecos vivos ao mesmo tempo.
+ *
+ * Fica aqui, e não em Propriedades, porque a lista é da SESSÃO inteira e não do
+ * boneco selecionado — em Propriedades ela sumiria a cada troca de seleção, que
+ * é exatamente o gesto que se faz entre copiar e colar.
+ *
+ * O conteúdo vive só em memória (`poseClipboardStore`), por decisão do usuário.
+ */
+function PoseClipboard({ selectedFigure }: PoseClipboardProps) {
+  const { t } = useTranslation()
+  const entries = usePoseClipboardStore((state) => state.entries)
+  const copyPose = usePoseClipboardStore((state) => state.copyPose)
+  const removePose = usePoseClipboardStore((state) => state.removePose)
+  const pasteFigurePose = useFiguresStore((state) => state.pasteFigurePose)
+
+  return (
+    <fieldset className="figures-panel__clipboard">
+      <legend>{t('panels.figures.clipboard')}</legend>
+
+      <button
+        type="button"
+        disabled={!selectedFigure}
+        title={t('panels.figures.clipboardCopyHint')}
+        onClick={() => selectedFigure && copyPose(selectedFigure)}
+      >
+        {t('panels.figures.clipboardCopy')}
+      </button>
+
+      {entries.length === 0 ? (
+        <p className="figures-panel__hint">{t('panels.figures.clipboardEmpty')}</p>
+      ) : (
+        <>
+          <ul className="figures-panel__clipboard-list">
+            {entries.map((entry) => (
+              <li key={entry.id} className="figures-panel__clipboard-item">
+                <span className="figures-panel__clipboard-name" title={entry.name}>
+                  {entry.name}
+                </span>
+                <button
+                  type="button"
+                  disabled={!selectedFigure}
+                  title={t('panels.figures.clipboardPasteHint')}
+                  onClick={() => selectedFigure && pasteFigurePose(selectedFigure.id, entry)}
+                >
+                  {t('panels.figures.clipboardPaste')}
+                </button>
+                <button
+                  type="button"
+                  className="figures-panel__clipboard-remove"
+                  aria-label={t('panels.figures.clipboardRemove', { name: entry.name })}
+                  title={t('panels.figures.clipboardRemove', { name: entry.name })}
+                  onClick={() => removePose(entry.id)}
+                >
+                  &times;
+                </button>
+              </li>
+            ))}
+          </ul>
+          {/* Sem boneco escolhido não há onde colar — dizer isso vale mais do
+              que deixar os botões apagados sem explicação. */}
+          {!selectedFigure && <p className="figures-panel__hint">{t('panels.figures.clipboardNoSelection')}</p>}
+        </>
+      )}
+    </fieldset>
   )
 }

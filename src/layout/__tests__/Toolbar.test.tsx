@@ -119,6 +119,31 @@ describe('Toolbar', () => {
     expect(status).toHaveTextContent('Falha ao salvar')
   })
 
+  it('escolhe de qual saída a máscara de enquadramento vem, e persiste a escolha', async () => {
+    const user = userEvent.setup()
+    await renderToolbar()
+
+    const select = screen.getByLabelText('Máscara de enquadramento')
+    expect(select).toHaveValue('off')
+
+    await user.selectOptions(select, 'animation')
+    expect(useUIStore.getState().frameMaskSource).toBe('animation')
+    expect(localStorage.getItem('virtual-mockup:ui:v1')).toContain('"frameMaskSource":"animation"')
+  })
+
+  it('desligar a máscara larga o retângulo junto, para ela não ficar pintada na tela', async () => {
+    const user = userEvent.setup()
+    await renderToolbar()
+
+    act(() => {
+      useUIStore.getState().setFrameMaskSource('snapshot')
+      useUIStore.getState().setFrameMaskRect({ width: 900, height: 900, left: 350, top: 0, fit: 1 })
+    })
+
+    await user.selectOptions(screen.getByLabelText('Máscara de enquadramento'), 'off')
+    expect(useUIStore.getState().frameMaskRect).toBeNull()
+  })
+
   it('switches the UI language', async () => {
     const user = userEvent.setup()
     await renderToolbar()

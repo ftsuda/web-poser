@@ -3,40 +3,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useFiguresStore } from '../../store/figuresStore'
-import { useKeyframeCaptureStore } from '../../store/keyframeCaptureStore'
-import { KeyframePanel } from '../KeyframePanel'
+import { useSnapshotCaptureStore } from '../../store/snapshotCaptureStore'
+import { SnapshotPanel } from '../SnapshotPanel'
 
-async function renderKeyframePanel() {
-  const utils = render(<KeyframePanel />)
+async function renderSnapshotPanel() {
+  const utils = render(<SnapshotPanel />)
   await act(async () => {})
   return utils
 }
 
-describe('KeyframePanel', () => {
+describe('SnapshotPanel', () => {
   beforeEach(() => {
-    useKeyframeCaptureStore.setState(useKeyframeCaptureStore.getInitialState())
+    useSnapshotCaptureStore.setState(useSnapshotCaptureStore.getInitialState())
     useFiguresStore.setState(useFiguresStore.getInitialState())
   })
 
   it('shows the panel title and the Full HD resolution selected by default', async () => {
-    await renderKeyframePanel()
-    expect(screen.getByRole('heading', { name: 'Keyframes' })).toBeInTheDocument()
+    await renderSnapshotPanel()
+    expect(screen.getByRole('heading', { name: 'Instantâneos' })).toBeInTheDocument()
     expect(screen.getByLabelText('Resolução')).toHaveValue('fullHD')
   })
 
   it('changing the resolution preset updates the store', async () => {
     const user = userEvent.setup()
-    await renderKeyframePanel()
+    await renderSnapshotPanel()
 
     await user.selectOptions(screen.getByLabelText('Resolução'), 'square')
 
-    expect(useKeyframeCaptureStore.getState().width).toBe(1080)
-    expect(useKeyframeCaptureStore.getState().height).toBe(1080)
+    expect(useSnapshotCaptureStore.getState().width).toBe(1080)
+    expect(useSnapshotCaptureStore.getState().height).toBe(1080)
   })
 
   it('shows custom width/height fields only when the custom preset is selected', async () => {
     const user = userEvent.setup()
-    await renderKeyframePanel()
+    await renderSnapshotPanel()
 
     expect(screen.queryByLabelText('Largura (px)')).not.toBeInTheDocument()
 
@@ -49,38 +49,38 @@ describe('KeyframePanel', () => {
     await user.type(widthInput, '800')
     await user.tab()
 
-    expect(useKeyframeCaptureStore.getState().width).toBe(800)
+    expect(useSnapshotCaptureStore.getState().width).toBe(800)
   })
 
   it('toggles hiding grid/gizmos on capture, checked by default', async () => {
     const user = userEvent.setup()
-    await renderKeyframePanel()
+    await renderSnapshotPanel()
 
-    const checkbox = screen.getByLabelText('Ocultar grade/gizmos na captura')
+    const checkbox = screen.getByLabelText('Ocultar grade/gizmos/junta na captura')
     expect(checkbox).toBeChecked()
 
     await user.click(checkbox)
-    expect(useKeyframeCaptureStore.getState().hideOverlaysOnCapture).toBe(false)
+    expect(useSnapshotCaptureStore.getState().hideOverlaysOnCapture).toBe(false)
   })
 
   it('requests a capture when the capture button is clicked', async () => {
     const user = userEvent.setup()
-    await renderKeyframePanel()
+    await renderSnapshotPanel()
 
-    await user.click(screen.getByRole('button', { name: 'Capturar keyframe' }))
-    expect(useKeyframeCaptureStore.getState().pendingCapture).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Capturar instantâneo' }))
+    expect(useSnapshotCaptureStore.getState().pendingCapture).toBe(true)
   })
 
   it('shows feedback with the last captured filename', async () => {
-    useKeyframeCaptureStore.getState().setLastCapturedFilename('Cena-1_kf001.png')
-    await renderKeyframePanel()
+    useSnapshotCaptureStore.getState().setLastCapturedFilename('Cena-1_kf001.png')
+    await renderSnapshotPanel()
 
-    expect(screen.getByText('Última captura: Cena-1_kf001.png')).toBeInTheDocument()
+    expect(screen.getByText('Último instantâneo: Cena-1_kf001.png')).toBeInTheDocument()
   })
 
   describe('when File System Access API is unavailable (e.g. Firefox, or this jsdom test environment)', () => {
     it('hides the "choose folder" button and explains captures will download instead', async () => {
-      await renderKeyframePanel()
+      await renderSnapshotPanel()
       expect(screen.queryByRole('button', { name: 'Escolher pasta de destino' })).not.toBeInTheDocument()
       expect(
         screen.getByText("Este navegador não suporta escolher pasta — as capturas serão baixadas."),
@@ -100,14 +100,14 @@ describe('KeyframePanel', () => {
       window.showDirectoryPicker = vi.fn().mockResolvedValue(fakeHandle)
 
       const user = userEvent.setup()
-      await renderKeyframePanel()
+      await renderSnapshotPanel()
 
       expect(screen.getByText('Nenhuma pasta escolhida — as capturas serão baixadas.')).toBeInTheDocument()
 
       await user.click(screen.getByRole('button', { name: 'Escolher pasta de destino' }))
 
       expect(await screen.findByText('Pasta: keyframes')).toBeInTheDocument()
-      expect(useKeyframeCaptureStore.getState().directoryHandle).toBe(fakeHandle)
+      expect(useSnapshotCaptureStore.getState().directoryHandle).toBe(fakeHandle)
     })
   })
 })

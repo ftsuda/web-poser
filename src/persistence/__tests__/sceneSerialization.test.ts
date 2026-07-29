@@ -43,7 +43,7 @@ const sampleScene: SceneWorkingState = {
   environment: { background: 'dark', grid: false },
   cameraBookmarks: [sampleBookmark],
   nextCameraBookmarkSeq: 2,
-  nextKeyframeNumber: 7,
+  nextSnapshotNumber: 7,
 }
 
 describe('sceneSerialization — figura', () => {
@@ -74,6 +74,27 @@ describe('sceneSerialization — figura', () => {
   it('ignora juntas desconhecidas ao reconstruir (não lança erro)', () => {
     const restored = figureFromExtras({ id: 'f1', joints: { juntaInexistente: [1, 2, 3] } }, 0)
     expect(restored.pose.juntaInexistente).toBeUndefined()
+  })
+
+  /**
+   * Arquivo gravado antes do dedo indicador separado (DECISOES.md #45): sem a
+   * migração o indicador nasceria esticado no meio de um punho fechado.
+   */
+  it('completa o indicador a partir do bloco em cenas gravadas antes dele existir', () => {
+    const restored = figureFromExtras(
+      {
+        id: 'f1',
+        joints: {
+          'fingersBase.L': [85, 0, 0],
+          'fingersMid.L': [105, 0, 0],
+          'fingersTip.L': [80, 0, 0],
+        },
+      },
+      0,
+    )
+    expect(restored.pose['indexBase.L']).toEqual({ x: 85, y: 0, z: 0 })
+    expect(restored.pose['indexMid.L']).toEqual({ x: 105, y: 0, z: 0 })
+    expect(restored.pose['indexTip.L']).toEqual({ x: 80, y: 0, z: 0 })
   })
 
   it('grampeia a altura fora do intervalo permitido ao reconstruir', () => {
@@ -115,16 +136,37 @@ describe('sceneSerialization — bookmark de câmera', () => {
     const restored = cameraBookmarkFromExtras({ id: 'b1', projection: 'isometric' }, 0)
     expect(restored.projection).toBe('perspective')
   })
+
+  /** Ângulo holandês (DECISOES.md #46): sem o `up`, o bookmark voltaria endireitado. */
+  it('preserva a inclinação da câmera no round-trip', () => {
+    const inclinado = { ...sampleBookmark, up: [0.5, 0.866, 0] as [number, number, number] }
+    expect(cameraBookmarkFromExtras(cameraBookmarkToExtras(inclinado), 0)).toEqual(inclinado)
+  })
+
+  it('bookmark gravado antes da inclinação existir não ganha um `up` inventado', () => {
+    const restored = cameraBookmarkFromExtras({ id: 'b1', position: [1, 2, 3], target: [0, 0, 0] }, 0)
+    expect(restored.up).toBeUndefined()
+  })
 })
 
 describe('sceneSerialization — cena completa', () => {
   it('faz o round-trip completo (cena → extras → cena) preservando todos os campos', () => {
     const extras = sceneToExtras(sampleScene)
     expect(extras.version).toBe(SCENE_EXTRAS_VERSION)
-    expect(extras.keyframeCounter).toBe(7)
+    expect(extras.snapshotCounter).toBe(7)
 
     const restored = sceneFromExtras(extras)
     expect(restored).toEqual(sampleScene)
+  })
+
+  it('continua a contagem de cenas gravadas com o nome antigo `keyframeCounter`', () => {
+    // Renomeação da fase 10 (DECISOES.md #52): grava-se `snapshotCounter`, mas
+    // um `.glb` salvo antes dela só tem o nome antigo — e reiniciar a sequência
+    // do 1 sobrescreveria arquivos já gravados na pasta.
+    expect(sceneFromExtras({ keyframeCounter: 13 }).nextSnapshotNumber).toBe(13)
+    // Com os dois presentes (arquivo gravado por uma versão nova e editado à
+    // mão), manda o nome novo.
+    expect(sceneFromExtras({ keyframeCounter: 13, snapshotCounter: 20 }).nextSnapshotNumber).toBe(20)
   })
 
   it('aplica defaults completos quando o extras está vazio/corrompido', () => {
@@ -135,7 +177,7 @@ describe('sceneSerialization — cena completa', () => {
     expect(restored.environment).toEqual({ background: 'medium', grid: true })
     expect(restored.cameraBookmarks).toEqual([])
     expect(restored.nextCameraBookmarkSeq).toBe(1)
-    expect(restored.nextKeyframeNumber).toBe(1)
+    expect(restored.nextSnapshotNumber).toBe(1)
   })
 
   it('aplica defaults quando o extras é undefined/não-objeto (ex.: .glb sem o bloco do app)', () => {

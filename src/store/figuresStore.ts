@@ -15,7 +15,56 @@ import {
   type JointRotation,
 } from '../figure/skeleton'
 import { resolveHandPreset, type HandPresetKey } from '../figure/handPresets'
-import { mirrorPoseSide, swapPoseSides, type Side } from '../figure/poseMirror'
+import {
+  clearFigureLocks,
+  copyFigureLocks,
+  getLockedJoints,
+  isJointLocked,
+  mergeLockedJoints,
+  pruneJointLocks,
+  toggleJointLock as toggleLockInMap,
+  type JointLockMap,
+} from '../figure/jointLocks'
+import {
+  clampAnimationSpeed,
+  clampKeyframeDuration,
+  freeKeyframeLabel,
+  createWorkingAnimation,
+  findWorkingAnimation,
+  planKeyframeSplit,
+  uniqueKeyframeLabel,
+  DEFAULT_ANIMATION_SPEED,
+  DEFAULT_KEYFRAME_DURATION_MS,
+  WORKING_ANIMATION_ID,
+  type Animation,
+  type AnimationKeyframe,
+} from '../animation/animation'
+import { sampleAnimation, splitCameraView } from '../animation/animationSampler'
+import {
+  ANIMATION_CLIPS,
+  resolveClipFigure,
+  type AnimationClipKey,
+  type ResolvedClipFigure,
+} from '../animation/animationClips'
+import type { CameraViewState } from '../scene/cameraMove'
+import { blendPoses, type BlendablePose } from '../figure/poseBlend'
+import { captureFigurePose, type SavedPose } from '../figure/poseLibrary'
+import {
+  buildKeyframesFromClip,
+  captureClipFromAnimation,
+  clipRoleCount,
+  type SavedClip,
+} from '../animation/clipLibrary'
+import { seatOnGround } from '../figure/poseGround'
+import {
+  getMirroredJointName,
+  mirrorPoseFull,
+  mirrorPoseSide,
+  mirrorRotation,
+  swapPoseSides,
+  type Side,
+} from '../figure/poseMirror'
+import { JOINT_GROUPS, type JointGroupKey } from '../figure/jointGroups'
 import { resolvePosePreset, resolvePosePresetPlacement, type PosePresetKey } from '../figure/posePresets'
 import {
   getPosePairing,
@@ -52,6 +101,13 @@ export interface CameraBookmark {
   projection: CameraProjection
   fov: number
   zoom: number
+  /**
+   * Topo da tela, para o bookmark guardar também a INCLINAÇÃO da câmera
+   * (ângulo holandês, DECISOES.md #46). Opcional: bookmark gravado antes
+   * disso não tem o campo, e a câmera volta em pé — que é como ele foi
+   * salvo.
+   */
+  up?: readonly [number, number, number]
 }
 
 /**
@@ -113,7 +169,7 @@ export interface Figure {
 
 /**
  * Snapshot nomeado do estado de trabalho (bonecos/poses/ambiente/bookmarks de
- * câmera/contador de keyframe) — o "catálogo de cenas" do workspace (ver
+ * câmera/contador de instantâneo) — o "catálogo de cenas" do workspace (ver
  * PLANO.md > "Workspace: catálogo de cenas" e DECISOES.md #11). Cada
  * snapshot é exatamente o que vira um `.glb` ao exportar aquela cena.
  */
@@ -123,13 +179,23 @@ export interface SceneSnapshotData {
   environment: EnvironmentSettings
   cameraBookmarks: CameraBookmark[]
   nextCameraBookmarkSeq: number
-  nextKeyframeNumber: number
+  nextSnapshotNumber: number
 }
 
 export interface SceneSnapshot {
   id: string
   name: string
   data: SceneSnapshotData
+}
+
+export interface ApplyPosePresetOptions {
+  /**
+   * Montar o par automaticamente numa pose em dupla (DECISOES.md #41).
+   * Padrão `true` — o comportamento que o usuário pediu lá. A caixa do painel
+   * de Propriedades é que passa `false`, para quem prefere montar o encontro à
+   * mão sem que o segundo boneco seja reposicionado.
+   */
+  pairPartner?: boolean
 }
 
 export interface FiguresState {
@@ -143,8 +209,8 @@ export interface FiguresState {
   nextCameraBookmarkSeq: number
   environment: EnvironmentSettings
   sceneName: string
-  /** Próximo número de sequência de keyframe (`kf001`, `kf002`…). Não entra no histórico de undo — ver `consumeKeyframeNumber`. */
-  nextKeyframeNumber: number
+  /** Próximo número de sequência de instantâneo (`snap001`, `snap002`…). Não entra no histórico de undo — ver `consumeSnapshotNumber`. */
+  nextSnapshotNumber: number
   /** Catálogo de snapshots de cena salvos (workspace) — ver `SceneSnapshot`. */
   scenes: SceneSnapshot[]
   nextSceneSnapshotSeq: number
@@ -157,6 +223,45 @@ export interface FiguresState {
    * com o resto do workspace e (b) re-renderizar os sliders quando muda.
    */
   jointLimits: JointLimitOverrides
+  /**
+   * Biblioteca de poses do usuário (DECISOES.md #42) — do WORKSPACE, não de
+   * uma cena: é o que permite montar uma pose numa cena e reaplicá-la em
+   * qualquer boneco de qualquer outra.
+   */
+  poseLibrary: SavedPose[]
+  nextPoseSeq: number
+  /**
+   * Biblioteca de TRECHOS do usuário (item 39) — faixas de keyframes salvas
+   * com nome, reaplicáveis em qualquer animação de qualquer cena. Do
+   * WORKSPACE, como a biblioteca de poses e as animações: vai para um
+   * `clips.json` da pasta, e não para o `.glb` da cena.
+   */
+  clipLibrary: SavedClip[]
+  nextClipSeq: number
+  /**
+   * Animações do usuário (DECISOES.md #52) — também do WORKSPACE, e pela mesma
+   * razão da biblioteca de poses: cada keyframe carrega um retrato completo da
+   * cena, então uma animação é autossuficiente e vale a partir de qualquer
+   * cena. Não viaja no `.glb`: o arquivo da cena continua sem canais de
+   * animação glTF, preservando a ida e volta com o Blender da fase 6.
+   */
+  animations: Animation[]
+  nextAnimationSeq: number
+  /**
+   * Juntas travadas por boneco (DECISOES.md #42). Estado de TRABALHO, decisão
+   * do usuário: vive na sessão e no autosave, não entra no `.glb` nem no
+   * histórico de undo.
+   */
+  jointLocks: JointLockMap
+  /**
+   * Espelhar edições ao vivo: cada ajuste numa junta pareada escreve a
+   * reflexão sagital na junta do outro lado. Como as travas (#42), é MODO DE
+   * TRABALHO — fica fora do `partialize`, e por isso fora do histórico de
+   * undo. Diferente delas, não sobrevive a recarregar a página: um modo que
+   * reescreve o outro lado a cada edição não pode voltar ligado sem ninguém
+   * ter pedido.
+   */
+  liveMirrorEnabled: boolean
   addFigure: (name?: string) => string | null
   removeFigure: (id: string) => void
   duplicateFigure: (id: string) => string | null
@@ -170,6 +275,14 @@ export interface FiguresState {
   setPosition: (id: string, position: readonly [number, number, number]) => void
   setRootRotation: (id: string, rotation: Partial<JointRotation>) => void
   setJointRotation: (id: string, jointName: string, rotation: Partial<JointRotation>) => void
+  /** Liga/desliga o espelho ao vivo (ver `liveMirrorEnabled`). */
+  toggleLiveMirror: () => void
+  /**
+   * Baixa ou levanta o boneco até a pose encostar no chão, sem tocar na pose
+   * nem no lugar dele — o cálculo de `poseGround.ts`, que antes era feito à
+   * mão a cada pose nova.
+   */
+  seatFigureOnGround: (id: string) => void
   /**
    * Devolve UMA junta à pose de referência (fase 9, item 6). A referência é a
    * pose "Em pé" (`posePresets.ts`), não zero cru — há eixos cujo neutro do
@@ -177,13 +290,19 @@ export interface FiguresState {
    * #25). Para o `root`, zera só a rotação de colocação (a posição fica).
    */
   resetJointRotation: (id: string, jointName: string) => void
+  /**
+   * Devolve um grupo inteiro de juntas à pose neutra — braço, perna, tronco ou
+   * cabeça (`JOINT_GROUPS`). Mesma regra do reset por junta: o destino é a
+   * pose EM PÉ, não zeros literais, e junta travada não se mexe.
+   */
+  resetJointGroup: (id: string, group: JointGroupKey) => void
   addCameraBookmark: (bookmark: Omit<CameraBookmark, 'id'>) => string
   removeCameraBookmark: (id: string) => void
   setBackground: (background: BackgroundTone) => void
   toggleGrid: () => void
   renameScene: (name: string) => void
-  /** Consome (lê e avança) o próximo número de keyframe — ver PLANO.md > "Exportação de imagem". */
-  consumeKeyframeNumber: () => number
+  /** Consome (lê e avança) o próximo número de instantâneo — ver PLANO.md > "Exportação de imagem". */
+  consumeSnapshotNumber: () => number
   /** Salva um novo snapshot a partir do estado de trabalho atual; retorna o id gerado. */
   saveSceneSnapshot: (name?: string) => string
   /**
@@ -212,7 +331,222 @@ export interface FiguresState {
     scenes: SceneSnapshot[],
     activeSceneId: string | null,
     jointLimits?: JointLimitOverrides,
+    poses?: readonly SavedPose[],
+    animations?: readonly Animation[],
+    clips?: readonly SavedClip[],
   ) => void
+  /**
+   * Guarda a pose do boneco na biblioteca, com nome. Junto com as juntas vai o
+   * ASSENTAMENTO (inclinação e altura do quadril), para que uma pose deitada
+   * volte deitada — ver `poseLibrary.ts`. Retorna o id gerado, ou `null` se o
+   * boneco não existir.
+   */
+  saveFigurePose: (id: string, name?: string) => string | null
+  /**
+   * Copia a pose de um boneco para outro. Vai o ASSENTAMENTO junto (juntas,
+   * inclinação do corpo e altura do quadril, escalada para a altura de quem
+   * recebe); não vão o lugar no chão, a altura, a cor nem o nome — isso é
+   * identidade e encenação de cada boneco. Mesma regra da biblioteca de poses
+   * (DECISOES.md #42), e as juntas travadas do destino continuam intactas.
+   */
+  /**
+   * Copia a pose de um boneco para outro. Sem `group`, é a pose inteira, com o
+   * assentamento (mesmo caminho da biblioteca de poses). Com `group`, só
+   * aquelas juntas — e aí a colocação de quem recebe NÃO é tocada: o
+   * assentamento é da pose inteira, e aplicá-lo por causa de um membro tiraria
+   * o boneco do chão onde ele estava.
+   */
+  copyFigurePose: (fromId: string, toId: string, group?: JointGroupKey) => void
+  /** Aplica uma pose da biblioteca a um boneco — mesmas regras de `applyPosePreset` (X/Z preservados, juntas travadas intactas). */
+  applySavedPose: (figureId: string, poseId: string) => void
+  /**
+   * Aplica uma pose que veio DE FORA da biblioteca — hoje, da área de
+   * transferência (`poseClipboardStore`), que vive só em memória e por isso não
+   * pode guardar nada aqui dentro. As regras de aplicação são exatamente as de
+   * `applySavedPose`: é o mesmo `withPose`, com as mesmas juntas travadas e a
+   * mesma reescala do assentamento.
+   */
+  pasteFigurePose: (figureId: string, pose: SavedPose) => void
+  /**
+   * Mistura entre duas poses (DECISOES.md #43): `amount` de 0 a 1 entre a
+   * pose-base e a pose alvo, as duas já resolvidas para este boneco pelo
+   * chamador (`poseBlend.ts`). A base é capturada UMA vez, no começo do
+   * arrasto, e não a cada evento — senão cada passo partiria do resultado
+   * anterior e o slider nunca voltaria à pose original.
+   *
+   * Não é animação: o que fica é a pose estática resultante, como qualquer
+   * outra edição (undo normal, juntas travadas preservadas).
+   */
+  blendPose: (figureId: string, base: BlendablePose, target: BlendablePose, amount: number) => void
+  renameSavedPose: (poseId: string, name: string) => void
+  removeSavedPose: (poseId: string) => void
+  /** Substitui a biblioteca pela lida de um workspace (já sanitizada). */
+  loadPoseLibrary: (poses: readonly SavedPose[]) => void
+  /** Cria uma animação vazia e devolve o id gerado. */
+  createAnimation: (name?: string) => string
+  renameAnimation: (id: string, name: string) => void
+  removeAnimation: (id: string) => void
+  /**
+   * Guarda uma cópia da animação de trabalho na biblioteca, com nome, para
+   * reabrir depois (item 36). Devolve o id da cópia, ou `null` se não houver
+   * animação de trabalho com keyframes — salvar o vazio não guarda trabalho
+   * nenhum.
+   */
+  saveAnimationToLibrary: (name?: string) => string | null
+  /**
+   * Abre uma animação da biblioteca: o conteúdo dela (keyframes, velocidade e
+   * nome) **substitui** o da animação de trabalho, num único passo de undo —
+   * mesmo contrato de carregar um snapshot de cena (DECISOES.md #11). A salva
+   * fica intacta: o que se edita daqui em diante é a de trabalho.
+   */
+  openAnimationFromLibrary: (savedId: string) => boolean
+  /** Regrava uma animação salva com o conteúdo atual da de trabalho, mantendo o nome dela. */
+  overwriteSavedAnimation: (savedId: string) => boolean
+  /**
+   * Captura um keyframe: o retrato da cena inteira (todos os bonecos) mais a
+   * câmera viva, que só o `CameraRig` sabe ler. Devolve o id do keyframe, ou
+   * `null` se não houver boneco nenhum em cena — um retrato vazio não é
+   * animação, é engano.
+   *
+   * Com `animationId` nulo (ou apontando para uma animação que não existe
+   * mais), a captura **cria a animação de trabalho** e põe o keyframe nela, no
+   * mesmo passo de undo (item 36): ninguém precisa batizar uma animação antes
+   * de começar, e um Ctrl+Z não deixa uma animação vazia para trás.
+   */
+  addAnimationKeyframe: (animationId: string | null, camera: CameraViewState) => string | null
+  /**
+   * Insere um keyframe no instante `timeMs` da linha do tempo, com o retrato
+   * que a animação já mostrava ali, repartindo o trecho cortado entre as duas
+   * metades — a animação continua a mesma, e o keyframe novo é só um ponto de
+   * ajuste. Devolve o id, ou `null` quando não há trecho para cortar (em cima
+   * de um keyframe, fora da linha do tempo, ou com menos de dois keyframes).
+   */
+  insertAnimationKeyframeAt: (animationId: string, timeMs: number) => string | null
+  /**
+   * Copia para este keyframe a câmera do vizinho — `-1` o anterior, `1` o
+   * posterior —, sem tocar na pose nem na duração. Nas pontas não faz nada.
+   */
+  copyAnimationKeyframeCamera: (animationId: string, keyframeId: string, offset: -1 | 1) => void
+  /**
+   * O simétrico do anterior (item 28): copia para este keyframe o RETRATO DOS
+   * BONECOS do vizinho, sem tocar na câmera nem na duração — é o gesto de
+   * segurar a pose e deixar só a câmera se mover. Nas pontas não faz nada.
+   */
+  copyAnimationKeyframeFigures: (animationId: string, keyframeId: string, offset: -1 | 1) => void
+  /**
+   * Duplica um keyframe logo depois dele (item 28). Dois retratos iguais em
+   * sequência são uma PAUSA — a única forma de fazer uma hoje é recapturar a
+   * cena. A cópia herda duração e câmera, e devolve o id novo (ou `null` se o
+   * keyframe não existir).
+   */
+  duplicateAnimationKeyframe: (animationId: string, keyframeId: string) => string | null
+  /**
+   * "Fechar o ciclo" (item 27): copia o PRIMEIRO keyframe para o fim da linha
+   * do tempo, para que a última transição volte ao ponto de partida — sem isso
+   * nenhum ciclo de caminhada emenda. A cópia chega com a duração do último
+   * trecho, que é a cadência em vigor no fim. Devolve o id novo, ou `null` com
+   * menos de dois keyframes (não há ciclo a fechar).
+   */
+  closeAnimationCycle: (animationId: string) => string | null
+  /** Regrava um keyframe existente com o estado atual da cena e da câmera. */
+  updateAnimationKeyframe: (animationId: string, keyframeId: string, camera: CameraViewState) => void
+  removeAnimationKeyframe: (animationId: string, keyframeId: string) => void
+  /** Move o keyframe `delta` posições na lista; nas pontas, não faz nada. */
+  moveAnimationKeyframe: (animationId: string, keyframeId: string, delta: number) => void
+  setAnimationKeyframeDuration: (animationId: string, keyframeId: string, durationMs: number) => void
+  /**
+   * Rótulo do grupo do keyframe (item 38). Texto vazio tira o keyframe do
+   * grupo; um rótulo que já existe em OUTRO trecho ganha sufixo numérico, para
+   * não haver dois blocos com o mesmo título (ver `uniqueKeyframeLabel`).
+   */
+  setAnimationKeyframeLabel: (animationId: string, keyframeId: string, label: string) => void
+  /**
+   * Redutor/acelerador de toda a linha do tempo — 0,5 é metade da velocidade,
+   * 1,15 é 15% mais rápido. Vale para a reprodução na tela E para o vídeo
+   * exportado, e é propriedade da ANIMAÇÃO: entra no undo e viaja no
+   * `animations.json`, para que a mesma animação renda o mesmo vídeo amanhã.
+   */
+  setAnimationSpeed: (animationId: string, speed: number) => void
+  /**
+   * Acrescenta um trecho predefinido (`animationClips.ts`) ao FINAL da linha
+   * do tempo, um keyframe por passo, todos com a MESMA câmera recebida (a
+   * viva no momento — decidido com o usuário; o enquadramento durante o
+   * trecho é de quem monta). O trecho é ancorado no boneco do papel A: parte
+   * da posição dele e "para a frente" é o heading dele. A cena de trabalho
+   * NÃO é tocada — só a animação muda, numa única edição de undo. Devolve
+   * `false` sem mexer em nada se faltar animação, boneco, ou se uma cena em
+   * dupla vier sem dois bonecos DISTINTOS.
+   */
+  appendAnimationClip: (
+    animationId: string | null,
+    clipKey: AnimationClipKey,
+    camera: CameraViewState,
+    /**
+     * Quem faz o papel A. Nos trechos INDIVIDUAIS aceita vários bonecos (item
+     * 37): todos executam o trecho ao mesmo tempo, cada um ancorado no próprio
+     * lugar e no próprio heading. Em dupla vale um só.
+     */
+    figureAIds: string | readonly string[],
+    figureBId?: string,
+    /** Rótulo do grupo que os keyframes do trecho recebem (item 38). */
+    label?: string,
+  ) => boolean
+  /**
+   * Fecha o ciclo entre o "Movimento A→B" do painel de câmera e o animador
+   * (item 34): dois keyframes com a CENA ATUAL e as duas câmeras do movimento,
+   * acrescentados ao final da linha do tempo numa única edição de undo. O
+   * segundo keyframe é o de chegada, e é ele que carrega a duração do trecho.
+   *
+   * Não é preciso animação nenhuma: como a captura, isto cria a de trabalho
+   * (item 36). Devolve `false` sem mexer em nada se não houver boneco em cena.
+   */
+  appendCameraMoveKeyframes: (
+    animationId: string | null,
+    from: CameraViewState,
+    to: CameraViewState,
+    durationMs?: number,
+  ) => boolean
+  /**
+   * Guarda uma faixa de keyframes da animação de trabalho como TRECHO
+   * reutilizável (item 39), com nome. Guarda os keyframes literais **sem a
+   * câmera**; ao inserir, o trecho congela a câmera viva, como os de fábrica.
+   * Devolve o id, ou `null` se a faixa não der um trecho (menos de dois
+   * keyframes).
+   */
+  saveClipFromRange: (animationId: string, fromIndex: number, toIndex: number, name?: string) => string | null
+  renameSavedClip: (clipId: string, name: string) => void
+  removeSavedClip: (clipId: string) => void
+  /**
+   * Acrescenta um trecho salvo ao FINAL da linha do tempo, reancorado nos
+   * bonecos escolhidos (item 39). `casts` é uma lista de elencos: um trecho de
+   * um papel só pode ser aplicado a vários bonecos de uma vez, e aí cada um o
+   * executa a partir de onde está (mesma regra do item 37).
+   */
+  appendSavedClip: (
+    animationId: string | null,
+    clipId: string,
+    camera: CameraViewState,
+    casts: readonly (readonly string[])[],
+    label?: string,
+  ) => boolean
+  /** Substitui a biblioteca de trechos pela lida de um workspace (já sanitizada). */
+  loadClipLibrary: (clips: readonly SavedClip[]) => void
+  /** Substitui as animações pelas lidas de um workspace (já sanitizadas). */
+  loadAnimationLibrary: (animations: readonly Animation[]) => void
+  /**
+   * Põe a cena de trabalho no retrato de um keyframe — é o "ir para" do
+   * animador, que existe para poder AJUSTAR aquele keyframe. Edição de
+   * conteúdo normal: entra no undo, como carregar um snapshot de cena.
+   */
+  loadFiguresFromKeyframe: (figures: readonly Figure[]) => void
+  /**
+   * Trava/destrava uma junta do boneco (DECISOES.md #42). Junta travada não
+   * muda por nada automático: slider, gizmo, teclado, IK, sorteio, espelho e
+   * aplicar pose. A `root` não pode ser travada (é colocação, não pose).
+   */
+  toggleJointLock: (figureId: string, jointName: string) => void
+  /** Destrava todas as juntas do boneco. */
+  clearJointLocks: (figureId: string) => void
   /** Instala limites articulares customizados (JSON do workspace) e ajusta as poses já carregadas para dentro deles. */
   applyJointLimits: (raw: unknown) => void
   /** Volta aos limites do código, reajustando poses que tenham ficado fora da faixa padrão. */
@@ -237,7 +571,12 @@ export interface FiguresState {
    * distância certa — as duas metades numa única edição, e um só Ctrl+Z
    * desfaz o par inteiro.
    */
-  applyPosePreset: (id: string, key: PosePresetKey) => void
+  /**
+   * Aplica uma pose de fábrica. `pairPartner: false` desliga a montagem
+   * automática do par (DECISOES.md #41) — quem recebeu a pose muda, e o outro
+   * boneco fica intocado. Omitido, o par continua sendo montado.
+   */
+  applyPosePreset: (id: string, key: PosePresetKey, options?: ApplyPosePresetOptions) => void
   /** Aplica uma pose de mão a UM lado, preservando punho, braço e a outra mão. */
   applyHandPreset: (id: string, side: Side, key: HandPresetKey) => void
   /**
@@ -254,6 +593,16 @@ export interface FiguresState {
   mirrorSide: (id: string, from: Side, scopeJoint?: string | null) => void
   /** Troca as poses dos dois lados, cada uma espelhada — mesmo `scopeJoint` de `mirrorSide`. */
   swapSides: (id: string, scopeJoint?: string | null) => void
+  /**
+   * Espelho COMPLETO do boneco (pedido do usuário): troca os membros de lado e
+   * reflete também as juntas SEM par (tronco, pescoço, cabeça).
+   *
+   * Sem `scopeJoint` de propósito, ao contrário das duas de cima: "o boneco
+   * todo" é o que a operação promete, e restringi-la à junta selecionada faria
+   * o botão mentir. A colocação (`position`/`rotation`) não é tocada — ver
+   * `mirrorPoseFull`.
+   */
+  mirrorWholeFigure: (id: string) => void
 }
 
 const ZERO_ROTATION: JointRotation = { x: 0, y: 0, z: 0 }
@@ -303,15 +652,30 @@ function updateFigure(
 }
 
 /**
- * Aplica um preset a UM boneco: a pose interna, a rotação e a altura que o
- * preset pede. X/Z — onde ele está no chão — ficam onde o usuário os deixou.
+ * Como uma pose assenta o boneco no mundo. Mesmos três campos de
+ * `PosePresetPlacement` (poses de fábrica) e de `SavedPose` (biblioteca do
+ * usuário) — é o que permite as duas passarem pelo MESMO caminho de aplicação.
  */
-function withPosePreset(figure: Figure, key: PosePresetKey): Figure {
-  const placement = resolvePosePresetPlacement(key)
+interface AppliedPlacement {
+  rotation: JointRotation
+  groundOffsetM: number
+  preservesHeading: boolean
+}
 
+/**
+ * Aplica uma pose a UM boneco: as juntas, a rotação e a altura que a pose
+ * pede. X/Z — onde ele está no chão — ficam onde o usuário os deixou, e as
+ * juntas TRAVADAS ficam como estavam (DECISOES.md #42).
+ */
+function withPose(
+  figure: Figure,
+  pose: Record<string, JointRotation>,
+  placement: AppliedPlacement,
+  locked: readonly string[],
+): Figure {
   return {
     ...figure,
-    pose: resolvePosePreset(key),
+    pose: mergeLockedJoints(figure.pose, pose, locked),
     rotation: placement.preservesHeading
       ? { ...placement.rotation, y: figure.rotation.y }
       : placement.rotation,
@@ -319,6 +683,10 @@ function withPosePreset(figure: Figure, key: PosePresetKey): Figure {
     // 1,50 m deite tão colado ao chão quanto um de 1,90 m.
     position: [figure.position[0], placement.groundOffsetM * getHeightScale(figure.height), figure.position[2]],
   }
+}
+
+function withPosePreset(figure: Figure, key: PosePresetKey, locked: readonly string[]): Figure {
+  return withPose(figure, resolvePosePreset(key), resolvePosePresetPlacement(key), locked)
 }
 
 /**
@@ -333,8 +701,14 @@ function withPosePreset(figure: Figure, key: PosePresetKey): Figure {
  * rotação própria (deitado) não existe "para onde ele encara", então a
  * montagem canônica é a única — daí o `preservesHeading` mandar no `heading`.
  */
-function withPairedPreset(partner: Figure, anchor: Figure, anchorKey: PosePresetKey, pairing: PosePairing): Figure {
-  const posed = withPosePreset(partner, pairing.counterpart)
+function withPairedPreset(
+  partner: Figure,
+  anchor: Figure,
+  anchorKey: PosePresetKey,
+  pairing: PosePairing,
+  locked: readonly string[],
+): Figure {
+  const posed = withPosePreset(partner, pairing.counterpart, locked)
   const heading = resolvePosePresetPlacement(anchorKey).preservesHeading ? anchor.rotation.y : 0
   // A distância foi medida com os dois na altura de referência; com alturas
   // diferentes ela é parte alcance de um e parte alvo do outro, e a média das
@@ -347,6 +721,89 @@ function withPairedPreset(partner: Figure, anchor: Figure, anchorKey: PosePreset
     position: [anchor.position[0] + dx, posed.position[1], anchor.position[2] + dz],
     rotation: resolvePairedRotation(pairing.counterpart, heading, pairing.facing),
   }
+}
+
+/** Próximo número da sequência de trechos salvos, acima de tudo o que veio de fora. */
+function nextClipSeqFor(clips: readonly SavedClip[]): number {
+  const maxSeq = clips.reduce((max, clip) => {
+    const match = /^clip-(\d+)$/.exec(clip.id)
+    return match ? Math.max(max, Number(match[1])) : max
+  }, 0)
+  return maxSeq + 1
+}
+
+/**
+ * Próximo número da sequência de poses salvas: acima de tudo o que veio de
+ * fora, para que salvar uma pose nova não colida com um id lido do arquivo.
+ */
+function nextPoseSeqFor(poses: readonly SavedPose[]): number {
+  const maxSeq = poses.reduce((max, pose) => {
+    const match = /^pose-(\d+)$/.exec(pose.id)
+    return match ? Math.max(max, Number(match[1])) : max
+  }, 0)
+  return maxSeq + 1
+}
+
+function nextFigureSeqFor(figures: readonly Figure[]): number {
+  const maxSeq = figures.reduce((max, figure) => {
+    const match = /^figure-(\d+)$/.exec(figure.id)
+    return match ? Math.max(max, Number(match[1])) : max
+  }, 0)
+  return maxSeq + 1
+}
+
+function nextAnimationSeqFor(animations: readonly Animation[]): number {
+  const maxSeq = animations.reduce((max, animation) => {
+    const match = /^animation-(\d+)$/.exec(animation.id)
+    return match ? Math.max(max, Number(match[1])) : max
+  }, 0)
+  return maxSeq + 1
+}
+
+/** Maior sequência de id de keyframe já usada na animação (0 quando não há nenhum no padrão `k<n>`). */
+function maxKeyframeSeq(animation: Animation): number {
+  return animation.keyframes.reduce((max, keyframe) => {
+    const match = /^k(\d+)$/.exec(keyframe.id)
+    return match ? Math.max(max, Number(match[1])) : max
+  }, 0)
+}
+
+/**
+ * Próximo id de keyframe DENTRO da animação — máximo já usado + 1, e não
+ * "quantidade + 1": remover um keyframe do meio não pode fazer o próximo
+ * reaproveitar um id que ainda está na lista.
+ */
+function nextKeyframeIdFor(animation: Animation): string {
+  return `k${maxKeyframeSeq(animation) + 1}`
+}
+
+/**
+ * A animação onde a edição vai cair, criando a de trabalho se for preciso
+ * (item 36). Devolve a lista já com ela dentro, para que criar e editar caibam
+ * num único `set` — e portanto num único passo de undo.
+ */
+function withTargetAnimation(
+  animations: readonly Animation[],
+  animationId: string | null,
+): { animations: Animation[]; target: Animation } {
+  const asked = animationId === null ? null : (animations.find((a) => a.id === animationId) ?? null)
+  if (asked) return { animations: [...animations], target: asked }
+
+  const working = findWorkingAnimation(animations)
+  if (working) return { animations: [...animations], target: working }
+
+  const created = createWorkingAnimation()
+  // A de trabalho fica na frente: é a que está na bancada, e a lista aparece
+  // nessa ordem no autosave e no `animations.json`.
+  return { animations: [created, ...animations], target: created }
+}
+
+function updateAnimation(
+  animations: readonly Animation[],
+  id: string,
+  update: (animation: Animation) => Animation,
+): Animation[] {
+  return animations.map((animation) => (animation.id === id ? update(animation) : animation))
 }
 
 function clampFigurePose(figure: Figure): Figure {
@@ -395,13 +852,21 @@ export const useFiguresStore = create<FiguresState>()(
       nextCameraBookmarkSeq: restoredWorkspace?.workingScene.nextCameraBookmarkSeq ?? 1,
       environment: restoredWorkspace?.workingScene.environment ?? INITIAL_ENVIRONMENT,
       sceneName: restoredWorkspace?.workingScene.name ?? 'Cena 1',
-      nextKeyframeNumber: restoredWorkspace?.workingScene.nextKeyframeNumber ?? 1,
+      nextSnapshotNumber: restoredWorkspace?.workingScene.nextSnapshotNumber ?? 1,
       scenes: restoredWorkspace?.scenes ?? [],
       nextSceneSnapshotSeq: restoredWorkspace?.nextSceneSnapshotSeq ?? 1,
       activeSceneId: restoredWorkspace?.activeSceneId ?? null,
       // O autosave já aplicou esses limites ao `skeleton.ts` ao restaurar (as
       // poses acima foram lidas com eles valendo); aqui é só o espelho.
       jointLimits: restoredWorkspace?.jointLimits ?? {},
+      poseLibrary: restoredWorkspace?.poseLibrary ?? [],
+      nextPoseSeq: restoredWorkspace?.nextPoseSeq ?? 1,
+      clipLibrary: restoredWorkspace?.clipLibrary ?? [],
+      nextClipSeq: restoredWorkspace?.nextClipSeq ?? 1,
+      animations: restoredWorkspace?.animations ?? [],
+      nextAnimationSeq: restoredWorkspace?.nextAnimationSeq ?? 1,
+      jointLocks: restoredWorkspace?.jointLocks ?? {},
+      liveMirrorEnabled: false,
 
       addFigure: (name) => {
         const { figures, nextFigureSeq } = get()
@@ -431,6 +896,9 @@ export const useFiguresStore = create<FiguresState>()(
       removeFigure: (id) => {
         set((state) => ({
           figures: state.figures.filter((figure) => figure.id !== id),
+          // Travas são por boneco: sem o boneco, elas ficariam órfãs esperando
+          // um id que volta a ser usado.
+          jointLocks: clearFigureLocks(state.jointLocks, id),
           selectedFigureId: state.selectedFigureId === id ? null : state.selectedFigureId,
           selectedJointName: state.selectedFigureId === id ? null : state.selectedJointName,
           activeAxis: state.selectedFigureId === id ? null : state.activeAxis,
@@ -461,7 +929,13 @@ export const useFiguresStore = create<FiguresState>()(
           ],
         }
 
-        set({ figures: [...figures, duplicate], nextFigureSeq: nextFigureSeq + 1 })
+        set((state) => ({
+          figures: [...figures, duplicate],
+          nextFigureSeq: nextFigureSeq + 1,
+          // A cópia nasce com a mesma pose: as travas vêm junto, senão a cópia
+          // seria justamente a versão desprotegida do trabalho já feito.
+          jointLocks: copyFigureLocks(state.jointLocks, id, newId),
+        }))
         return newId
       },
 
@@ -541,16 +1015,58 @@ export const useFiguresStore = create<FiguresState>()(
       },
 
       setJointRotation: (id, jointName, rotation) => {
+        set((state) => {
+          // Junta travada não muda por nada automático (DECISOES.md #42) — e
+          // este é o caminho de TODA edição de junta: slider, gizmo, teclado e
+          // o resultado do IK.
+          if (isJointLocked(state.jointLocks, id, jointName)) return {}
+
+          // Espelho ao vivo: o par recebe a REFLEXÃO SAGITAL da rotação
+          // inteira, não uma cópia. As juntas pareadas são espelhadas só em
+          // posição, então o mesmo valor numérico em Y/Z faz o movimento
+          // anatômico oposto nos dois lados (DECISOES.md #14) — copiar cru
+          // erraria até 0,95 m. A regra `(x, −y, −z)` é a mesma do "copiar
+          // direito → esquerdo" (#30), e reusar `mirrorRotation` é o que
+          // garante que as duas nunca divirjam.
+          const mirroredName = state.liveMirrorEnabled ? getMirroredJointName(jointName) : null
+          const mirrorTarget =
+            mirroredName && !isJointLocked(state.jointLocks, id, mirroredName) ? mirroredName : null
+
+          return {
+            figures: updateFigure(state.figures, id, (figure) => {
+              const updated = clampJointRotation(jointName, {
+                ...figure.pose[jointName],
+                ...rotation,
+              })
+
+              return {
+                ...figure,
+                pose: {
+                  ...figure.pose,
+                  [jointName]: updated,
+                  ...(mirrorTarget
+                    ? { [mirrorTarget]: clampJointRotation(mirrorTarget, mirrorRotation(updated)) }
+                    : {}),
+                },
+              }
+            }),
+          }
+        })
+      },
+
+      toggleLiveMirror: () => set((state) => ({ liveMirrorEnabled: !state.liveMirrorEnabled })),
+
+      seatFigureOnGround: (id) => {
         set((state) => ({
           figures: updateFigure(state.figures, id, (figure) => ({
             ...figure,
-            pose: {
-              ...figure.pose,
-              [jointName]: clampJointRotation(jointName, {
-                ...figure.pose[jointName],
-                ...rotation,
-              }),
-            },
+            // Só a altura: onde o boneco está no chão é encenação de quem monta
+            // a cena, e a pose não é tocada.
+            position: [
+              figure.position[0],
+              seatOnGround(figure.pose, figure.rotation, figure.height),
+              figure.position[2],
+            ],
           })),
         }))
       },
@@ -567,12 +1083,42 @@ export const useFiguresStore = create<FiguresState>()(
         }
 
         const neutral = resolvePosePreset('standing')[jointName] ?? ZERO_ROTATION
-        set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({
-            ...figure,
-            pose: { ...figure.pose, [jointName]: clampJointRotation(jointName, neutral) },
-          })),
-        }))
+        set((state) => {
+          if (isJointLocked(state.jointLocks, id, jointName)) return {}
+
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              pose: { ...figure.pose, [jointName]: clampJointRotation(jointName, neutral) },
+            })),
+          }
+        })
+      },
+
+      resetJointGroup: (id, group) => {
+        const joints = JOINT_GROUPS.find((candidate) => candidate.key === group)?.joints
+        if (!joints) return
+
+        const neutral = resolvePosePreset('standing')
+        set((state) => {
+          const locked = new Set(getLockedJoints(state.jointLocks, id))
+          const reset: Record<string, JointRotation> = {}
+          for (const jointName of joints) {
+            if (locked.has(jointName)) continue
+            reset[jointName] = clampJointRotation(jointName, neutral[jointName] ?? ZERO_ROTATION)
+          }
+
+          // Grupo inteiro travado: devolver o mesmo estado evita empilhar um
+          // passo de undo que não desfaz nada.
+          if (Object.keys(reset).length === 0) return {}
+
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              pose: { ...figure.pose, ...reset },
+            })),
+          }
+        })
       },
 
       addCameraBookmark: (bookmark) => {
@@ -599,10 +1145,10 @@ export const useFiguresStore = create<FiguresState>()(
 
       renameScene: (name) => set({ sceneName: name }),
 
-      consumeKeyframeNumber: () => {
-        const { nextKeyframeNumber } = get()
-        set({ nextKeyframeNumber: nextKeyframeNumber + 1 })
-        return nextKeyframeNumber
+      consumeSnapshotNumber: () => {
+        const { nextSnapshotNumber } = get()
+        set({ nextSnapshotNumber: nextSnapshotNumber + 1 })
+        return nextSnapshotNumber
       },
 
       saveSceneSnapshot: (name) => {
@@ -617,7 +1163,7 @@ export const useFiguresStore = create<FiguresState>()(
             environment: state.environment,
             cameraBookmarks: state.cameraBookmarks,
             nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
-            nextKeyframeNumber: state.nextKeyframeNumber,
+            nextSnapshotNumber: state.nextSnapshotNumber,
           },
         }
         set({
@@ -641,7 +1187,7 @@ export const useFiguresStore = create<FiguresState>()(
           environment: state.environment,
           cameraBookmarks: state.cameraBookmarks,
           nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
-          nextKeyframeNumber: state.nextKeyframeNumber,
+          nextSnapshotNumber: state.nextSnapshotNumber,
         }
         set({
           scenes: state.scenes.map((scene) =>
@@ -658,14 +1204,18 @@ export const useFiguresStore = create<FiguresState>()(
         const snapshot = scenes.find((scene) => scene.id === id)
         if (!snapshot) return false
 
-        set({
+        set((state) => ({
           ...snapshot.data,
           sceneName: snapshot.name,
           activeSceneId: id,
           selectedFigureId: null,
           selectedJointName: null,
           activeAxis: null,
-        })
+          // Os ids de boneco vêm da cena carregada: travas de bonecos que não
+          // estão mais em cena iriam recair sobre bonecos diferentes com o
+          // mesmo id. A biblioteca de poses, essa sim, atravessa as cenas.
+          jointLocks: pruneJointLocks(state.jointLocks, snapshot.data.figures.map((figure) => figure.id)),
+        }))
         return true
       },
 
@@ -683,26 +1233,34 @@ export const useFiguresStore = create<FiguresState>()(
       },
 
       loadSceneWorkingState: (data) => {
-        set({
+        set((state) => ({
           figures: data.figures,
+          jointLocks: pruneJointLocks(state.jointLocks, data.figures.map((figure) => figure.id)),
           nextFigureSeq: data.nextFigureSeq,
           environment: data.environment,
           cameraBookmarks: data.cameraBookmarks,
           nextCameraBookmarkSeq: data.nextCameraBookmarkSeq,
-          nextKeyframeNumber: data.nextKeyframeNumber,
+          nextSnapshotNumber: data.nextSnapshotNumber,
           sceneName: data.name,
           activeSceneId: null,
           selectedFigureId: null,
           selectedJointName: null,
           activeAxis: null,
-        })
+        }))
       },
 
       applyImportedPose: (id, imported) => {
         const height = clampHeight(imported.height)
-        set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({ ...figure, height, pose: imported.pose })),
-        }))
+        set((state) => {
+          const locked = getLockedJoints(state.jointLocks, id)
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              height,
+              pose: mergeLockedJoints(figure.pose, imported.pose, locked),
+            })),
+          }
+        })
       },
 
       importFigureAsNew: (imported) => {
@@ -739,30 +1297,51 @@ export const useFiguresStore = create<FiguresState>()(
         set({ cameraBookmarks: [...cameraBookmarks, ...imported], nextCameraBookmarkSeq: seq })
       },
 
-      loadWorkspaceCatalog: (scenes, activeSceneId, jointLimits) => {
+      loadWorkspaceCatalog: (scenes, activeSceneId, jointLimits, poses, animations, clips) => {
         // Quem carrega a pasta já instalou os limites no `skeleton.ts` antes de
         // reconstruir as cenas (ordem exigida pelo clamp das poses — ver
         // `workspaceFolder.ts`); o padrão aqui é só espelhar o que está valendo.
         const limits = jointLimits ?? getJointLimitOverrides()
         const active = activeSceneId ? scenes.find((scene) => scene.id === activeSceneId) : undefined
+        // A biblioteca de poses vem do workspace aberto e SUBSTITUI a que
+        // estava em memória — junto com o catálogo de cenas, é o que a pasta
+        // define. Sem arquivo de poses, a biblioteca fica vazia (é o que
+        // `loadWorkspaceFromDirectory` devolve). Vai no MESMO `set` do resto:
+        // abrir um workspace é uma edição só, e num `set` à parte um Ctrl+Z
+        // deixaria a biblioteca da pasta com o catálogo anterior.
+        const library = poses ? { poseLibrary: [...poses], nextPoseSeq: nextPoseSeqFor(poses) } : {}
+        // Animações seguem a mesma regra da biblioteca de poses: são do
+        // workspace aberto e substituem as que estavam em memória.
+        const reel = animations
+          ? { animations: [...animations], nextAnimationSeq: nextAnimationSeqFor(animations) }
+          : {}
+        // Trechos salvos seguem as duas bibliotecas acima (item 39).
+        const cuts = clips ? { clipLibrary: [...clips], nextClipSeq: nextClipSeqFor(clips) } : {}
 
         if (active) {
-          set({
+          set((state) => ({
             scenes,
             activeSceneId,
             ...active.data,
+            ...library,
+            ...reel,
+            ...cuts,
             jointLimits: limits,
             sceneName: active.name,
             selectedFigureId: null,
             selectedJointName: null,
             activeAxis: null,
-          })
+            jointLocks: pruneJointLocks(state.jointLocks, active.data.figures.map((figure) => figure.id)),
+          }))
         } else {
           // Sem cena ativa a cena de trabalho atual continua na tela, e ela não
           // passou pela leitura do `.glb` — precisa ser reajustada aqui.
           set((state) => ({
             scenes,
             activeSceneId,
+            ...library,
+            ...reel,
+            ...cuts,
             jointLimits: limits,
             figures: clampFigures(state.figures),
           }))
@@ -796,11 +1375,20 @@ export const useFiguresStore = create<FiguresState>()(
           nextCameraBookmarkSeq: 1,
           environment: { ...INITIAL_ENVIRONMENT },
           sceneName: 'Cena 1',
-          nextKeyframeNumber: 1,
+          nextSnapshotNumber: 1,
           scenes: [],
           nextSceneSnapshotSeq: 1,
           activeSceneId: null,
           jointLimits: {},
+          // "Novo workspace" limpa TUDO — a biblioteca de poses é do
+          // workspace, e as travas não sobrevivem aos bonecos que protegiam.
+          poseLibrary: [],
+          nextPoseSeq: 1,
+          clipLibrary: [],
+          nextClipSeq: 1,
+          animations: [],
+          nextAnimationSeq: 1,
+          jointLocks: {},
         })
         // Depois do `set`: limpar o workspace não é desfazível (o próprio
         // histórico faz parte do que é resetado). Se fosse antes, este `set`
@@ -808,13 +1396,13 @@ export const useFiguresStore = create<FiguresState>()(
         useFiguresStore.temporal.getState().clear()
       },
 
-      applyPosePreset: (id, key) => {
+      applyPosePreset: (id, key, options) => {
         set((state) => {
           const anchor = state.figures.find((figure) => figure.id === id)
           if (!anchor) return {}
 
-          const posed = withPosePreset(anchor, key)
-          const pairing = getPosePairing(key)
+          const posed = withPosePreset(anchor, key, getLockedJoints(state.jointLocks, id))
+          const pairing = options?.pairPartner === false ? null : getPosePairing(key)
           // Pose em dupla com DOIS bonecos em cena: o outro recebe a metade
           // correspondente, já posicionada. Com três ou mais não há como saber
           // qual é o parceiro, e desmontar a pose do boneco errado seria pior
@@ -828,7 +1416,9 @@ export const useFiguresStore = create<FiguresState>()(
           return {
             figures: state.figures.map((figure) => {
               if (figure.id === id) return posed
-              if (figure.id === partnerId) return withPairedPreset(figure, posed, key, pairing!)
+              if (figure.id === partnerId) {
+                return withPairedPreset(figure, posed, key, pairing!, getLockedJoints(state.jointLocks, figure.id))
+              }
               return figure
             }),
           }
@@ -837,46 +1427,771 @@ export const useFiguresStore = create<FiguresState>()(
 
       applyHandPreset: (id, side, key) => {
         const hand = resolveHandPreset(key, side)
-        set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({
-            ...figure,
-            pose: { ...figure.pose, ...hand },
-          })),
-        }))
+        set((state) => {
+          const locked = getLockedJoints(state.jointLocks, id)
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              pose: mergeLockedJoints(figure.pose, { ...figure.pose, ...hand }, locked),
+            })),
+          }
+        })
       },
 
       applyRandomPose: (id) => {
-        set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({
-            ...figure,
-            pose: resolveRandomPose(),
-          })),
-        }))
+        set((state) => {
+          const locked = getLockedJoints(state.jointLocks, id)
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              pose: mergeLockedJoints(figure.pose, resolveRandomPose(), locked),
+            })),
+          }
+        })
       },
 
       mirrorSide: (id, from, scopeJoint) => {
+        set((state) => {
+          const locked = getLockedJoints(state.jointLocks, id)
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              pose: mergeLockedJoints(figure.pose, mirrorPoseSide(figure.pose, from, scopeJoint), locked),
+            })),
+          }
+        })
+      },
+
+      mirrorWholeFigure: (id) => {
+        set((state) => {
+          const locked = getLockedJoints(state.jointLocks, id)
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              pose: mergeLockedJoints(figure.pose, mirrorPoseFull(figure.pose), locked),
+            })),
+          }
+        })
+      },
+
+      swapSides: (id, scopeJoint) => {
+        set((state) => {
+          const locked = getLockedJoints(state.jointLocks, id)
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              pose: mergeLockedJoints(figure.pose, swapPoseSides(figure.pose, scopeJoint), locked),
+            })),
+          }
+        })
+      },
+
+      saveFigurePose: (id, name) => {
+        const state = get()
+        const figure = state.figures.find((candidate) => candidate.id === id)
+        if (!figure) return null
+
+        const poseId = `pose-${state.nextPoseSeq}`
+        const saved = captureFigurePose(figure, poseId, name?.trim() || `Pose ${state.nextPoseSeq}`)
+
+        set({ poseLibrary: [...state.poseLibrary, saved], nextPoseSeq: state.nextPoseSeq + 1 })
+        return poseId
+      },
+
+      copyFigurePose: (fromId, toId, group) => {
+        set((state) => {
+          if (fromId === toId) return {}
+          const source = state.figures.find((figure) => figure.id === fromId)
+          const target = state.figures.find((figure) => figure.id === toId)
+          if (!source || !target) return {}
+
+          // Um membro só: copiam-se ÂNGULOS, que não dependem da altura do
+          // boneco, e nada mais. Sem captura e sem assentamento — quem recebe
+          // continua exatamente onde e como estava.
+          if (group) {
+            const joints = JOINT_GROUPS.find((candidate) => candidate.key === group)?.joints
+            if (!joints) return {}
+
+            const locked = new Set(getLockedJoints(state.jointLocks, toId))
+            const copied: Record<string, JointRotation> = {}
+            for (const jointName of joints) {
+              if (locked.has(jointName)) continue
+              copied[jointName] = clampJointRotation(jointName, source.pose[jointName] ?? ZERO_ROTATION)
+            }
+            if (Object.keys(copied).length === 0) return {}
+
+            return {
+              figures: updateFigure(state.figures, toId, (figure) => ({
+                ...figure,
+                pose: { ...figure.pose, ...copied },
+              })),
+            }
+          }
+
+          // Passa pelo MESMO caminho da biblioteca de poses (#42): capturar
+          // desfaz a escala do boneco de origem e aplicar refaz na escala de
+          // quem recebe, então a mesma pose assenta igual num boneco de 1,50 m
+          // e num de 1,90 m. Reusar isto é o que garante que copiar e
+          // "salvar + aplicar" dêem exatamente o mesmo resultado.
+          const captured = captureFigurePose(source, `${fromId}->${toId}`, source.name)
+
+          return {
+            figures: updateFigure(state.figures, toId, (figure) =>
+              withPose(figure, captured.pose, captured, getLockedJoints(state.jointLocks, toId)),
+            ),
+          }
+        })
+      },
+
+      applySavedPose: (figureId, poseId) => {
+        set((state) => {
+          const saved = state.poseLibrary.find((pose) => pose.id === poseId)
+          if (!saved) return {}
+
+          return {
+            figures: updateFigure(state.figures, figureId, (figure) =>
+              withPose(figure, saved.pose, saved, getLockedJoints(state.jointLocks, figureId)),
+            ),
+          }
+        })
+      },
+
+      pasteFigurePose: (figureId, pose) => {
         set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({
-            ...figure,
-            pose: mirrorPoseSide(figure.pose, from, scopeJoint),
+          figures: updateFigure(state.figures, figureId, (figure) =>
+            withPose(figure, pose.pose, pose, getLockedJoints(state.jointLocks, figureId)),
+          ),
+        }))
+      },
+
+      blendPose: (figureId, base, target, amount) => {
+        set((state) => {
+          const figure = state.figures.find((candidate) => candidate.id === figureId)
+          if (!figure) return {}
+
+          const blended = blendPoses(base, target, amount, figure.height)
+          const locked = getLockedJoints(state.jointLocks, figureId)
+
+          return {
+            figures: updateFigure(state.figures, figureId, (figure) => ({
+              ...figure,
+              pose: mergeLockedJoints(figure.pose, blended.pose, locked),
+              // As duas pontas já vêm resolvidas no mundo (heading e escala
+              // embutidos), então aqui a rotação e a altura entram literais —
+              // é o que faz 100% coincidir com aplicar a pose.
+              rotation: blended.rotation,
+              position: [figure.position[0], blended.positionY, figure.position[2]],
+            })),
+          }
+        })
+      },
+
+      renameSavedPose: (poseId, name) => {
+        const trimmed = name.trim()
+        if (!trimmed) return
+        set((state) => ({
+          poseLibrary: state.poseLibrary.map((pose) => (pose.id === poseId ? { ...pose, name: trimmed } : pose)),
+        }))
+      },
+
+      removeSavedPose: (poseId) => {
+        set((state) => ({ poseLibrary: state.poseLibrary.filter((pose) => pose.id !== poseId) }))
+      },
+
+      loadPoseLibrary: (poses) => {
+        set({ poseLibrary: [...poses], nextPoseSeq: nextPoseSeqFor(poses) })
+      },
+
+      // ----------------------------------------------------------------
+      // Animações (fase 10) — ver `src/animation/animation.ts`
+      // ----------------------------------------------------------------
+
+      createAnimation: (name) => {
+        const { animations, nextAnimationSeq } = get()
+        const id = `animation-${nextAnimationSeq}`
+        set({
+          animations: [
+            ...animations,
+            {
+              id,
+              name: name?.trim() || `Animation ${nextAnimationSeq}`,
+              speed: DEFAULT_ANIMATION_SPEED,
+              keyframes: [],
+            },
+          ],
+          nextAnimationSeq: nextAnimationSeq + 1,
+        })
+        return id
+      },
+
+      renameAnimation: (id, name) => {
+        const trimmed = name.trim()
+        if (!trimmed) return
+        set((state) => ({
+          animations: state.animations.map((animation) =>
+            animation.id === id ? { ...animation, name: trimmed } : animation,
+          ),
+        }))
+      },
+
+      removeAnimation: (id) => {
+        set((state) => ({ animations: state.animations.filter((animation) => animation.id !== id) }))
+      },
+
+      saveAnimationToLibrary: (name) => {
+        const { animations, nextAnimationSeq } = get()
+        const working = findWorkingAnimation(animations)
+        // Salvar o vazio não guardaria trabalho nenhum — só sujaria a lista.
+        if (!working || working.keyframes.length === 0) return null
+
+        const id = `animation-${nextAnimationSeq}`
+        set({
+          animations: [
+            ...animations,
+            {
+              id,
+              name: name?.trim() || working.name,
+              speed: working.speed,
+              // Os keyframes entram por referência, como em toda parte deste
+              // store: cada edição cria objetos novos, então a cópia guardada
+              // nunca muda por baixo quando a de trabalho continua a ser
+              // editada.
+              keyframes: working.keyframes,
+            },
+          ],
+          nextAnimationSeq: nextAnimationSeq + 1,
+        })
+        return id
+      },
+
+      openAnimationFromLibrary: (savedId) => {
+        const state = get()
+        const saved = state.animations.find((candidate) => candidate.id === savedId)
+        if (!saved || saved.id === WORKING_ANIMATION_ID) return false
+
+        const { animations, target } = withTargetAnimation(state.animations, WORKING_ANIMATION_ID)
+        set({
+          animations: updateAnimation(animations, target.id, (working) => ({
+            ...working,
+            name: saved.name,
+            speed: saved.speed,
+            keyframes: saved.keyframes,
+          })),
+        })
+        return true
+      },
+
+      overwriteSavedAnimation: (savedId) => {
+        const state = get()
+        const working = findWorkingAnimation(state.animations)
+        const saved = state.animations.find((candidate) => candidate.id === savedId)
+        if (!working || !saved || saved.id === WORKING_ANIMATION_ID) return false
+
+        set({
+          animations: updateAnimation(state.animations, savedId, (current) => ({
+            ...current,
+            // O NOME da salva fica: regravar é atualizar aquela entrada da
+            // biblioteca, não rebatizá-la com o nome da bancada.
+            speed: working.speed,
+            keyframes: working.keyframes,
+          })),
+        })
+        return true
+      },
+
+      addAnimationKeyframe: (animationId, camera) => {
+        const state = get()
+        if (state.figures.length === 0) return null
+
+        // Sem animação ativa, a captura cria a de trabalho aqui dentro — no
+        // mesmo `set`, e portanto no mesmo passo de undo (item 36).
+        const { animations, target: animation } = withTargetAnimation(state.animations, animationId)
+
+        const keyframeId = nextKeyframeIdFor(animation)
+        // Os bonecos entram por referência de propósito: toda edição do store
+        // cria objetos novos, então o retrato nunca muda por baixo, e vários
+        // keyframes de um boneco parado compartilham a mesma pose em memória.
+        const keyframe: AnimationKeyframe = {
+          id: keyframeId,
+          durationMs: DEFAULT_KEYFRAME_DURATION_MS,
+          figures: [...state.figures],
+          camera,
+        }
+
+        set({
+          animations: updateAnimation(animations, animation.id, (candidate) => ({
+            ...candidate,
+            keyframes: [...candidate.keyframes, keyframe],
+          })),
+        })
+        return keyframeId
+      },
+
+      insertAnimationKeyframeAt: (animationId, timeMs) => {
+        const animation = get().animations.find((candidate) => candidate.id === animationId)
+        if (!animation) return null
+
+        const split = planKeyframeSplit(animation, timeMs)
+        if (!split) return null
+
+        // O retrato é o que a animação JÁ mostrava naquele instante — é o que
+        // torna a inserção invisível: nada muda até o usuário editar o
+        // keyframe novo.
+        const sample = sampleAnimation(animation, split.timeMs)
+        if (!sample) return null
+
+        // A câmera vem do `splitCameraView`, e não da amostra: a única
+        // diferença é o topo da tela guardado sem reendireitar, que é o que
+        // mantém a inclinação lateral idêntica nas duas metades.
+        const from = animation.keyframes[split.index - 1]
+        const to = animation.keyframes[split.index]
+        const camera = splitCameraView(
+          from.camera,
+          to.camera,
+          split.durationMs / (split.durationMs + split.nextDurationMs),
+        )
+
+        const keyframeId = nextKeyframeIdFor(animation)
+        const inserted: AnimationKeyframe = {
+          id: keyframeId,
+          durationMs: split.durationMs,
+          figures: sample.figures,
+          camera,
+          // Herda o grupo do keyframe ANTERIOR (item 38): sem isso, cortar um
+          // trecho no meio de "Andando" partiria o grupo em dois — e a
+          // inserção promete não mudar nada.
+          ...(from.label ? { label: from.label } : {}),
+        }
+
+        set((state) => ({
+          animations: updateAnimation(state.animations, animationId, (current) => ({
+            ...current,
+            keyframes: [
+              ...current.keyframes.slice(0, split.index),
+              inserted,
+              // O resto do trecho cortado fica com o keyframe seguinte: o total
+              // da animação e o instante de todos os outros não se mexem.
+              { ...current.keyframes[split.index], durationMs: split.nextDurationMs },
+              ...current.keyframes.slice(split.index + 1),
+            ],
+          })),
+        }))
+        return keyframeId
+      },
+
+      copyAnimationKeyframeCamera: (animationId, keyframeId, offset) => {
+        set((state) => {
+          const animation = state.animations.find((candidate) => candidate.id === animationId)
+          if (!animation) return {}
+
+          const index = animation.keyframes.findIndex((keyframe) => keyframe.id === keyframeId)
+          const source = animation.keyframes[index + offset]
+          // Nas pontas não há vizinho de onde copiar — e `index === -1` cai
+          // aqui também, sem precisar de teste próprio.
+          if (index < 0 || !source) return {}
+
+          return {
+            animations: updateAnimation(state.animations, animationId, (current) => ({
+              ...current,
+              keyframes: current.keyframes.map((keyframe, position) =>
+                // Só a câmera: o retrato dos bonecos e a duração do trecho
+                // ficam intactos, que é justamente o ponto — "segura o
+                // enquadramento e deixa a cena se mover".
+                position === index ? { ...keyframe, camera: source.camera } : keyframe,
+              ),
+            })),
+          }
+        })
+      },
+
+      copyAnimationKeyframeFigures: (animationId, keyframeId, offset) => {
+        set((state) => {
+          const animation = state.animations.find((candidate) => candidate.id === animationId)
+          if (!animation) return {}
+
+          const index = animation.keyframes.findIndex((keyframe) => keyframe.id === keyframeId)
+          const source = animation.keyframes[index + offset]
+          if (index < 0 || !source) return {}
+
+          return {
+            animations: updateAnimation(state.animations, animationId, (current) => ({
+              ...current,
+              keyframes: current.keyframes.map((keyframe, position) =>
+                // Só os bonecos: câmera e duração ficam intactas — o oposto
+                // exato do `copyAnimationKeyframeCamera`.
+                position === index ? { ...keyframe, figures: source.figures } : keyframe,
+              ),
+            })),
+          }
+        })
+      },
+
+      duplicateAnimationKeyframe: (animationId, keyframeId) => {
+        const animation = get().animations.find((candidate) => candidate.id === animationId)
+        if (!animation) return null
+
+        const index = animation.keyframes.findIndex((keyframe) => keyframe.id === keyframeId)
+        if (index < 0) return null
+
+        const source = animation.keyframes[index]
+        const id = nextKeyframeIdFor(animation)
+        // A cópia entra logo DEPOIS e leva a mesma duração: a pausa criada dura
+        // o mesmo que o trecho que chegou até aqui, que é um valor que o
+        // usuário já escolheu e reconhece.
+        const copy: AnimationKeyframe = { ...source, id }
+
+        set((state) => ({
+          animations: updateAnimation(state.animations, animationId, (current) => ({
+            ...current,
+            keyframes: [
+              ...current.keyframes.slice(0, index + 1),
+              copy,
+              ...current.keyframes.slice(index + 1),
+            ],
+          })),
+        }))
+        return id
+      },
+
+      closeAnimationCycle: (animationId) => {
+        const animation = get().animations.find((candidate) => candidate.id === animationId)
+        if (!animation || animation.keyframes.length < 2) return null
+
+        const first = animation.keyframes[0]
+        const last = animation.keyframes[animation.keyframes.length - 1]
+        const id = nextKeyframeIdFor(animation)
+        // O keyframe que fecha o ciclo NÃO leva o rótulo do primeiro (item 38):
+        // ele está no fim da linha do tempo, e o grupo do começo não continua
+        // ali — seriam dois blocos separados com o mesmo nome.
+        const closing: AnimationKeyframe = {
+          id,
+          durationMs: last.durationMs,
+          figures: first.figures,
+          camera: first.camera,
+        }
+
+        set((state) => ({
+          animations: updateAnimation(state.animations, animationId, (current) => ({
+            ...current,
+            keyframes: [...current.keyframes, closing],
+          })),
+        }))
+        return id
+      },
+
+      updateAnimationKeyframe: (animationId, keyframeId, camera) => {
+        set((state) => ({
+          animations: updateAnimation(state.animations, animationId, (animation) => ({
+            ...animation,
+            keyframes: animation.keyframes.map((keyframe) =>
+              // A duração é do TRECHO, não do retrato: regravar o keyframe não
+              // pode zerar o tempo que o usuário ajustou para chegar até ele.
+              keyframe.id === keyframeId
+                ? { ...keyframe, figures: [...state.figures], camera }
+                : keyframe,
+            ),
           })),
         }))
       },
 
-      swapSides: (id, scopeJoint) => {
+      removeAnimationKeyframe: (animationId, keyframeId) => {
         set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({
-            ...figure,
-            pose: swapPoseSides(figure.pose, scopeJoint),
+          animations: updateAnimation(state.animations, animationId, (animation) => ({
+            ...animation,
+            keyframes: animation.keyframes.filter((keyframe) => keyframe.id !== keyframeId),
           })),
         }))
+      },
+
+      moveAnimationKeyframe: (animationId, keyframeId, delta) => {
+        set((state) => ({
+          animations: updateAnimation(state.animations, animationId, (animation) => {
+            const from = animation.keyframes.findIndex((keyframe) => keyframe.id === keyframeId)
+            const to = from + delta
+            if (from < 0 || to < 0 || to >= animation.keyframes.length) return animation
+
+            const keyframes = [...animation.keyframes]
+            const [moved] = keyframes.splice(from, 1)
+            keyframes.splice(to, 0, moved)
+            return { ...animation, keyframes }
+          }),
+        }))
+      },
+
+      setAnimationKeyframeDuration: (animationId, keyframeId, durationMs) => {
+        set((state) => ({
+          animations: updateAnimation(state.animations, animationId, (animation) => ({
+            ...animation,
+            keyframes: animation.keyframes.map((keyframe) =>
+              keyframe.id === keyframeId
+                ? { ...keyframe, durationMs: clampKeyframeDuration(durationMs) }
+                : keyframe,
+            ),
+          })),
+        }))
+      },
+
+      setAnimationKeyframeLabel: (animationId, keyframeId, label) => {
+        set((state) => {
+          const animation = state.animations.find((candidate) => candidate.id === animationId)
+          if (!animation) return {}
+
+          const index = animation.keyframes.findIndex((keyframe) => keyframe.id === keyframeId)
+          if (index < 0) return {}
+
+          const resolved = uniqueKeyframeLabel(animation.keyframes, index, label)
+          return {
+            animations: updateAnimation(state.animations, animationId, (current) => ({
+              ...current,
+              keyframes: current.keyframes.map((keyframe, position) => {
+                if (position !== index) return keyframe
+                if (resolved === '') {
+                  const semGrupo = { ...keyframe }
+                  delete semGrupo.label
+                  return semGrupo
+                }
+                return { ...keyframe, label: resolved }
+              }),
+            })),
+          }
+        })
+      },
+
+      setAnimationSpeed: (animationId, speed) => {
+        set((state) => ({
+          animations: updateAnimation(state.animations, animationId, (animation) => ({
+            ...animation,
+            speed: clampAnimationSpeed(speed),
+          })),
+        }))
+      },
+
+      appendAnimationClip: (animationId, clipKey, camera, figureAIds, figureBId, label) => {
+        const state = get()
+        const clip = ANIMATION_CLIPS[clipKey]
+        // Item 37: o papel A aceita VÁRIOS bonecos nos trechos individuais —
+        // cada um executa o trecho inteiro no próprio lugar. Em dupla continua
+        // valendo um só, porque os encaixes são medidos par a par
+        // (`posePairs.ts`) e dois "A" cairiam exatamente no mesmo ponto.
+        const askedIds = typeof figureAIds === 'string' ? [figureAIds] : [...new Set(figureAIds)]
+        const rolesA = askedIds
+          .map((id) => state.figures.find((figure) => figure.id === id))
+          .filter((figure): figure is Figure => figure !== undefined)
+        if (!clip || rolesA.length === 0) return false
+        if (clip.kind === 'duo' && rolesA.length !== 1) return false
+
+        // Como a captura: sem animação ativa, o trecho cria a de trabalho no
+        // mesmo passo de undo (item 36).
+        const { animations, target: animation } = withTargetAnimation(state.animations, animationId)
+
+        const figureB =
+          clip.kind === 'duo' ? state.figures.find((figure) => figure.id === figureBId) : undefined
+        if (clip.kind === 'duo' && (!figureB || figureB.id === rolesA[0].id)) return false
+
+        /**
+         * Âncora do trecho para um boneco do papel A: onde ele está e para onde
+         * encara — os passos são declarados com A na origem olhando +Z
+         * (`animationClips`).
+         */
+        const anchorFor = (figureA: Figure) => {
+          // Deslocamentos no chão foram medidos na altura de referência; em
+          // dupla, a média das escalas dos dois é a repartição neutra — a mesma
+          // regra da montagem de pares (`applyPosePreset`).
+          const groundScale =
+            clip.kind === 'duo'
+              ? (getHeightScale(figureA.height) + getHeightScale(figureB!.height)) / 2
+              : getHeightScale(figureA.height)
+          return { heading: figureA.rotation.y, x: figureA.position[0], z: figureA.position[2], groundScale }
+        }
+
+        const anchors = new Map(rolesA.map((figureA) => [figureA.id, anchorFor(figureA)]))
+
+        const posed = (
+          figure: Figure,
+          resolved: ResolvedClipFigure,
+          anchor: { x: number; z: number; groundScale: number },
+        ): Figure => ({
+          ...figure,
+          pose: resolved.pose,
+          rotation: resolved.rotation,
+          position: [
+            anchor.x + resolved.offset[0] * anchor.groundScale,
+            // O deslocamento vertical acompanha a escala do PRÓPRIO boneco,
+            // como em qualquer aplicação de pose.
+            resolved.groundOffsetM * getHeightScale(figure.height),
+            anchor.z + resolved.offset[1] * anchor.groundScale,
+          ],
+        })
+
+        // Rótulo do grupo (item 38): o trecho inserido já nasce agrupado, e o
+        // sufixo resolve a segunda inserção do mesmo trecho sozinho.
+        const baseSeq = maxKeyframeSeq(animation)
+        const wantedLabel = label?.trim() ?? ''
+        const groupLabel = freeKeyframeLabel(animation.keyframes, wantedLabel)
+
+        const appended: AnimationKeyframe[] = clip.steps.map((step, index) => ({
+          id: `k${baseSeq + index + 1}`,
+          durationMs: step.durationMs,
+          // O retrato de cada passo é a cena atual com os papéis substituídos:
+          // quem não participa aparece parado onde está, em todos os passos.
+          figures: state.figures.map((figure) => {
+            const anchor = anchors.get(figure.id)
+            if (anchor) return posed(figure, resolveClipFigure(step.a, anchor.heading), anchor)
+            if (figureB && step.b && figure.id === figureB.id) {
+              const anchorA = anchors.get(rolesA[0].id)!
+              return posed(figure, resolveClipFigure(step.b, anchorA.heading), anchorA)
+            }
+            return figure
+          }),
+          camera,
+          ...(groupLabel === '' ? {} : { label: groupLabel }),
+        }))
+
+        set({
+          animations: updateAnimation(animations, animation.id, (target) => ({
+            ...target,
+            keyframes: [...target.keyframes, ...appended],
+          })),
+        })
+        return true
+      },
+
+      appendCameraMoveKeyframes: (animationId, from, to, durationMs) => {
+        const state = get()
+        if (state.figures.length === 0) return false
+
+        const { animations, target: animation } = withTargetAnimation(state.animations, animationId)
+        const baseSeq = maxKeyframeSeq(animation)
+        // A MESMA cena nos dois: quem montou o travelling quer a câmera
+        // andando, não os bonecos. Ajustar a pose de um dos dois keyframes é o
+        // passo seguinte, e é do usuário.
+        const figures = [...state.figures]
+
+        set({
+          animations: updateAnimation(animations, animation.id, (current) => ({
+            ...current,
+            keyframes: [
+              ...current.keyframes,
+              { id: `k${baseSeq + 1}`, durationMs: DEFAULT_KEYFRAME_DURATION_MS, figures, camera: from },
+              {
+                id: `k${baseSeq + 2}`,
+                durationMs: clampKeyframeDuration(durationMs ?? DEFAULT_KEYFRAME_DURATION_MS),
+                figures,
+                camera: to,
+              },
+            ],
+          })),
+        })
+        return true
+      },
+
+      saveClipFromRange: (animationId, fromIndex, toIndex, name) => {
+        const state = get()
+        const animation = state.animations.find((candidate) => candidate.id === animationId)
+        if (!animation) return null
+
+        const id = `clip-${state.nextClipSeq}`
+        const clip = captureClipFromAnimation(animation, fromIndex, toIndex, {
+          id,
+          name: name?.trim() || `Clip ${state.nextClipSeq}`,
+        })
+        if (!clip) return null
+
+        set({ clipLibrary: [...state.clipLibrary, clip], nextClipSeq: state.nextClipSeq + 1 })
+        return id
+      },
+
+      renameSavedClip: (clipId, name) => {
+        const trimmed = name.trim()
+        if (!trimmed) return
+        set((state) => ({
+          clipLibrary: state.clipLibrary.map((clip) =>
+            clip.id === clipId ? { ...clip, name: trimmed } : clip,
+          ),
+        }))
+      },
+
+      removeSavedClip: (clipId) => {
+        set((state) => ({ clipLibrary: state.clipLibrary.filter((clip) => clip.id !== clipId) }))
+      },
+
+      appendSavedClip: (animationId, clipId, camera, casts, label) => {
+        const state = get()
+        const clip = state.clipLibrary.find((candidate) => candidate.id === clipId)
+        if (!clip) return false
+
+        const roles = clipRoleCount(clip)
+        // Cada elenco precisa de um boneco DISTINTO por papel; o que não fechar
+        // é descartado, em vez de entrar meio montado.
+        const assignments = casts
+          .map((cast) =>
+            cast
+              .map((figureId) => state.figures.find((figure) => figure.id === figureId))
+              .filter((figure): figure is Figure => figure !== undefined),
+          )
+          .filter((cast) => cast.length === roles && new Set(cast.map((f) => f.id)).size === roles)
+        if (assignments.length === 0) return false
+
+        const { animations, target: animation } = withTargetAnimation(state.animations, animationId)
+        const keyframes = buildKeyframesFromClip({
+          clip,
+          assignments,
+          sceneFigures: state.figures,
+          camera,
+          baseSeq: maxKeyframeSeq(animation),
+          label: freeKeyframeLabel(animation.keyframes, label ?? ''),
+        })
+        if (keyframes.length === 0) return false
+
+        set({
+          animations: updateAnimation(animations, animation.id, (target) => ({
+            ...target,
+            keyframes: [...target.keyframes, ...keyframes],
+          })),
+        })
+        return true
+      },
+
+      loadClipLibrary: (clips) => {
+        set({ clipLibrary: [...clips], nextClipSeq: nextClipSeqFor(clips) })
+      },
+
+      loadAnimationLibrary: (animations) => {
+        set({ animations: [...animations], nextAnimationSeq: nextAnimationSeqFor(animations) })
+      },
+
+      loadFiguresFromKeyframe: (figures) => {
+        set((state) => {
+          const next = clampFigures([...figures])
+          const ids = next.map((figure) => figure.id)
+          const keeps = state.selectedFigureId !== null && ids.includes(state.selectedFigureId)
+          return {
+            figures: next,
+            // O contador tem de ultrapassar o maior id do retrato: um keyframe
+            // com `figure-4` numa cena que ia no 2 faria o próximo boneco novo
+            // nascer com id repetido.
+            nextFigureSeq: Math.max(state.nextFigureSeq, nextFigureSeqFor(next)),
+            selectedFigureId: keeps ? state.selectedFigureId : null,
+            selectedJointName: keeps ? state.selectedJointName : null,
+            activeAxis: keeps ? state.activeAxis : null,
+            jointLocks: pruneJointLocks(state.jointLocks, ids),
+          }
+        })
+      },
+
+      toggleJointLock: (figureId, jointName) => {
+        set((state) => ({ jointLocks: toggleLockInMap(state.jointLocks, figureId, jointName) }))
+      },
+
+      clearJointLocks: (figureId) => {
+        set((state) => ({ jointLocks: clearFigureLocks(state.jointLocks, figureId) }))
       },
     }),
     {
       // Seleção de boneco/junta/eixo ativo, navegação de câmera (fora deste
-      // store, ver `cameraStore.ts`) e `nextKeyframeNumber` ficam fora do
+      // store, ver `cameraStore.ts`) e `nextSnapshotNumber` ficam fora do
       // histórico de undo — não são edição de conteúdo (ver PLANO.md >
-      // "Interação de pose", item 5). O contador de keyframe em particular
+      // "Interação de pose", item 5). O contador de instantâneo em particular
       // não pode "voltar" no undo: o arquivo correspondente já foi (ou seria)
       // salvo em disco com aquele número, e desfazer o contador arriscaria
       // sobrescrever esse arquivo na próxima captura.
@@ -897,6 +2212,11 @@ export const useFiguresStore = create<FiguresState>()(
       // divergente dos limites realmente instalados no `skeleton.ts` — as poses
       // que a troca de limites ajustar, essas sim, entram no histórico normal
       // (ver DECISOES.md #29).
+      // `poseLibrary`/`nextPoseSeq` entram: salvar e remover uma pose da
+      // biblioteca é conteúdo do workspace, exatamente como salvar e remover
+      // um snapshot de cena. `jointLocks` fica de fora: travar uma junta não é
+      // edição do boneco, é um modo de trabalho — e desfazer uma edição não
+      // pode reabrir a proteção que o usuário fechou (DECISOES.md #42).
       partialize: (state) => ({
         figures: state.figures,
         nextFigureSeq: state.nextFigureSeq,
@@ -906,6 +2226,12 @@ export const useFiguresStore = create<FiguresState>()(
         sceneName: state.sceneName,
         scenes: state.scenes,
         nextSceneSnapshotSeq: state.nextSceneSnapshotSeq,
+        poseLibrary: state.poseLibrary,
+        nextPoseSeq: state.nextPoseSeq,
+        clipLibrary: state.clipLibrary,
+        nextClipSeq: state.nextClipSeq,
+        animations: state.animations,
+        nextAnimationSeq: state.nextAnimationSeq,
       }),
       // Toda ação do store faz atualização imutável (sempre cria um novo
       // array/objeto ao mudar algo), então igualdade referencial basta para
@@ -918,7 +2244,10 @@ export const useFiguresStore = create<FiguresState>()(
         past.environment === current.environment &&
         past.sceneName === current.sceneName &&
         past.scenes === current.scenes &&
-        past.nextSceneSnapshotSeq === current.nextSceneSnapshotSeq,
+        past.nextSceneSnapshotSeq === current.nextSceneSnapshotSeq &&
+        past.poseLibrary === current.poseLibrary &&
+        past.clipLibrary === current.clipLibrary &&
+        past.animations === current.animations,
       limit: 100,
     },
   ),

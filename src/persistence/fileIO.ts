@@ -1,8 +1,8 @@
 /**
- * Utilitários de E/S de arquivo compartilhados entre a captura de keyframes
+ * Utilitários de E/S de arquivo compartilhados entre a captura de instantâneos
  * (fase 5) e a persistência de cenas/bonecos/bookmarks (fase 6): gravação via
  * File System Access API com fallback de download, e seleção/leitura de
- * arquivo para importação. Extraído de `KeyframeCapture.tsx` (que usava a
+ * arquivo para importação. Extraído de `SnapshotCapture.tsx` (que usava a
  * mesma lógica só para PNG) para reaproveitar também com `.glb`/`.json`.
  */
 

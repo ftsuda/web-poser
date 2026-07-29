@@ -6,6 +6,8 @@ import {
   getMirrorScope,
   getMirroredJointName,
   getSideJointNames,
+  CENTRAL_JOINT_NAMES,
+  mirrorPoseFull,
   mirrorPoseSide,
   mirrorRotation,
   negateAngle,
@@ -23,6 +25,9 @@ const RIGHT_SIDE_POSE: Record<string, Partial<JointRotation>> = {
   'wrist.R': { x: 19, z: -13 },
   'thumb1.R': { x: 17, z: -21 },
   'thumb2.R': { y: 43 },
+  'indexBase.R': { x: 27 },
+  'indexMid.R': { x: 48 },
+  'indexTip.R': { x: 19 },
   'fingersBase.R': { x: 31 },
   'fingersMid.R': { x: 52 },
   'fingersTip.R': { x: 24 },
@@ -242,6 +247,9 @@ describe('getMirrorScope', () => {
       'wrist',
       'thumb1',
       'thumb2',
+      'indexBase',
+      'indexMid',
+      'indexTip',
       'fingersBase',
       'fingersMid',
       'fingersTip',
@@ -336,5 +344,92 @@ describe('espelho e inversão parciais', () => {
     expect(getMirrorScope('shoulder.L')).toEqual(getMirrorScope('shoulder.R'))
     const pose = poseFrom(RIGHT_SIDE_POSE)
     expect(mirrorPoseSide(pose, 'R', 'shoulder.L')).toEqual(mirrorPoseSide(pose, 'R', 'shoulder.R'))
+  })
+})
+
+/**
+ * Espelho COMPLETO (pedido do usuário): os membros trocam de lado E as juntas
+ * sem par têm a rotação refletida. Sem o segundo passo, um tronco torcido e uma
+ * cabeça virada ficavam para o mesmo lado enquanto os braços trocavam.
+ */
+describe('poseMirror — espelho completo do boneco', () => {
+  /** Pose torta dos DOIS lados mais tronco/pescoço/cabeça fora do eixo. */
+  const POSE_ASSIMETRICA: Record<string, Partial<JointRotation>> = {
+    ...RIGHT_SIDE_POSE,
+    'shoulder.L': { x: -12, y: -41, z: 33 },
+    'elbow.L': { x: -22 },
+    'hip.L': { x: 14, y: -9, z: 21 },
+    spine: { x: 6, y: 18, z: -13 },
+    chest: { y: -11, z: 9 },
+    upperChest: { y: 8, z: -6 },
+    neck: { x: -4, y: 21, z: -14 },
+    head: { x: 9, y: -27, z: 11 },
+  }
+
+  it('reconhece exatamente as juntas sem par, e a raiz não é uma delas', () => {
+    expect([...CENTRAL_JOINT_NAMES]).toEqual(['spine', 'chest', 'upperChest', 'neck', 'head'])
+    expect(CENTRAL_JOINT_NAMES).not.toContain('root')
+  })
+
+  it('inverte Y e Z das juntas sem par, preservando X', () => {
+    const pose = poseFrom(POSE_ASSIMETRICA)
+    const mirrored = mirrorPoseFull(pose)
+
+    for (const name of CENTRAL_JOINT_NAMES) {
+      expect(mirrored[name]).toEqual(clampJointRotation(name, mirrorRotation(pose[name])))
+    }
+    expect(mirrored.head).toEqual({ x: 9, y: 27, z: -11 })
+  })
+
+  it('continua trocando os membros de lado, como o "inverter lados"', () => {
+    const pose = poseFrom(POSE_ASSIMETRICA)
+
+    expect(mirrorPoseFull(pose)).toMatchObject(
+      Object.fromEntries(
+        JOINT_NAMES.filter((name) => getJointSide(name) !== null).map((name) => [
+          name,
+          swapPoseSides(pose)[name],
+        ]),
+      ),
+    )
+  })
+
+  /**
+   * A trava principal: com a pose espelhada, a cinemática direta põe cada junta
+   * na posição de mundo da junta correspondente com X negado — as pareadas na
+   * do par, e as CENTRAIS na delas mesmas. É o que "exatamente espelhado"
+   * significa, medido em vez de deduzido.
+   */
+  it('põe cada junta na posição de mundo espelhada, com erro nulo', () => {
+    const antes = worldPositions(poseFrom(POSE_ASSIMETRICA))
+    const depois = worldPositions(mirrorPoseFull(poseFrom(POSE_ASSIMETRICA)))
+
+    for (const name of JOINT_NAMES) {
+      const alvo = antes.get(getMirroredJointName(name) ?? name)!
+      const obtido = depois.get(name)!
+      expect(obtido.x + alvo.x).toBeCloseTo(0, 9)
+      expect(obtido.y).toBeCloseTo(alvo.y, 9)
+      expect(obtido.z).toBeCloseTo(alvo.z, 9)
+    }
+  })
+
+  /** Sem refletir as centrais, o tronco e a cabeça delatam o espelho pela metade. */
+  it('trocar só os lados NÃO espelha a cabeça nem o tronco', () => {
+    const antes = worldPositions(poseFrom(POSE_ASSIMETRICA))
+    const depois = worldPositions(swapPoseSides(poseFrom(POSE_ASSIMETRICA)))
+
+    const pior = CENTRAL_JOINT_NAMES.reduce((max, name) => {
+      const alvo = antes.get(name)!
+      const obtido = depois.get(name)!
+      return Math.max(max, Math.abs(obtido.x + alvo.x))
+    }, 0)
+
+    expect(pior).toBeGreaterThan(0.02)
+  })
+
+  it('aplicado duas vezes, devolve a pose original', () => {
+    const pose = poseFrom(POSE_ASSIMETRICA)
+
+    expect(mirrorPoseFull(mirrorPoseFull(pose))).toEqual(pose)
   })
 })

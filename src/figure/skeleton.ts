@@ -193,10 +193,16 @@ export const JOINTS: readonly JointDefinition[] = [
   // mão ≈ 0,108×altura ≈ 18,4 cm do punho à ponta (palma 8,5 + falanges
   // 4,3/2,7 + ponta ~2,8 na malha).
   {
+    // `z` (adução: aproximar o polegar dos dedos) vai a 80°, e não a 40° como
+    // até o #44 — medido: com 40° a ponta do polegar parava a 2,61 cm da linha
+    // do indicador, e no punho fechado caía 2,4 cm FORA da borda da mão, ou
+    // seja fechava ao lado do punho em vez de sobre ele. O contato
+    // polegar-indicador (pinça, segurar objeto) só existe a partir de ~75°.
+    // Ver DECISOES.md #45.
     name: 'thumb1.L',
     parent: 'wrist.L',
     position: [-0.038, -0.026, 0],
-    limits: { x: { min: -20, max: 50 }, z: { min: 0, max: 40 } },
+    limits: { x: { min: -20, max: 50 }, z: { min: 0, max: 80 } },
   },
   {
     // Único DOF: dobra da ponta em direção à palma (-Z). Com o polegar ao
@@ -207,11 +213,40 @@ export const JOINTS: readonly JointDefinition[] = [
     position: [-0.034, -0.01, 0],
     limits: { y: { min: -80, max: 0 } },
   },
-  // Cadeia de 3 juntas (MCP/PIP/DIP) representando as falanges dos 4 dedos
-  // (exceto polegar) em bloco — continuam dobrando todos juntos (mesma
-  // simplificação já decidida na fase 2), com 3 pontos de dobra (ver
+  // Dedo INDICADOR, separado do bloco a partir do #45: mesma cadeia de 3
+  // juntas (MCP/PIP/DIP) e os MESMOS comprimentos de falange do bloco — o
+  // comprimento da mão (0,183 m) já vem calibrado ali, e encurtar só o
+  // indicador exigiria uma razão antropométrica que não temos como medir
+  // aqui. Ocupa o quarto RADIAL da fileira dos nós (o lado do polegar):
+  // X = ∓0,030, com o bloco dos outros três deslocado para o outro lado.
+  // Um só grau de liberdade (flexão em X), igual ao bloco.
+  {
+    name: 'indexBase.L',
+    parent: 'wrist.L',
+    position: [-0.03, -0.085, 0],
+    limits: { x: { min: 0, max: 90 } },
+  },
+  {
+    name: 'indexMid.L',
+    parent: 'indexBase.L',
+    position: [0, -0.043, 0],
+    limits: { x: { min: 0, max: 110 } },
+  },
+  {
+    name: 'indexTip.L',
+    parent: 'indexMid.L',
+    position: [0, -0.027, 0],
+    limits: { x: { min: 0, max: 90 } },
+  },
+  // Cadeia de 3 juntas (MCP/PIP/DIP) representando as falanges dos 3 dedos
+  // restantes (médio, anelar e mínimo) em bloco — continuam dobrando todos
+  // juntos (mesma simplificação da fase 2), com 3 pontos de dobra (ver
   // DECISOES.md #16). Offsets puros em -Y: o dedo desce reto ao longo da
-  // palma, e x positivo curva exatamente para a palma (-Z).
+  // palma, e x positivo curva exatamente para a palma (-Z). O pivô fica na
+  // linha do punho (X = 0) mesmo com o bloco desenhado fora do centro: a
+  // flexão gira em torno de X, e o eixo é a própria fileira dos nós, então a
+  // posição X do pivô não muda o movimento (o deslocamento visual está em
+  // `BONE_STYLES`/`JOINT_PARTS`).
   {
     name: 'fingersBase.L',
     parent: 'wrist.L',
@@ -273,7 +308,7 @@ export const JOINTS: readonly JointDefinition[] = [
     name: 'thumb1.R',
     parent: 'wrist.R',
     position: [0.038, -0.026, 0],
-    limits: { x: { min: -20, max: 50 }, z: { min: -40, max: 0 } },
+    limits: { x: { min: -20, max: 50 }, z: { min: -80, max: 0 } },
   },
   {
     // Espelho do L: positivo = flexão da ponta para a palma no lado R.
@@ -281,6 +316,24 @@ export const JOINTS: readonly JointDefinition[] = [
     parent: 'thumb1.R',
     position: [0.034, -0.01, 0],
     limits: { y: { min: 0, max: 80 } },
+  },
+  {
+    name: 'indexBase.R',
+    parent: 'wrist.R',
+    position: [0.03, -0.085, 0],
+    limits: { x: { min: 0, max: 90 } },
+  },
+  {
+    name: 'indexMid.R',
+    parent: 'indexBase.R',
+    position: [0, -0.043, 0],
+    limits: { x: { min: 0, max: 110 } },
+  },
+  {
+    name: 'indexTip.R',
+    parent: 'indexMid.R',
+    position: [0, -0.027, 0],
+    limits: { x: { min: 0, max: 90 } },
   },
   {
     name: 'fingersBase.R',
@@ -693,8 +746,13 @@ export interface TurnedPoint {
 export type BoneStyle =
   /** Peça torneada afunilada — braços, pernas, pescoço, conectores do tronco. */
   | { kind: 'turned'; points: readonly TurnedPoint[]; depthRatio?: number }
-  /** Lâmina chata afunilada — palma e falanges em bloco da mão. */
-  | { kind: 'blade'; widthStart: number; widthEnd: number; thickness: number }
+  /**
+   * Lâmina chata afunilada — palma e falanges da mão. `offsetX` desloca a
+   * lâmina lateralmente NO ESPAÇO LOCAL DA JUNTA PAI (não no da lâmina), e é
+   * o que permite desenhar o bloco de 3 dedos fora do centro sem tirar o pivô
+   * da linha do punho (ver DECISOES.md #45).
+   */
+  | { kind: 'blade'; widthStart: number; widthEnd: number; thickness: number; offsetX?: number }
   /** Trecho coberto por um bloco — não renderizar. */
   | { kind: 'hidden' }
 
@@ -818,31 +876,75 @@ const PELVIS_PROFILE: readonly ProfilePoint[] = [
  * (`maos.jpg`). Levemente mais larga e mais grossa que as lâminas vizinhas
  * para ficar visível e cobrir o vão quando o dedo dobra.
  */
-const knuckle = (halfWidth: number, radius: number): SegmentPart => ({
+const knuckle = (halfWidth: number, radius: number, offsetX = 0): SegmentPart => ({
   kind: 'ellipsoid',
   radii: [halfWidth, radius, radius],
+  ...(offsetX === 0 ? {} : { offset: [offsetX, 0, 0] as Vec3 }),
 })
 
 /**
- * Falange distal dos 4 dedos além da última junta (`fingersTip.*`): lâmina
- * arredondada que afunila até a ponta (lathe achatado em Z na espessura das
- * falanges).
+ * Repartição da fileira dos nós desde o #45: o INDICADOR fica com o quarto
+ * radial (2,0 cm dos 8,0 cm da palma, centrado em X = ∓0,030 — o lado do
+ * polegar) e o BLOCO dos outros três com os 6,0 cm restantes, centrado a
+ * 1,0 cm do lado oposto. O pivô das juntas do bloco continua em X = 0: a
+ * flexão gira em torno do eixo X, que é a própria fileira, então deslocar só
+ * o desenho é exato, não aproximado. O sinal é o do lado ULNAR (mindinho):
+ * +X no lado L, -X no R.
  */
-const FINGERS_TIP: SegmentPart = {
+const FINGERS_BLOCK_OFFSET_X = 0.01
+const BLOCK_SIGN: Record<string, number> = { L: 1, R: -1 }
+
+/**
+ * Falange distal do bloco de 3 dedos além da última junta (`fingersTip.*`):
+ * lâmina arredondada que afunila até a ponta (lathe achatado em Z na
+ * espessura das falanges). Raios reduzidos a 3/4 no #45 (o bloco perdeu o
+ * indicador) com o achatamento recalculado para a espessura não mudar:
+ * 2 × 0,031 × 0,27 = 2 × 0,023 × 0,364 = 0,0167 m.
+ */
+const fingersBlockTip = (side: string): SegmentPart => ({
   kind: 'lathe',
   profile: [
     { y: -0.028, radius: CAP },
-    { y: -0.024, radius: 0.017 },
-    { y: -0.013, radius: 0.027 },
-    { y: -0.002, radius: 0.031 },
+    { y: -0.024, radius: 0.0126 },
+    { y: -0.013, radius: 0.02 },
+    { y: -0.002, radius: 0.023 },
     { y: 0.002, radius: CAP },
   ],
-  depthRatio: 0.27,
+  depthRatio: 0.364,
+  offset: [BLOCK_SIGN[side] * FINGERS_BLOCK_OFFSET_X, 0, 0],
+})
+
+/** Falange distal do indicador além de `indexTip.*` — a mesma peça em escala de um dedo só (seção quase redonda). */
+const INDEX_TIP: SegmentPart = {
+  kind: 'lathe',
+  profile: [
+    { y: -0.028, radius: CAP },
+    { y: -0.0245, radius: 0.0043 },
+    { y: -0.013, radius: 0.0068 },
+    { y: -0.002, radius: 0.0078 },
+    { y: 0.002, radius: CAP },
+  ],
+  depthRatio: 1,
 }
 
-const FINGERS_BASE_KNUCKLE: readonly SegmentPart[] = [knuckle(0.042, 0.0145)]
-const FINGERS_MID_KNUCKLE: readonly SegmentPart[] = [knuckle(0.038, 0.0125)]
-const FINGERS_TIP_KNUCKLE: readonly SegmentPart[] = [knuckle(0.034, 0.011), FINGERS_TIP]
+const fingersBaseKnuckle = (side: string): readonly SegmentPart[] => [
+  knuckle(0.0305, 0.0145, BLOCK_SIGN[side] * FINGERS_BLOCK_OFFSET_X),
+]
+const fingersMidKnuckle = (side: string): readonly SegmentPart[] => [
+  knuckle(0.0275, 0.0125, BLOCK_SIGN[side] * FINGERS_BLOCK_OFFSET_X),
+]
+const fingersTipKnuckle = (side: string): readonly SegmentPart[] => [
+  knuckle(0.0245, 0.011, BLOCK_SIGN[side] * FINGERS_BLOCK_OFFSET_X),
+  fingersBlockTip(side),
+]
+
+// Elipses de dobradiça do indicador: mesma ESPESSURA da fileira (os raios em
+// Y/Z não mudam — a linha de nós é contínua com a do bloco), largura de um
+// dedo só. As peças não levam deslocamento: quem já está em X = ∓0,030 é a
+// própria junta.
+const INDEX_BASE_KNUCKLE: readonly SegmentPart[] = [knuckle(0.0105, 0.0145)]
+const INDEX_MID_KNUCKLE: readonly SegmentPart[] = [knuckle(0.0095, 0.0125)]
+const INDEX_TIP_KNUCKLE: readonly SegmentPart[] = [knuckle(0.0085, 0.011), INDEX_TIP]
 
 /**
  * Falange distal do polegar além de `thumb2.*`: lathe girado em Z para
@@ -946,12 +1048,21 @@ export const JOINT_PARTS: Record<string, readonly SegmentPart[]> = {
   'thumb1.R': THUMB1_PARTS,
   'thumb2.L': THUMB2_PARTS_L,
   'thumb2.R': THUMB2_PARTS_R,
-  'fingersBase.L': FINGERS_BASE_KNUCKLE,
-  'fingersBase.R': FINGERS_BASE_KNUCKLE,
-  'fingersMid.L': FINGERS_MID_KNUCKLE,
-  'fingersMid.R': FINGERS_MID_KNUCKLE,
-  'fingersTip.L': FINGERS_TIP_KNUCKLE,
-  'fingersTip.R': FINGERS_TIP_KNUCKLE,
+  'indexBase.L': INDEX_BASE_KNUCKLE,
+  'indexBase.R': INDEX_BASE_KNUCKLE,
+  'indexMid.L': INDEX_MID_KNUCKLE,
+  'indexMid.R': INDEX_MID_KNUCKLE,
+  'indexTip.L': INDEX_TIP_KNUCKLE,
+  'indexTip.R': INDEX_TIP_KNUCKLE,
+  // Bloco de 3 dedos: as peças são espelhadas (o deslocamento lateral sai
+  // para o lado do mindinho em cada mão), ao contrário das demais juntas
+  // pareadas, que compartilham a mesma lista.
+  'fingersBase.L': fingersBaseKnuckle('L'),
+  'fingersBase.R': fingersBaseKnuckle('R'),
+  'fingersMid.L': fingersMidKnuckle('L'),
+  'fingersMid.R': fingersMidKnuckle('R'),
+  'fingersTip.L': fingersTipKnuckle('L'),
+  'fingersTip.R': fingersTipKnuckle('R'),
   'hip.L': [sphere(0.05)],
   'hip.R': [sphere(0.05)],
   'knee.L': [sphere(0.043)],
@@ -1119,15 +1230,26 @@ export const BONE_STYLES: Record<string, BoneStyle> = {
   'thumb1.R': THUMB_SEGMENT,
   'thumb2.L': THUMB_SEGMENT_DISTAL,
   'thumb2.R': THUMB_SEGMENT_DISTAL,
-  // Palma alargando do punho (0,056) para a fileira dos nós (0,080);
-  // falanges em bloco afunilando dali até a ponta — larguras encaixadas nas
-  // elipses de dobradiça das juntas (`knuckle`, um pouco mais largas).
+  // O metacarpo do indicador corre DENTRO da palma (a lâmina de
+  // `fingersBase.*` cobre os quatro), então não há osso a desenhar do punho
+  // até `indexBase.*`.
+  'indexBase.L': { kind: 'hidden' },
+  'indexBase.R': { kind: 'hidden' },
+  'indexMid.L': { kind: 'blade', widthStart: 0.019, widthEnd: 0.0175, thickness: 0.019 },
+  'indexMid.R': { kind: 'blade', widthStart: 0.019, widthEnd: 0.0175, thickness: 0.019 },
+  'indexTip.L': { kind: 'blade', widthStart: 0.017, widthEnd: 0.0155, thickness: 0.017 },
+  'indexTip.R': { kind: 'blade', widthStart: 0.017, widthEnd: 0.0155, thickness: 0.017 },
+  // Palma alargando do punho (0,056) para a fileira dos nós (0,080) —
+  // inteira, porque ela cobre os quatro metacarpos e continua centrada na
+  // linha do punho. Já as falanges do BLOCO ficam com 3/4 da largura antiga e
+  // deslocadas 1 cm para o lado do mindinho, deixando o quarto radial para o
+  // indicador (`offsetX`, DECISOES.md #45).
   'fingersBase.L': { kind: 'blade', widthStart: 0.056, widthEnd: 0.08, thickness: 0.026 },
   'fingersBase.R': { kind: 'blade', widthStart: 0.056, widthEnd: 0.08, thickness: 0.026 },
-  'fingersMid.L': { kind: 'blade', widthStart: 0.078, widthEnd: 0.072, thickness: 0.019 },
-  'fingersMid.R': { kind: 'blade', widthStart: 0.078, widthEnd: 0.072, thickness: 0.019 },
-  'fingersTip.L': { kind: 'blade', widthStart: 0.07, widthEnd: 0.064, thickness: 0.017 },
-  'fingersTip.R': { kind: 'blade', widthStart: 0.07, widthEnd: 0.064, thickness: 0.017 },
+  'fingersMid.L': { kind: 'blade', widthStart: 0.057, widthEnd: 0.052, thickness: 0.019, offsetX: 0.01 },
+  'fingersMid.R': { kind: 'blade', widthStart: 0.057, widthEnd: 0.052, thickness: 0.019, offsetX: -0.01 },
+  'fingersTip.L': { kind: 'blade', widthStart: 0.05, widthEnd: 0.046, thickness: 0.017, offsetX: 0.01 },
+  'fingersTip.R': { kind: 'blade', widthStart: 0.05, widthEnd: 0.046, thickness: 0.017, offsetX: -0.01 },
 
   // root→hip fica dentro do bloco da pelve; a bola de `hip.*` cobre o pivô.
   'hip.L': { kind: 'hidden' },

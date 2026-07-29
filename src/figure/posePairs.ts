@@ -58,6 +58,8 @@ export const POSE_PAIRINGS: Partial<Record<PosePresetKey, PosePairing>> = {
   punchTaking: { counterpart: 'punchGiving', gapM: 0.629, facing: true },
   kickGiving: { counterpart: 'kickTaking', gapM: 0.815, facing: true },
   kickTaking: { counterpart: 'kickGiving', gapM: 0.815, facing: true },
+  kneeStrikeGiving: { counterpart: 'kneeStrikeTaking', gapM: 0.3653, facing: true },
+  kneeStrikeTaking: { counterpart: 'kneeStrikeGiving', gapM: 0.3653, facing: true },
 
   // Olhando para o mesmo lado: aqui o sinal importa, e o par inverte-o (se o
   // carregado fica 0,16 m ATRÁS de quem carrega, quem carrega fica 0,16 m à
@@ -72,6 +74,10 @@ export const POSE_PAIRINGS: Partial<Record<PosePresetKey, PosePairing>> = {
   rearChokeSeated: { counterpart: 'rearChokeKneeling', gapM: -0.45, facing: false },
   groundChokeGiving: { counterpart: 'groundChokeTaking', gapM: 0.1, facing: false },
   groundChokeTaking: { counterpart: 'groundChokeGiving', gapM: -0.1, facing: false },
+  armLockPushGiving: { counterpart: 'armLockPushTaking', gapM: 0.238, facing: false },
+  armLockPushTaking: { counterpart: 'armLockPushGiving', gapM: -0.238, facing: false },
+  armLockPullGiving: { counterpart: 'armLockPullTaking', gapM: 0.238, facing: false },
+  armLockPullTaking: { counterpart: 'armLockPullGiving', gapM: -0.238, facing: false },
 }
 
 /** O pareamento da pose, ou `null` se ela for solo. */
@@ -106,24 +112,32 @@ export function resolvePairedRotation(
   facing: boolean,
 ): JointRotation {
   const placement = resolvePosePresetPlacement(counterpart)
-  const turn = headingDeg + (facing ? 180 : 0)
+  return composePlacementRotation(placement.rotation, headingDeg + (facing ? 180 : 0))
+}
 
+/**
+ * A rotação imposta por uma pose COMPOSTA com um giro no chão (Y) — a conta
+ * central de `resolvePairedRotation`, exposta à parte porque os trechos de
+ * animação (`animationClips.ts`) precisam dela para qualquer pose, não só para
+ * o parceiro de um par.
+ */
+export function composePlacementRotation(rotation: JointRotation, turnDeg: number): JointRotation {
   // Caso comum (toda pose em pé/ajoelhada/sentada): a colocação da pose não
   // inclina o boneco, então o giro é só um número somado em Y. Vale a pena
   // separar porque a decomposição por matriz, sendo exata, ainda assim
   // escolheria uma forma equivalente porém ilegível ({180, 0, 180} em vez de
   // {0, 180, 0}) — e são esses graus que aparecem nos campos de rotação.
-  if (placement.rotation.x === 0 && placement.rotation.z === 0) {
-    return { x: 0, y: cleanDegrees(placement.rotation.y + turn), z: 0 }
+  if (rotation.x === 0 && rotation.z === 0) {
+    return { x: 0, y: cleanDegrees(rotation.y + turnDeg), z: 0 }
   }
 
   const own = new THREE.Euler(
-    THREE.MathUtils.degToRad(placement.rotation.x),
-    THREE.MathUtils.degToRad(placement.rotation.y),
-    THREE.MathUtils.degToRad(placement.rotation.z),
+    THREE.MathUtils.degToRad(rotation.x),
+    THREE.MathUtils.degToRad(rotation.y),
+    THREE.MathUtils.degToRad(rotation.z),
   )
   const composed = new THREE.Matrix4()
-    .makeRotationY(THREE.MathUtils.degToRad(turn))
+    .makeRotationY(THREE.MathUtils.degToRad(turnDeg))
     .multiply(new THREE.Matrix4().makeRotationFromEuler(own))
   const euler = new THREE.Euler().setFromRotationMatrix(composed, 'XYZ')
 

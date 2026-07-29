@@ -34,6 +34,12 @@ const EXPECTED_JOINT_NAMES = [
   'thumb1.R',
   'thumb2.L',
   'thumb2.R',
+  'indexBase.L',
+  'indexBase.R',
+  'indexMid.L',
+  'indexMid.R',
+  'indexTip.L',
+  'indexTip.R',
   'fingersBase.L',
   'fingersBase.R',
   'fingersMid.L',
@@ -51,8 +57,8 @@ const EXPECTED_JOINT_NAMES = [
 ]
 
 describe('skeleton definition', () => {
-  it('has exactly 32 joints', () => {
-    expect(JOINTS).toHaveLength(32)
+  it('has exactly 38 joints', () => {
+    expect(JOINTS).toHaveLength(38)
   })
 
   it('has no duplicate joint names', () => {
@@ -158,6 +164,9 @@ describe('getJointSubtree', () => {
         'wrist.R',
         'thumb1.R',
         'thumb2.R',
+        'indexBase.R',
+        'indexMid.R',
+        'indexTip.R',
         'fingersBase.R',
         'fingersMid.R',
         'fingersTip.R',

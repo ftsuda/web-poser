@@ -128,9 +128,9 @@ describe('matchShortcut — camera presets (numpad, Blender convention) and book
   })
 })
 
-describe('matchShortcut — capture keyframe', () => {
-  it('maps Space to captureKeyframe', () => {
-    expect(matchShortcut(key({ key: ' ', code: 'Space' }))).toEqual({ type: 'captureKeyframe' })
+describe('matchShortcut — capture snapshot', () => {
+  it('maps Space to captureSnapshot', () => {
+    expect(matchShortcut(key({ key: ' ', code: 'Space' }))).toEqual({ type: 'captureSnapshot' })
   })
 
   it('ignores Space with a modifier held', () => {

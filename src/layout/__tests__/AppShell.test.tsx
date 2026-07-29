@@ -16,17 +16,29 @@ describe('AppShell', () => {
     useUIStore.setState(useUIStore.getInitialState())
   })
 
-  it('lays out toolbar, figures panel, viewport, properties panel, camera panel, keyframe panel and scenes panel as landmarks', () => {
+  it('lays out toolbar, figures panel, viewport, properties panel, camera panel, snapshot panel and scenes panel as landmarks', () => {
     render(<AppShell />)
 
     expect(screen.getByRole('banner')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Bonecos' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Propriedades' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Câmera' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Keyframes' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Instantâneos' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Cenas' })).toBeInTheDocument()
     expect(screen.getByRole('main')).toBeInTheDocument()
     expect(screen.getByTestId('viewport-stub')).toBeInTheDocument()
+  })
+
+  // Ordem pedida pelo usuário: da esquerda para a direita, Animação vem ANTES
+  // de Instantâneos; o resto da fila fica como estava. É a ordem do DOM que
+  // manda no layout (os painéis são irmãos num flex row), então travar a lista
+  // aqui é o jeito de a ordem não voltar sozinha num refactor do AppShell.
+  it('orders the side panels with the animation panel before the snapshot panel', () => {
+    render(<AppShell />)
+
+    const titles = screen.getAllByRole('complementary').map((panel) => panel.getAttribute('aria-label'))
+
+    expect(titles).toEqual(['Bonecos', 'Propriedades', 'Câmera', 'Animação', 'Instantâneos', 'Cenas'])
   })
 
   it('activates global keyboard shortcuts (e.g. Escape clears the selection)', () => {

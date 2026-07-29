@@ -57,10 +57,83 @@ h2 {
   margin: 0;
 }
 
+/* Toolbar, corpo e a barra da linha do tempo do rodapé (item 29) — a barra
+   ocupa a largura toda e mede o que precisa, recolhida ou não. */
 .app-shell {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr auto;
   height: 100%;
+}
+
+.timeline-bar {
+  border-top: 1px solid var(--border);
+  background: var(--panel-bg);
+  padding: 0.35rem 0.75rem 0.5rem;
+}
+
+.timeline-bar__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.timeline-bar__header h2 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.timeline-bar__readout {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted, inherit);
+  font-size: 0.85rem;
+}
+
+.timeline-bar__collapse-toggle {
+  margin-left: auto;
+}
+
+.timeline-bar__body {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+
+/* Duas fileiras (pedido do usuário): "Inserir keyframe aqui" em cima, o
+   transporte embaixo. A coluna mede o mais largo dos dois e não disputa espaço
+   com a régua, que continua crescendo com a janela. */
+.timeline-bar__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: none;
+}
+
+.timeline-bar__transport {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+}
+
+.timeline-bar__repeat {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+/* A régua cresce com a janela: é o controle que se usa o tempo todo. */
+.timeline-bar__track {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.timeline-bar__track input[type='range'] {
+  width: 100%;
 }
 
 .toolbar {
@@ -135,7 +208,7 @@ h2 {
    vazia do tamanho antigo. A largura de cada painel vem do próprio painel. */
 .app-shell__body {
   display: grid;
-  grid-template-columns: auto 1fr auto auto auto auto;
+  grid-template-columns: auto 1fr auto auto auto auto auto;
   min-height: 0;
 }
 
@@ -196,9 +269,13 @@ h2 {
   line-height: 1;
 }
 
+/* Todos os painéis à direita do viewport separam-se pela borda ESQUERDA; o de
+   animação faltava na lista e, com o `border-right` de `.panel`, desenhava
+   linha dupla contra o vizinho. */
 .panel--properties,
 .panel--camera,
-.panel--keyframes,
+.panel--animation,
+.panel--snapshots,
 .panel--scenes {
   border-right: none;
   border-left: 1px solid var(--border);
@@ -260,6 +337,64 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+/* Área de transferência de poses (pedido do usuário), no rodapé do painel —
+   mesmo desenho de fieldset dos blocos dos outros painéis. */
+.figures-panel__clipboard {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  margin: 0.75rem 0 0;
+}
+
+.figures-panel__clipboard > button {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.figures-panel__hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.figures-panel__clipboard-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.figures-panel__clipboard-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* O nome cede primeiro: os dois botões têm largura de conteúdo, e um nome longo
+   de boneco não pode empurrar o painel (que é o mais estreito de todos). */
+.figures-panel__clipboard-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+.figures-panel__clipboard-item button {
+  flex: none;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.72rem;
+}
+
+.figures-panel__clipboard-remove {
+  color: var(--danger);
 }
 
 .figures-panel__row {
@@ -463,6 +598,15 @@ h2 {
   width: 100%;
 }
 
+/* Os combos de enquadramento (#51) têm opções longas — "Extreme Wide Shot —
+   Plano geral extremo". Sem `min-width: 0` o `<select>` se recusa a encolher
+   abaixo do conteúdo e empurra o painel inteiro para fora. */
+.camera-panel__field select {
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
 .panel--camera fieldset {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -489,6 +633,18 @@ h2 {
   gap: 0.35rem;
 }
 
+/* Espelho completo (pedido do usuário): fora da grade de duas colunas das
+   operações de lado, porque não é mais uma delas — vale para o boneco inteiro,
+   sem obedecer ao escopo da junta selecionada. */
+.properties-panel__mirror-all {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.45rem;
+  padding: 0.35rem;
+  cursor: pointer;
+}
+
 .properties-panel__pose-presets button {
   padding: 0.3rem;
   cursor: pointer;
@@ -507,6 +663,62 @@ h2 {
  */
 .properties-panel__random-pose {
   border-style: dashed;
+}
+
+/* Mistura entre poses (DECISOES.md #43) — slider de largura cheia sob os botões. */
+.properties-panel__mix {
+  margin-top: 0.5rem;
+}
+
+.properties-panel__mix-label {
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 0.2rem;
+}
+
+.properties-panel__mix .properties-panel__axis-row {
+  gap: 0.4rem;
+}
+
+/*
+ * Biblioteca de poses do usuário (DECISOES.md #42). O botão de salvar ocupa a
+ * largura toda, abaixo da linha "Aplicar/Aleatória": é uma ação sobre a pose
+ * ATUAL, não sobre a escolhida no combo.
+ */
+.properties-panel__save-pose {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.3rem;
+  cursor: pointer;
+}
+
+.properties-panel__save-pose-form {
+  margin-top: 0.4rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+/* Travamento de juntas (DECISOES.md #42): travado fica visualmente "apertado". */
+.properties-panel__lock-joint[aria-pressed='true'] {
+  border-color: #d99a2b;
+  color: #d99a2b;
+}
+
+.properties-panel__locked-summary {
+  display: grid;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+}
+
+.properties-panel__locked-summary button {
+  padding: 0.3rem;
+  cursor: pointer;
+}
+
+.properties-panel__axis-row input[type='range']:disabled,
+.properties-panel__reset:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .camera-panel__presets button,
@@ -590,7 +802,7 @@ h2 {
   cursor: pointer;
 }
 
-.keyframe-panel__field {
+.snapshot-panel__field {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
@@ -598,51 +810,51 @@ h2 {
   margin-bottom: 0.6rem;
 }
 
-.keyframe-panel__field input,
-.keyframe-panel__field select {
+.snapshot-panel__field input,
+.snapshot-panel__field select {
   width: 100%;
 }
 
-.keyframe-panel__field--checkbox {
+.snapshot-panel__field--checkbox {
   flex-direction: row;
   align-items: center;
   gap: 0.4rem;
 }
 
-.keyframe-panel__custom-resolution {
+.snapshot-panel__custom-resolution {
   display: flex;
   gap: 0.5rem;
 }
 
-.keyframe-panel__custom-resolution .keyframe-panel__field {
+.snapshot-panel__custom-resolution .snapshot-panel__field {
   flex: 1 1 50%;
 }
 
-.keyframe-panel__directory {
+.snapshot-panel__directory {
   margin-bottom: 0.6rem;
 }
 
-.keyframe-panel__directory button {
+.snapshot-panel__directory button {
   width: 100%;
   padding: 0.3rem;
   margin-bottom: 0.3rem;
   cursor: pointer;
 }
 
-.keyframe-panel__hint {
+.snapshot-panel__hint {
   font-size: 0.75rem;
   opacity: 0.7;
   margin: 0;
 }
 
-.keyframe-panel__capture {
+.snapshot-panel__capture {
   width: 100%;
   padding: 0.5rem;
   cursor: pointer;
   font-weight: 500;
 }
 
-.keyframe-panel__last-captured {
+.snapshot-panel__last-captured {
   font-size: 0.75rem;
   margin: 0.5rem 0 0;
   opacity: 0.8;
@@ -743,6 +955,20 @@ h2 {
 .viewport {
   width: 100%;
   height: 100%;
+  /* Âncora da máscara de enquadramento; `overflow` contém o véu escuro dela,
+     que é um `box-shadow` gigante. */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Máscara de enquadramento: o retângulo é o que a saída vai conter, e o véu
+   por fora dele é o que ela vai cortar. Sem `pointer-events` para não roubar a
+   órbita nem o clique de seleção. */
+.viewport__frame-mask {
+  position: absolute;
+  pointer-events: none;
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 55%);
+  outline: 1px solid rgb(255 255 255 / 60%);
 }
 
 code {
@@ -813,4 +1039,447 @@ code {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0.15rem 0.4rem;
+}
+
+/* Câmera: lente em milímetros, enquadramento e movimento A→B (DECISOES.md #46). */
+.camera-panel__lens-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.camera-panel__lens-presets button {
+  padding: 0.25rem 0;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.camera-panel__lens-presets button[aria-pressed='true'],
+.camera-panel__presets button[aria-pressed='true'] {
+  background: var(--text-h);
+  color: var(--bg);
+}
+
+.camera-panel__hint {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin: 0 0 0.4rem;
+}
+
+/* Combos de enquadramento + botão de confirmar (#51): a escolha não aplica
+   sozinha, o mesmo mecanismo do combo de poses. */
+.camera-panel__apply {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+}
+
+.camera-panel__apply:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.camera-panel__slider-label {
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 0.15rem;
+}
+
+.camera-panel__slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.camera-panel__slider-row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Botão de vocabulário: termo em inglês em cima, tradução como legenda (#47). */
+.camera-panel__term-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05rem;
+  padding: 0.25rem 0.2rem;
+  cursor: pointer;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.camera-panel__term {
+  font-size: 0.78rem;
+}
+
+.camera-panel__caption {
+  font-size: 0.65rem;
+  opacity: 0.65;
+}
+
+.camera-panel__term-button[aria-pressed='true'] {
+  background: var(--text-h);
+  color: var(--bg);
+}
+
+.camera-panel__term-button[aria-pressed='true'] .camera-panel__caption {
+  opacity: 0.8;
+}
+
+/* --- Painel de Animação (fase 10) --- */
+
+.animation-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.8rem;
+}
+
+/* Um `<select>` não encolhe abaixo do conteúdo sem isto, e estoura o painel. */
+.animation-panel__field select,
+.animation-panel__field input {
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+/* Um botão por linha (pedido do usuário). Quatro botões — Abrir, Regravar,
+   Renomear, Remover — lado a lado em 240 px estouravam o painel e faziam
+   aparecer barra de rolagem horizontal: como `.panel` tem `overflow-y: auto`,
+   o `overflow-x` deixa de ser `visible` e vira `auto`, e a barra aparece.
+
+   É uma PILHA, não uma quebra de linha oportunista: com dois por linha sobram
+   ~95 px por botão e "Regravar a salva" sai cortado — foi o que obrigava o
+   padding apertado da versão anterior. Empilhados, cada rótulo cabe inteiro e
+   o corpo da fonte volta ao tamanho dos outros botões do painel. */
+.animation-panel__buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+}
+
+.animation-panel__buttons button {
+  width: 100%;
+  min-width: 0;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.78rem;
+}
+
+.animation-panel__insert,
+.animation-panel__export {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 0.6rem;
+}
+
+/* Barra de captura grudada no topo do painel (pedido do usuário). As margens
+   negativas anulam o padding de `.panel` para a faixa encostar nas bordas e
+   tapar por completo o conteúdo que rola por baixo — sem isso, sobra uma fresta
+   de cada lado. O fundo opaco e o `z-index` são o que fazem essa tampa. */
+.animation-panel__capture-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: -0.75rem -0.75rem 0.6rem;
+  padding: 0.75rem 0.75rem 0.5rem;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Ações em destaque (pedido do usuário): "Capturar keyframe" no painel e
+   "Inserir keyframe aqui" na barra da linha do tempo. As duas são a ação
+   principal do seu lugar e estavam com o mesmo peso visual de "Exportar MP4" ou
+   "Renomear". Cor sólida em cima de `--text-h`, que já vira claro no tema
+   escuro — o destaque acompanha o tema sem uma variável nova.
+
+   A aparência é uma regra só para as duas; o que muda entre elas é só a
+   ocupação (o do painel toma a largura toda; o da barra mede o próprio texto). */
+.animation-panel__capture,
+.timeline-bar__insert {
+  min-width: 0;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--text-h);
+  border: 1px solid var(--text-h);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.animation-panel__capture:disabled,
+.timeline-bar__insert:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.animation-panel__capture:not(:disabled):hover,
+.timeline-bar__insert:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+.animation-panel__capture {
+  display: block;
+  width: 100%;
+  padding: 0.55rem 0.4rem;
+  font-size: 0.92rem;
+}
+
+/* Na fileira de cima ele toma a largura da coluna: sozinho na linha, medir só o
+   próprio texto deixaria uma sobra estranha ao lado do transporte. */
+.timeline-bar__insert {
+  display: block;
+  width: 100%;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* Confirmação de "Regravar" (pedido do usuário): o botão que executa a perda
+   fica em destaque de PERIGO, para não ser mais um botão cinza igual ao lado. */
+.animation-panel__confirm {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.animation-panel__capture-hint {
+  margin: 0.4rem 0 0;
+}
+
+/* Trechos prontos (DECISOES.md #60) — mesmo visual dos fieldsets dos outros painéis. */
+.animation-panel__clips {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  margin: 0 0 0.6rem;
+}
+
+.animation-panel__clips legend {
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0 0.3rem;
+}
+
+.animation-panel__clips button {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.animation-panel__keyframes {
+  list-style: none;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.animation-panel__keyframe {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem;
+  font-size: 0.75rem;
+}
+
+.animation-panel__keyframe-index {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.animation-panel__duration {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.3rem;
+}
+
+.animation-panel__duration input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Quatro linhas fixas no card (pedido do usuário): Ir para/Regravar, as duas
+   da câmera, as duas da pose e, embaixo, mover/duplicar/remover. Cada linha é
+   uma `<div>` declarada no JSX — a versão anterior era uma fila única que
+   quebrava sozinha, com um `nth-child(-n + 2)` decidindo quem tinha largura, e
+   qualquer botão novo bagunçava a conta. */
+/* Caixa de opção do painel (papel-cebola, item 31) — mesmo desenho da caixa
+   "Repetir" da barra da linha do tempo. */
+.animation-panel__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.animation-panel__keyframe-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.animation-panel__keyframe-row {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.animation-panel__keyframe-row button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.2rem 0.3rem;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+/* Na última linha as setas e o × só precisam do próprio símbolo; a sobra fica
+   com "Duplicar", que é o único com texto. */
+.animation-panel__keyframe-row--mixed button {
+  flex: 0 0 auto;
+}
+
+.animation-panel__keyframe-row--mixed .animation-panel__duplicate {
+  flex: 1 1 auto;
+}
+/* Uma linha por controle (pedido do usuário): "Copiar pose para" e "O que
+   copiar" lado a lado somavam dois rótulos e dois selects em 240 px, e o painel
+   ganhava barra de rolagem horizontal. Em coluna, cada um tem a largura toda. */
+.properties-panel__copy-pose {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+}
+
+.properties-panel__copy-pose .properties-panel__field {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+/* Sem isto o `<select>` não encolhe abaixo do nome mais comprido da lista
+   (nomes de boneco, "Perna esquerda") e volta a empurrar o painel. */
+.properties-panel__copy-pose .properties-panel__field select {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.animation-panel__export-status {
+  font-size: 0.75rem;
+}
+
+.animation-panel__hint {
+  margin: 0 0 0.6rem;
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.animation-panel__hint--error {
+  color: #ff8a8a;
+  opacity: 1;
+}
+
+/* Aviso da confirmação de "Regravar" — mesmo tratamento do aviso de "novo
+   workspace" no painel de Cenas, que é a outra ação que o clique não desfaz. */
+.animation-panel__hint--warning {
+  color: var(--danger);
+  opacity: 1;
+}
+
+/* Faixas dos grupos rotulados sob a régua (item 38). */
+.timeline-bar__groups {
+  position: relative;
+  height: 1.05rem;
+  margin-top: 0.15rem;
+}
+
+.timeline-bar__group {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  padding: 0 0.3rem;
+  font-size: 0.7rem;
+  line-height: 1.05rem;
+  border-radius: 3px;
+  background: rgba(120, 160, 255, 0.22);
+  border: 1px solid rgba(120, 160, 255, 0.5);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+/* Cabeçalho de grupo na lista de keyframes do painel (item 38). */
+.animation-panel__group {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.25rem;
+}
+
+.animation-panel__group-toggle {
+  font-weight: 600;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+}
+
+.animation-panel__group-count {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.animation-panel__group-field {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+}
+
+.animation-panel__group-field input {
+  width: 6.5rem;
+}
+
+.animation-panel__clip-figures {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.animation-panel__clip-figure {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Miniatura do keyframe no card (item 30). */
+.animation-panel__thumbnail {
+  display: block;
+  width: 100%;
+  max-width: 8rem;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.animation-panel__save-clip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.4rem;
 }

@@ -1,4 +1,10 @@
-import { JOINT_NAMES, clampJointRotation, getJointSubtree, type JointRotation } from './skeleton'
+import {
+  JOINT_NAMES,
+  ROOT_JOINT_NAME,
+  clampJointRotation,
+  getJointSubtree,
+  type JointRotation,
+} from './skeleton'
 
 /**
  * Simetria esquerda/direita da pose (pedido do usuário, ver DECISOES.md #30):
@@ -25,10 +31,15 @@ import { JOINT_NAMES, clampJointRotation, getJointSubtree, type JointRotation } 
  * exceção e foi corrigido no #30; a trava de regressão está em
  * `skeleton.test.ts`.
  *
- * ESCOPO (decidido com o usuário): a operação mexe apenas nas juntas pareadas
- * (`.L`/`.R`) — braços, mãos, pernas e pés. Tronco, pescoço, cabeça e a
- * rotação/posição do boneco não são tocados: a operação faz só o que o nome
- * diz.
+ * ESCOPO (decidido com o usuário): as operações de LADO (`mirrorPoseSide`,
+ * `swapPoseSides`) mexem apenas nas juntas pareadas (`.L`/`.R`) — braços, mãos,
+ * pernas e pés. Tronco, pescoço, cabeça e a rotação/posição do boneco não são
+ * tocados: a operação faz só o que o nome diz.
+ *
+ * O espelho COMPLETO (`mirrorPoseFull`, pedido posterior do usuário) é a
+ * exceção deliberada: ele soma a essas a reflexão das juntas SEM par, que é o
+ * que falta para o boneco ficar exatamente espelhado. Continua sem tocar na
+ * colocação do boneco — ver o docblock da função.
  *
  * Esse escopo ainda pode ser RESTRINGIDO a uma junta e seus descendentes
  * (`scopeJoint`, ver `getMirrorScope` e DECISOES.md #34): com o ombro direito
@@ -126,6 +137,47 @@ export function mirrorPoseSide(
       targetName,
       mirrorRotation(pose[sourceName] ?? ZERO_ROTATION),
     )
+  }
+
+  return next
+}
+
+/**
+ * Juntas SEM par: tronco (`spine`, `chest`, `upperChest`), pescoço e cabeça. A
+ * raiz fica de fora de propósito — ela não é pose, é a COLOCAÇÃO do boneco
+ * (inclinação e para onde ele encara), e quem a carrega é `figure.rotation`, e
+ * não `figure.pose` (ver `Figure.tsx` e `poseLibrary.ts`).
+ */
+export const CENTRAL_JOINT_NAMES: readonly string[] = JOINT_NAMES.filter(
+  (name) => getJointSide(name) === null && name !== ROOT_JOINT_NAME,
+)
+
+/**
+ * Espelho COMPLETO do boneco (pedido do usuário): os membros trocam de lado,
+ * como em `swapPoseSides`, **e** as juntas sem par têm a rotação refletida.
+ *
+ * É a mesma reflexão sagital `(x, y, z) → (x, -y, -z)` do resto do módulo — só
+ * que numa junta central ela não tem para onde trocar, e por isso se aplica
+ * sobre ela mesma. Sem esse passo, uma cabeça virada para a direita e um tronco
+ * torcido ficavam para o mesmo lado enquanto os braços trocavam: o boneco saía
+ * meio espelhado, que é exatamente a queixa que originou este pedido.
+ *
+ * Continua uma INVOLUÇÃO — aplicar duas vezes devolve a pose original —, então
+ * serve de alternar. E, como em todo o módulo, o resultado passa pelos limites
+ * da junta de destino: com os limites espelhados do esqueleto isso não corta
+ * nada, mas um `joint-limits.json` do workspace pode ter apertado um lado.
+ *
+ * **Fica de fora a colocação do boneco** (`position` e `rotation`): espelhar o
+ * heading giraria o boneco na cena e espelhar X o mudaria de lugar — isso é
+ * refletir a CENA em torno do plano do mundo, não o boneco em torno do plano
+ * dele. Aqui o boneco continua onde está e encarando para onde encarava; o que
+ * vira do avesso é o corpo.
+ */
+export function mirrorPoseFull(pose: Record<string, JointRotation>): Record<string, JointRotation> {
+  const next = swapPoseSides(pose)
+
+  for (const name of CENTRAL_JOINT_NAMES) {
+    next[name] = clampJointRotation(name, mirrorRotation(pose[name] ?? ZERO_ROTATION))
   }
 
   return next

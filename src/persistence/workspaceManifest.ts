@@ -1,6 +1,9 @@
-import { slugifySceneName } from '../keyframe/keyframeNaming'
+import { slugifySceneName } from '../snapshot/snapshotNaming'
 import type { SceneSnapshot } from '../store/figuresStore'
 import { JOINT_LIMITS_FILENAME } from './jointLimitsFile'
+import { ANIMATIONS_FILENAME } from './animationsFile'
+import { POSES_FILENAME } from './posesFile'
+import { CLIPS_FILENAME } from './clipsFile'
 
 /**
  * Manifesto `workspace.json` de um workspace salvo em pasta: aponta, por
@@ -23,6 +26,12 @@ export interface WorkspaceManifest {
   activeSceneId: string | null
   /** Arquivo de limites articulares customizados da pasta (ver DECISOES.md #29) — sempre gravado, mas opcional na leitura. */
   jointLimitsFile: string
+  /** Arquivo da biblioteca de poses do usuário (ver DECISOES.md #42) — mesmo contrato do anterior. */
+  posesFile: string
+  /** Arquivo das animações do usuário (ver DECISOES.md #52) — mesmo contrato dos anteriores. */
+  animationsFile: string
+  /** Arquivo dos trechos salvos pelo usuário (item 39) — mesmo contrato dos anteriores. */
+  clipsFile: string
   scenes: WorkspaceManifestEntry[]
 }
 
@@ -48,6 +57,9 @@ export function buildWorkspaceManifest(
     version: WORKSPACE_MANIFEST_VERSION,
     activeSceneId,
     jointLimitsFile: JOINT_LIMITS_FILENAME,
+    posesFile: POSES_FILENAME,
+    animationsFile: ANIMATIONS_FILENAME,
+    clipsFile: CLIPS_FILENAME,
     scenes: entries,
   }
 }
@@ -74,6 +86,14 @@ export function parseWorkspaceManifest(json: unknown): WorkspaceManifest {
       typeof source.jointLimitsFile === 'string' && source.jointLimitsFile.trim() !== ''
         ? source.jointLimitsFile
         : JOINT_LIMITS_FILENAME,
+    posesFile:
+      typeof source.posesFile === 'string' && source.posesFile.trim() !== '' ? source.posesFile : POSES_FILENAME,
+    animationsFile:
+      typeof source.animationsFile === 'string' && source.animationsFile.trim() !== ''
+        ? source.animationsFile
+        : ANIMATIONS_FILENAME,
+    clipsFile:
+      typeof source.clipsFile === 'string' && source.clipsFile.trim() !== '' ? source.clipsFile : CLIPS_FILENAME,
     scenes,
   }
 }

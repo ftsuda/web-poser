@@ -58,8 +58,8 @@ describe('buildFigureObject3D — hierarquia headless para exportação glTF', (
     group.traverse((object) => {
       if (object instanceof THREE.Mesh) meshCount += 1
     })
-    // 32 juntas (marcador) + 31 ossos (uma ligação por junta não-root)
-    expect(meshCount).toBe(32 + 31)
+    // 38 juntas (marcador) + 37 ossos (uma ligação por junta não-root)
+    expect(meshCount).toBe(38 + 37)
   })
 
   it('respeita a visibilidade do boneco', () => {

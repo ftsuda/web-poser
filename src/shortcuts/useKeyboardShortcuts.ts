@@ -5,7 +5,7 @@ import { JOINT_NAMES, ROOT_JOINT_NAME, getJointAxes } from '../figure/skeleton'
 import { useCameraStore } from '../store/cameraStore'
 import { useFiguresStore, type FiguresState } from '../store/figuresStore'
 import { useIKStore } from '../store/ikStore'
-import { useKeyframeCaptureStore } from '../store/keyframeCaptureStore'
+import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
 import { useUIStore } from '../store/uiStore'
 import { matchShortcut, type EventTargetLike, type ShortcutAction, type Step } from './shortcuts'
 
@@ -116,8 +116,8 @@ function applyShortcut(action: ShortcutAction): boolean {
       return true
     }
 
-    case 'captureKeyframe':
-      useKeyframeCaptureStore.getState().requestCapture()
+    case 'captureSnapshot':
+      useSnapshotCaptureStore.getState().requestCapture()
       return true
 
     case 'toggleIK': {

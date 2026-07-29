@@ -4,7 +4,20 @@ import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { useCameraStore } from '../store/cameraStore'
 import { useFiguresStore } from '../store/figuresStore'
+import { interpolateCameraView, type CameraViewState } from './cameraMove'
 import { computeFrameDistance, computeOrthographicZoom, computePresetView } from './cameraPresets'
+import { focalLengthToFov, fovToFocalLength } from './lens'
+import {
+  computeGroupShotView,
+  computeOverTheShoulderView,
+  computePovView,
+  computeShotView,
+  rollUpVector,
+  twoShotDirection,
+  twoShotPair,
+  type ShotRequest,
+  type ShotView,
+} from './shotFraming'
 import { CAMERA_DEFAULTS } from './constants'
 
 export interface CameraRigProps {
@@ -68,6 +81,7 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
   const clearPendingCommand = useCameraStore((state) => state.clearPendingCommand)
   const addCameraBookmark = useFiguresStore((state) => state.addCameraBookmark)
   const cameraBookmarks = useFiguresStore((state) => state.cameraBookmarks)
+  const rollDeg = useCameraStore((state) => state.rollDeg)
 
   useEffect(() => {
     set({ camera: perspectiveCameraRef.current! })
@@ -116,6 +130,33 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
     const camera = projection === 'orthographic' ? orthographicCameraRef.current : perspectiveCameraRef.current
     if (!controls || !camera) return
 
+    /** Põe a câmera exatamente onde um preset/movimento resolveu (posição, alvo e topo da tela). */
+    const applyView = (view: ShotView | CameraViewState) => {
+      controls.target.set(...view.target)
+      camera.position.set(...view.position)
+      camera.up.set(...view.up)
+      camera.lookAt(controls.target)
+      if (camera instanceof THREE.OrthographicCamera) {
+        camera.zoom = computeOrthographicZoom(camera.position.distanceTo(controls.target), fov, size.height)
+        camera.updateProjectionMatrix()
+      }
+      controls.update()
+    }
+
+    /** Direção de onde a câmera olha hoje (do alvo para a câmera) — só o azimute é aproveitado. */
+    const currentDirection = (): [number, number, number] => {
+      const direction = camera.position.clone().sub(controls.target)
+      if (direction.lengthSq() < 1e-8) direction.set(...CAMERA_DEFAULTS.position)
+      return [direction.x, direction.y, direction.z]
+    }
+
+    const cameraState = (): CameraViewState => ({
+      position: [camera.position.x, camera.position.y, camera.position.z],
+      target: [controls.target.x, controls.target.y, controls.target.z],
+      up: [camera.up.x, camera.up.y, camera.up.z],
+      focalMm: fovToFocalLength(fov),
+    })
+
     switch (pendingCommand.type) {
       case 'requestSaveBookmark': {
         addCameraBookmark({
@@ -125,6 +166,9 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
           projection,
           fov,
           zoom: camera instanceof THREE.OrthographicCamera ? camera.zoom : 1,
+          // O topo da tela vai junto: sem ele um bookmark salvo com ângulo
+          // holandês voltaria endireitado (DECISOES.md #46).
+          up: [camera.up.x, camera.up.y, camera.up.z],
         })
         break
       }
@@ -148,7 +192,7 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
         const bookmark = cameraBookmarks.find((b) => b.id === pendingCommand.id)
         if (bookmark) {
           camera.position.set(...bookmark.position)
-          camera.up.set(0, 1, 0)
+          camera.up.set(...(bookmark.up ?? [0, 1, 0]))
           controls.target.set(...bookmark.target)
           camera.lookAt(controls.target)
           if (camera instanceof THREE.OrthographicCamera) {
@@ -189,6 +233,120 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
         break
       }
 
+      // ----------------------------------------------------------------
+      // Enquadramento cinematográfico e movimento entre dois pontos (#46)
+      // ----------------------------------------------------------------
+
+      case 'applyShot':
+      case 'applyTwoShot': {
+        const { figures, selectedFigureId, selectedJointName } = useFiguresStore.getState()
+        const vista = useCameraStore.getState()
+        const shot = vista.shot
+        if (!shot) break
+
+        const request: ShotRequest = {
+          shot,
+          fovDeg: fov,
+          fromDirection: currentDirection(),
+          angle: vista.angle,
+          cameraHeight: vista.cameraHeight,
+          orientation: vista.orientation,
+          selectedJoint: selectedJointName,
+          rollDeg,
+          thirds: vista.thirds,
+          leadRoom: vista.leadRoom,
+          aspect: size.width / size.height,
+        }
+
+        // Two shot: o par formado pelo boneco selecionado e o vizinho mais
+        // próximo, enquadrado com a mesma máquina do conjunto.
+        if (pendingCommand.type === 'applyTwoShot') {
+          const par = twoShotPair(figures, selectedFigureId)
+          if (!par) break
+          // Olhar o par de lado, para um não tapar o outro — a não ser que o
+          // usuário tenha pedido um lado explicitamente.
+          const view = computeGroupShotView(par, {
+            ...request,
+            fromDirection: vista.orientation
+              ? request.fromDirection
+              : twoShotDirection(par, request.fromDirection),
+          })
+          if (view) applyView(view)
+          break
+        }
+
+        const figure = figures.find((candidate) => candidate.id === selectedFigureId)
+        if (figure) {
+          applyView(computeShotView(figure, request))
+          break
+        }
+        // Sem boneco selecionado, os planos abertos enquadram TODOS os bonecos,
+        // mirando no ponto médio do conjunto (DECISOES.md #48). O `aspect` da
+        // tela entra aqui porque é ele que diz quanta largura cabe.
+        const grupo = computeGroupShotView(figures, request)
+        if (grupo) applyView(grupo)
+        break
+      }
+
+      case 'applyPov': {
+        const { figures, selectedFigureId } = useFiguresStore.getState()
+        const figure = figures.find((candidate) => candidate.id === selectedFigureId)
+        if (!figure) break
+        applyView(computePovView(figure, rollDeg))
+        break
+      }
+
+      case 'applyReverseAngle': {
+        // Meia-volta em torno do alvo, mantendo altura e distância: é o
+        // contracampo. Feito na câmera viva, então compõe com qualquer vista.
+        const offset = camera.position.clone().sub(controls.target)
+        camera.position.set(
+          controls.target.x - offset.x,
+          camera.position.y,
+          controls.target.z - offset.z,
+        )
+        camera.lookAt(controls.target)
+        controls.update()
+        break
+      }
+
+      case 'applyOverTheShoulder': {
+        // Quem está em primeiro plano é o boneco selecionado; o outro é o
+        // sujeito da conversa. Com um boneco só, não há vista a montar.
+        const { figures, selectedFigureId } = useFiguresStore.getState()
+        const near = figures.find((candidate) => candidate.id === selectedFigureId)
+        const far = figures.find((candidate) => candidate.id !== near?.id)
+        if (!near || !far) break
+        const view = computeOverTheShoulderView(near, far, rollDeg)
+        if (view) applyView(view)
+        break
+      }
+
+      case 'applyRoll': {
+        // Só o topo da tela muda: a câmera não sai do lugar.
+        const direction = controls.target.clone().sub(camera.position)
+        if (direction.lengthSq() < 1e-8) break
+        camera.up.set(...rollUpVector([direction.x, direction.y, direction.z], rollDeg))
+        camera.lookAt(controls.target)
+        controls.update()
+        break
+      }
+
+      case 'captureMovePoint':
+        useCameraStore.getState().setMovePoint(pendingCommand.point, cameraState())
+        break
+
+      case 'applyMove': {
+        const { moveA, moveB, moveT } = useCameraStore.getState()
+        if (!moveA || !moveB) break
+        const view = interpolateCameraView(moveA, moveB, moveT)
+        applyView(view)
+        // A lente faz parte do movimento: as duas pontas podem ter lentes
+        // diferentes (é assim que se monta um dolly zoom).
+        useCameraStore.getState().setFov(focalLengthToFov(view.focalMm))
+        break
+      }
+
       case 'toPerspective':
         // A troca de pose já foi feita pelo efeito de projeção acima.
         break
@@ -204,6 +362,7 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
     cameraBookmarks,
     addCameraBookmark,
     clearPendingCommand,
+    rollDeg,
     scene,
     size.width,
   ])

@@ -4,7 +4,7 @@ import { GRID_SPACING_M, OVERLAY_NAMES, RULER_HEIGHT_M, RULER_MINOR_STEP_M } fro
  * Régua no eixo Y (fase 9, item 11), com o mesmo espaçamento da grade do chão
  * nos traços maiores — dá noção de altura ao levantar um boneco do chão
  * (salto/voo) e serve de referência comum para comparar as alturas de vários
- * bonecos. É overlay: some da captura de keyframe junto com a grade e os
+ * bonecos. É overlay: some da captura de instantâneo junto com a grade e os
  * gizmos (ver `OVERLAY_NAMES`).
  *
  * Nasce ancorada no boneco selecionado — no mesmo ponto do chão em que fica o

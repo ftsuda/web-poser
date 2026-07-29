@@ -1,29 +1,29 @@
 import { create } from 'zustand'
 import {
   DEFAULT_RESOLUTION_PRESET,
-  KEYFRAME_RESOLUTION_PRESETS,
-  MAX_KEYFRAME_DIMENSION,
-  MIN_KEYFRAME_DIMENSION,
+  SNAPSHOT_RESOLUTION_PRESETS,
+  MAX_SNAPSHOT_DIMENSION,
+  MIN_SNAPSHOT_DIMENSION,
   type ResolutionPresetKey,
-} from '../keyframe/constants'
+} from '../snapshot/constants'
 
 function clampDimension(value: number): number {
-  return Math.min(MAX_KEYFRAME_DIMENSION, Math.max(MIN_KEYFRAME_DIMENSION, Math.round(value)))
+  return Math.min(MAX_SNAPSHOT_DIMENSION, Math.max(MIN_SNAPSHOT_DIMENSION, Math.round(value)))
 }
 
 function resolutionFor(key: ResolutionPresetKey, fallback: { width: number; height: number }) {
-  const preset = KEYFRAME_RESOLUTION_PRESETS.find((p) => p.key === key)
+  const preset = SNAPSHOT_RESOLUTION_PRESETS.find((p) => p.key === key)
   return preset ? { width: preset.width, height: preset.height } : fallback
 }
 
-export interface KeyframeCaptureState {
+export interface SnapshotCaptureState {
   presetKey: ResolutionPresetKey
   width: number
   height: number
   hideOverlaysOnCapture: boolean
   /** Pasta de destino escolhida via File System Access API — só dura a sessão (ver PLANO.md). */
   directoryHandle: FileSystemDirectoryHandle | null
-  /** Sinaliza para o `KeyframeCapture` (dentro do `<Canvas>`) que uma captura foi pedida. */
+  /** Sinaliza para o `SnapshotCapture` (dentro do `<Canvas>`) que uma captura foi pedida. */
   pendingCapture: boolean
   lastCapturedFilename: string | null
   selectPreset: (key: ResolutionPresetKey) => void
@@ -39,12 +39,12 @@ export interface KeyframeCaptureState {
 const initialResolution = resolutionFor(DEFAULT_RESOLUTION_PRESET, { width: 1920, height: 1080 })
 
 /**
- * Configurações de captura de keyframe (resolução, ocultar overlays, pasta
+ * Configurações de captura de instantâneo (resolução, ocultar overlays, pasta
  * de destino) e o gatilho de captura. Fora do histórico de undo — é
  * configuração de ferramenta/sessão, não edição de conteúdo da cena (ver
  * PLANO.md > "Interação de pose", item 5, e DECISOES.md #8).
  */
-export const useKeyframeCaptureStore = create<KeyframeCaptureState>((set, get) => ({
+export const useSnapshotCaptureStore = create<SnapshotCaptureState>((set, get) => ({
   presetKey: DEFAULT_RESOLUTION_PRESET,
   width: initialResolution.width,
   height: initialResolution.height,

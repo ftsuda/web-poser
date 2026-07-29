@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { COLOR_PALETTE, MAX_FIGURES, useFiguresStore } from '../../store/figuresStore'
 import { useIKStore } from '../../store/ikStore'
+import { usePoseClipboardStore } from '../../store/poseClipboardStore'
 import { FiguresPanel } from '../FiguresPanel'
 
 // `importOriginal` preserva `SceneFileError` real (usado por `instanceof`).
@@ -284,5 +285,82 @@ describe('FiguresPanel — indicador de IK ativo (fase 9, item 5)', () => {
       useIKStore.getState().disableLimb(id, 'wrist.L')
     })
     expect(screen.queryByTitle(/IK ativo em/)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Área de transferência de poses (pedido do usuário): copiar a pose de um
+ * boneco e colar em outro, inclusive depois de trocar de cena. Só em memória.
+ */
+describe('FiguresPanel — área de transferência de poses', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    usePoseClipboardStore.setState(usePoseClipboardStore.getInitialState())
+  })
+
+  const figureById = (id: string) => useFiguresStore.getState().figures.find((f) => f.id === id)!
+
+  it('sem nada copiado, explica que a lista vale só nesta sessão', async () => {
+    await renderFiguresPanel()
+
+    expect(screen.getByText(/Nada copiado ainda/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copiar pose do selecionado' })).toBeDisabled()
+  })
+
+  it('copia a pose do boneco selecionado e lista com o nome dele', async () => {
+    const user = userEvent.setup()
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    useFiguresStore.getState().selectFigure(id)
+    useFiguresStore.getState().applyPosePreset(id, 'running')
+    await renderFiguresPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Copiar pose do selecionado' }))
+
+    expect(usePoseClipboardStore.getState().entries).toHaveLength(1)
+    expect(screen.getByText('Herói')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Colar' })).toBeEnabled()
+  })
+
+  it('cola a pose guardada no boneco selecionado', async () => {
+    const user = userEvent.setup()
+    const a = useFiguresStore.getState().addFigure('A') as string
+    const b = useFiguresStore.getState().addFigure('B') as string
+    useFiguresStore.getState().applyPosePreset(a, 'running')
+    act(() => {
+      usePoseClipboardStore.getState().copyPose(figureById(a))
+      useFiguresStore.getState().selectFigure(b)
+    })
+    await renderFiguresPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Colar' }))
+
+    expect(figureById(b).pose).toEqual(figureById(a).pose)
+  })
+
+  it('apaga a entrada escolhida da lista', async () => {
+    const user = userEvent.setup()
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    act(() => {
+      usePoseClipboardStore.getState().copyPose(figureById(id))
+      usePoseClipboardStore.getState().copyPose(figureById(id))
+    })
+    await renderFiguresPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Apagar Herói (2)' }))
+
+    expect(usePoseClipboardStore.getState().entries.map((entry) => entry.name)).toEqual(['Herói'])
+    expect(screen.queryByText('Herói (2)')).not.toBeInTheDocument()
+  })
+
+  it('sem boneco selecionado, diz por que não dá para colar', async () => {
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    act(() => {
+      usePoseClipboardStore.getState().copyPose(figureById(id))
+      useFiguresStore.getState().selectFigure(null)
+    })
+    await renderFiguresPanel()
+
+    expect(screen.getByRole('button', { name: 'Colar' })).toBeDisabled()
+    expect(screen.getByText('Selecione um boneco para colar uma destas poses.')).toBeInTheDocument()
   })
 })

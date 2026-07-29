@@ -4,7 +4,9 @@ import {
   saveUIPreferences,
   type CollapsedPanels,
   type PanelKey,
+  type UIPreferences,
 } from '../persistence/uiPreferences'
+import type { FrameMaskSource, FrameRect } from '../scene/frameMask'
 
 /**
  * Situação do autosave contínuo em `localStorage` (fase 9, item 2). O
@@ -47,6 +49,24 @@ export interface UIState {
   /** Régua vertical do viewport (fase 9, item 11) — preferência de tela, persistida junto dos painéis. */
   rulerVisible: boolean
   toggleRuler: () => void
+
+  /** De qual saída a máscara de enquadramento mostra a proporção (`frameMask.ts`). */
+  frameMaskSource: FrameMaskSource
+  setFrameMaskSource: (source: FrameMaskSource) => void
+  /**
+   * O retângulo que a máscara está desenhando, em pixels de tela. Estado
+   * derivado e efêmero, como `autosaveStatus`: quem o calcula é o
+   * `FrameMaskCamera`, dentro do `<Canvas>` (é lá que se sabe o tamanho real da
+   * tela de desenho),
+   * e quem o pinta é o `FrameMaskOverlay`, que é DOM e vive fora dela. `null`
+   * com a máscara desligada.
+   */
+  frameMaskRect: FrameRect | null
+  setFrameMaskRect: (rect: FrameRect | null) => void
+
+  /** Aplicar uma pose em dupla também posa o outro boneco (DECISOES.md #41)? Preferência de ferramenta, persistida. */
+  pairPoseEnabled: boolean
+  togglePairPose: () => void
 }
 
 /**
@@ -73,22 +93,44 @@ export const useUIStore = create<UIState>()((set) => ({
   setRootGizmoMode: (mode) => set({ rootGizmoMode: mode }),
 
   collapsedPanels: INITIAL_UI_PREFERENCES.collapsedPanels,
+  // Gravam direto, sem o debounce do autosave do workspace: recolher um painel
+  // (ou ligar a régua, ou trocar a máscara) é raro e a gravação é de um objeto
+  // minúsculo.
   togglePanel: (panel) => {
-    // Grava direto, sem o debounce do autosave do workspace: recolher um
-    // painel (ou ligar a régua) é raro e a gravação é de um objeto minúsculo.
-    set((state) => {
-      const collapsedPanels = { ...state.collapsedPanels, [panel]: !state.collapsedPanels[panel] }
-      saveUIPreferences({ collapsedPanels, rulerVisible: state.rulerVisible })
-      return { collapsedPanels }
-    })
+    set((state) => persist(state, { collapsedPanels: { ...state.collapsedPanels, [panel]: !state.collapsedPanels[panel] } }))
   },
 
   rulerVisible: INITIAL_UI_PREFERENCES.rulerVisible,
-  toggleRuler: () => {
-    set((state) => {
-      const rulerVisible = !state.rulerVisible
-      saveUIPreferences({ collapsedPanels: state.collapsedPanels, rulerVisible })
-      return { rulerVisible }
-    })
-  },
+  toggleRuler: () => set((state) => persist(state, { rulerVisible: !state.rulerVisible })),
+
+  frameMaskSource: INITIAL_UI_PREFERENCES.frameMaskSource,
+  // Desligar larga o retângulo junto: sem isso a máscara continuaria pintada
+  // até alguém recalculá-la.
+  setFrameMaskSource: (source) =>
+    set((state) => ({
+      ...persist(state, { frameMaskSource: source }),
+      ...(source === 'off' ? { frameMaskRect: null } : {}),
+    })),
+
+  frameMaskRect: null,
+  setFrameMaskRect: (rect) => set({ frameMaskRect: rect }),
+
+  pairPoseEnabled: INITIAL_UI_PREFERENCES.pairPoseEnabled,
+  togglePairPose: () => set((state) => persist(state, { pairPoseEnabled: !state.pairPoseEnabled })),
 }))
+
+/**
+ * Aplica a mudança E grava as preferências inteiras — o arquivo é um bloco só,
+ * então cada alteração precisa levar junto o que já estava lá. Devolve a
+ * mudança para o `set` que a chamou.
+ */
+function persist<T extends Partial<UIPreferences>>(state: UIState, change: T): T {
+  saveUIPreferences({
+    collapsedPanels: state.collapsedPanels,
+    rulerVisible: state.rulerVisible,
+    frameMaskSource: state.frameMaskSource,
+    pairPoseEnabled: state.pairPoseEnabled,
+    ...change,
+  })
+  return change
+}

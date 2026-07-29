@@ -25,7 +25,7 @@ export type ShortcutAction =
   | { type: 'toggleVisibility' }
   | { type: 'cameraPreset'; preset: OrthoPresetName }
   | { type: 'applyCameraBookmarkByIndex'; index: number }
-  | { type: 'captureKeyframe' }
+  | { type: 'captureSnapshot' }
   | { type: 'toggleIK' }
   | { type: 'toggleHelp' }
   | { type: 'frameFigure' }
@@ -97,7 +97,7 @@ export function matchShortcut(event: ShortcutKeyEvent): ShortcutAction | null {
   }
 
   if (event.key === ' ' && !isPlatformModifier(event) && !event.shiftKey) {
-    return { type: 'captureKeyframe' }
+    return { type: 'captureSnapshot' }
   }
 
   const numpadPreset = NUMPAD_PRESET_CODES[event.code]
@@ -194,7 +194,7 @@ export const SHORTCUT_CATALOG: readonly ShortcutCatalogEntry[] = [
   { keys: 'R', descriptionKey: 'help.toggleIK' },
   { keys: 'W / E', descriptionKey: 'help.rootGizmoMode' },
   { keys: 'F', descriptionKey: 'help.frameFigure' },
-  { keys: 'Espaço', descriptionKey: 'help.captureKeyframe' },
+  { keys: 'Espaço', descriptionKey: 'help.captureSnapshot' },
   { keys: 'Ctrl+Z / Ctrl+Shift+Z', descriptionKey: 'help.undoRedo' },
   { keys: 'Ctrl+S', descriptionKey: 'help.saveScene' },
   { keys: 'Ctrl+D', descriptionKey: 'help.duplicateFigure' },

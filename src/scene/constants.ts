@@ -1,4 +1,5 @@
 import type { BackgroundTone } from '../store/figuresStore'
+import { DEFAULT_FOCAL_MM, focalLengthToFov } from './lens'
 
 export const BACKGROUND_COLORS: Record<BackgroundTone, string> = {
   light: '#b3b3b3',
@@ -8,7 +9,8 @@ export const BACKGROUND_COLORS: Record<BackgroundTone, string> = {
 
 export const CAMERA_DEFAULTS = {
   position: [3, 2, 4] as [number, number, number],
-  fov: 50,
+  // Em GRAUS, mas quem manda é a lente: 35 mm (ver `lens.ts`).
+  fov: focalLengthToFov(DEFAULT_FOCAL_MM),
   near: 0.1,
   far: 100,
 }
@@ -31,8 +33,8 @@ export const RULER_MINOR_STEP_M = 0.1
 
 /**
  * Nomes dos objetos que são "apoio de tela", não conteúdo da cena — a captura
- * de keyframe os esconde quando "ocultar grade/gizmos" está ligado
- * (`KeyframeCapture.tsx`). Fonte única para não sair do ar quando um overlay
+ * de instantâneo os esconde quando "ocultar grade/gizmos" está ligado
+ * (`SnapshotCapture.tsx`). Fonte única para não sair do ar quando um overlay
  * novo é adicionado (foi o que aconteceu na fase 9 com o indicador de grade e
  * a régua vertical).
  */
@@ -40,6 +42,12 @@ export const OVERLAY_NAMES = {
   grid: 'scene-grid',
   gridAlignment: 'scene-grid-alignment',
   verticalRuler: 'scene-vertical-ruler',
+  /**
+   * Papel-cebola (item 31). Entrar nesta lista é o que garante que os fantasmas
+   * fiquem só na tela: o PNG e o MP4 já escondem tudo o que está aqui, com uma
+   * regra só. Um grupo, não um objeto por fantasma — esconder o pai basta.
+   */
+  onionSkin: 'scene-onion-skin',
 } as const
 
 export const OVERLAY_NAME_LIST: readonly string[] = Object.values(OVERLAY_NAMES)

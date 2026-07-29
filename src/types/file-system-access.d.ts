@@ -1,7 +1,7 @@
 // `showDirectoryPicker` e a checagem de permissão não fazem parte do
 // `lib.dom.d.ts` padrão do TypeScript (API ainda não-padronizada, só
 // implementada em navegadores baseados em Chromium — ver PLANO.md >
-// "Exportação de imagem (keyframes)").
+// "Exportação de imagem (instantâneos)").
 
 interface FileSystemPermissionDescriptor {
   mode?: 'read' | 'readwrite'

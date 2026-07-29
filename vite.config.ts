@@ -38,5 +38,11 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     globals: true,
     css: true,
+    // Acima dos 5 s padrão (DECISOES.md #46): com a suíte já em ~1250 testes
+    // rodando em paralelo, os casos legitimamente pesados — os 200 sorteios de
+    // `randomPose` e os arquivos de painel que montam a UI inteira a cada
+    // interação — passam dos 5 s por disputa de CPU, não por regressão. Cada
+    // um deles roda em ~4 s isolado.
+    testTimeout: 20000,
   },
 })

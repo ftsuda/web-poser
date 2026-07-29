@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { slugifySceneName } from '../keyframe/keyframeNaming'
+import { slugifySceneName } from '../snapshot/snapshotNaming'
 import { isFileSystemAccessAvailable, pickFile, pickMultipleFiles, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { exportSceneToGlb, importSceneFromGlb } from '../persistence/sceneFile'
 import { loadWorkspaceFromDirectory, loadWorkspaceFromFiles, saveWorkspaceToDirectory } from '../persistence/workspaceFolder'
@@ -23,12 +23,15 @@ export function ScenesPanel() {
   const environment = useFiguresStore((state) => state.environment)
   const cameraBookmarks = useFiguresStore((state) => state.cameraBookmarks)
   const nextCameraBookmarkSeq = useFiguresStore((state) => state.nextCameraBookmarkSeq)
-  const nextKeyframeNumber = useFiguresStore((state) => state.nextKeyframeNumber)
+  const nextSnapshotNumber = useFiguresStore((state) => state.nextSnapshotNumber)
   const saveSceneSnapshot = useFiguresStore((state) => state.saveSceneSnapshot)
   const loadSceneSnapshot = useFiguresStore((state) => state.loadSceneSnapshot)
   const removeSceneSnapshot = useFiguresStore((state) => state.removeSceneSnapshot)
   const loadSceneWorkingState = useFiguresStore((state) => state.loadSceneWorkingState)
   const loadWorkspaceCatalog = useFiguresStore((state) => state.loadWorkspaceCatalog)
+  const poseLibrary = useFiguresStore((state) => state.poseLibrary)
+  const animations = useFiguresStore((state) => state.animations)
+  const clipLibrary = useFiguresStore((state) => state.clipLibrary)
   const jointLimits = useFiguresStore((state) => state.jointLimits)
   const resetJointLimits = useFiguresStore((state) => state.resetJointLimits)
   const resetWorkspace = useFiguresStore((state) => state.resetWorkspace)
@@ -67,7 +70,7 @@ export function ScenesPanel() {
       environment,
       cameraBookmarks,
       nextCameraBookmarkSeq,
-      nextKeyframeNumber,
+      nextSnapshotNumber,
     })
     const filename = `${slugifySceneName(sceneName)}.glb`
     await writeFileToDirectoryOrDownload(null, filename, new Blob([glb], { type: 'model/gltf-binary' }))
@@ -92,7 +95,11 @@ export function ScenesPanel() {
       handle = await window.showDirectoryPicker({ mode: 'readwrite' })
       setWorkspaceDirectoryHandle(handle)
     }
-    await saveWorkspaceToDirectory(handle, scenes, activeSceneId)
+    // A biblioteca de poses vai junto, num `poses.json` da mesma pasta: ela é
+    // do workspace, não de uma cena (ver DECISOES.md #42).
+    // Biblioteca de poses e animações vão juntas, cada uma no seu arquivo da
+    // mesma pasta: são do workspace, não de uma cena (DECISOES.md #42 e #52).
+    await saveWorkspaceToDirectory(handle, scenes, activeSceneId, poseLibrary, animations, clipLibrary)
   }
 
   const handleOpenWorkspaceFromFolder = async () => {
@@ -101,7 +108,14 @@ export function ScenesPanel() {
         const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
         setWorkspaceDirectoryHandle(handle)
         const loaded = await loadWorkspaceFromDirectory(handle)
-        loadWorkspaceCatalog(loaded.scenes, loaded.activeSceneId, loaded.jointLimits)
+        loadWorkspaceCatalog(
+          loaded.scenes,
+          loaded.activeSceneId,
+          loaded.jointLimits,
+          loaded.poses,
+          loaded.animations,
+          loaded.clips,
+        )
         setErrorKey(null)
         return
       }
@@ -115,7 +129,14 @@ export function ScenesPanel() {
         setErrorKey('errors.workspaceManifestMissing')
         return
       }
-      loadWorkspaceCatalog(loaded.scenes, loaded.activeSceneId, loaded.jointLimits)
+      loadWorkspaceCatalog(
+        loaded.scenes,
+        loaded.activeSceneId,
+        loaded.jointLimits,
+        loaded.poses,
+        loaded.animations,
+        loaded.clips,
+      )
       setErrorKey(null)
     } catch (error) {
       // Cancelar o seletor de pasta lança `AbortError` — não é falha nenhuma.

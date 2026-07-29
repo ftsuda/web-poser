@@ -8,7 +8,7 @@ const emptyData = {
   environment: { background: 'medium' as const, grid: true },
   cameraBookmarks: [],
   nextCameraBookmarkSeq: 1,
-  nextKeyframeNumber: 1,
+  nextSnapshotNumber: 1,
 }
 
 const scenes: SceneSnapshot[] = [
@@ -39,6 +39,29 @@ describe('workspaceManifest — manifesto do workspace em pasta', () => {
     expect(restored.version).toBe(WORKSPACE_MANIFEST_VERSION)
     expect(restored.activeSceneId).toBeNull()
     expect(restored.scenes).toEqual([])
+  })
+
+  /**
+   * Manifestos gravados antes de cada arquivo auxiliar existir não têm o campo
+   * correspondente — o nome padrão vale, e se o arquivo também não estiver na
+   * pasta a aplicação segue sem ele (limites padrão, biblioteca vazia).
+   */
+  it('assume os nomes padrão dos arquivos auxiliares em manifestos antigos', () => {
+    const restored = parseWorkspaceManifest({ scenes: [] })
+    expect(restored.jointLimitsFile).toBe('joint-limits.json')
+    expect(restored.posesFile).toBe('poses.json')
+    expect(restored.animationsFile).toBe('animations.json')
+    expect(restored.clipsFile).toBe('clips.json')
+  })
+
+  it('respeita nomes de arquivo auxiliares customizados', () => {
+    const restored = parseWorkspaceManifest({
+      scenes: [],
+      posesFile: 'minhas-poses.json',
+      clipsFile: 'meus-trechos.json',
+    })
+    expect(restored.posesFile).toBe('minhas-poses.json')
+    expect(restored.clipsFile).toBe('meus-trechos.json')
   })
 
   it('não lança erro com entrada completamente inválida', () => {

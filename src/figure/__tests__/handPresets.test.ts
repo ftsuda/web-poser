@@ -37,14 +37,17 @@ function fingerTipToPalm(figure: Figure, side: 'L' | 'R'): number {
 }
 
 describe('handPresets', () => {
-  it('lista as 4 poses pedidas', () => {
-    expect(HAND_PRESET_KEYS).toEqual(['open', 'relaxed', 'fist', 'thumbsUp'])
+  it('lista as poses pedidas, com apontar e pinça a partir do dedo indicador separado (#45)', () => {
+    expect(HAND_PRESET_KEYS).toEqual(['open', 'relaxed', 'fist', 'thumbsUp', 'point', 'pinch'])
   })
 
-  it('cobre exatamente as 5 juntas da mão, sem o punho', () => {
+  it('cobre exatamente as 8 juntas da mão, sem o punho', () => {
     expect(getHandJointNames('L')).toEqual([
       'thumb1.L',
       'thumb2.L',
+      'indexBase.L',
+      'indexMid.L',
+      'indexTip.L',
       'fingersBase.L',
       'fingersMid.L',
       'fingersTip.L',

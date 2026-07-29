@@ -1,5 +1,10 @@
+import { sanitizeAnimations, type Animation } from '../animation/animation'
+import { sanitizeSavedClips, type SavedClip } from '../animation/clipLibrary'
+import { sanitizeJointLocks, type JointLockMap } from '../figure/jointLocks'
+import { sanitizeSavedPoses, type SavedPose } from '../figure/poseLibrary'
 import { setJointLimitOverrides, type JointLimitOverrides } from '../figure/skeleton'
 import type { CameraBookmark, EnvironmentSettings, Figure, SceneSnapshot, SceneSnapshotData } from '../store/figuresStore'
+import { savedPoseToJson } from './posesFile'
 import { sceneFromExtras, sceneToExtras, type SceneWorkingState } from './sceneSerialization'
 
 /**
@@ -20,12 +25,28 @@ export interface WorkspaceState {
   cameraBookmarks: CameraBookmark[]
   nextCameraBookmarkSeq: number
   sceneName: string
-  nextKeyframeNumber: number
+  nextSnapshotNumber: number
   scenes: SceneSnapshot[]
   nextSceneSnapshotSeq: number
   activeSceneId: string | null
   /** Limites articulares customizados em vigor (ver DECISOES.md #29) — vazio quando são os padrões do código. */
   jointLimits: JointLimitOverrides
+  /** Biblioteca de poses do usuário (ver DECISOES.md #42) — do workspace, não de uma cena. */
+  poseLibrary: SavedPose[]
+  nextPoseSeq: number
+  /** Animações do usuário (ver DECISOES.md #52) — do workspace, como a biblioteca de poses. */
+  animations: Animation[]
+  nextAnimationSeq: number
+  /** Biblioteca de trechos do usuário (item 39) — do workspace, como as duas acima. */
+  clipLibrary: SavedClip[]
+  nextClipSeq: number
+  /**
+   * Juntas travadas por boneco (ver DECISOES.md #42). É estado de TRABALHO
+   * (decisão do usuário): entra aqui, para sobreviver a recarregar a página, e
+   * NÃO entra no `.glb` — por isso fica no nível de cima do payload, fora do
+   * bloco de `extras` que o `.glb` compartilha.
+   */
+  jointLocks: JointLockMap
 }
 
 export interface RestoredWorkspace {
@@ -35,6 +56,13 @@ export interface RestoredWorkspace {
   activeSceneId: string | null
   /** Limites customizados restaurados — já aplicados ao `skeleton.ts` antes das poses serem lidas. */
   jointLimits: JointLimitOverrides
+  poseLibrary: SavedPose[]
+  nextPoseSeq: number
+  animations: Animation[]
+  nextAnimationSeq: number
+  clipLibrary: SavedClip[]
+  nextClipSeq: number
+  jointLocks: JointLockMap
 }
 
 function snapshotDataToExtras(data: SceneSnapshotData): Record<string, unknown> {
@@ -49,7 +77,7 @@ function extrasToSnapshotData(extras: unknown): SceneSnapshotData {
     environment: scene.environment,
     cameraBookmarks: scene.cameraBookmarks,
     nextCameraBookmarkSeq: scene.nextCameraBookmarkSeq,
-    nextKeyframeNumber: scene.nextKeyframeNumber,
+    nextSnapshotNumber: scene.nextSnapshotNumber,
   }
 }
 
@@ -71,7 +99,7 @@ export function saveWorkspaceToLocalStorage(state: WorkspaceState): boolean {
       environment: state.environment,
       cameraBookmarks: state.cameraBookmarks,
       nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
-      nextKeyframeNumber: state.nextKeyframeNumber,
+      nextSnapshotNumber: state.nextSnapshotNumber,
     }),
     scenes: state.scenes.map((scene) => ({
       id: scene.id,
@@ -81,6 +109,16 @@ export function saveWorkspaceToLocalStorage(state: WorkspaceState): boolean {
     nextSceneSnapshotSeq: state.nextSceneSnapshotSeq,
     activeSceneId: state.activeSceneId,
     jointLimits: state.jointLimits,
+    poseLibrary: state.poseLibrary.map(savedPoseToJson),
+    nextPoseSeq: state.nextPoseSeq,
+    // As animações vão como estão: `Animation` já é JSON puro (bonecos em
+    // objetos simples e a câmera em tuplas), então não há conversão a fazer.
+    animations: state.animations,
+    nextAnimationSeq: state.nextAnimationSeq,
+    // Os trechos também vão como estão: `SavedClip` é JSON puro.
+    clipLibrary: state.clipLibrary,
+    nextClipSeq: state.nextClipSeq,
+    jointLocks: state.jointLocks,
   }
 
   try {
@@ -130,6 +168,13 @@ export function loadWorkspaceFromLocalStorage(): RestoredWorkspace | null {
     }
   })
 
+  // A biblioteca passa pela MESMA sanitização do arquivo da pasta (juntas
+  // desconhecidas fora, ângulos grampeados pelos limites que acabaram de ser
+  // instalados) — `localStorage` é entrada não confiável como qualquer outra.
+  const poseLibrary = sanitizeSavedPoses(source.poseLibrary)
+  const animations = sanitizeAnimations(source.animations)
+  const clipLibrary = sanitizeSavedClips(source.clipLibrary)
+
   return {
     workingScene,
     scenes,
@@ -137,5 +182,14 @@ export function loadWorkspaceFromLocalStorage(): RestoredWorkspace | null {
       typeof source.nextSceneSnapshotSeq === 'number' ? source.nextSceneSnapshotSeq : scenes.length + 1,
     activeSceneId: typeof source.activeSceneId === 'string' ? source.activeSceneId : null,
     jointLimits,
+    poseLibrary,
+    nextPoseSeq:
+      typeof source.nextPoseSeq === 'number' ? source.nextPoseSeq : poseLibrary.length + 1,
+    animations,
+    nextAnimationSeq:
+      typeof source.nextAnimationSeq === 'number' ? source.nextAnimationSeq : animations.length + 1,
+    clipLibrary,
+    nextClipSeq: typeof source.nextClipSeq === 'number' ? source.nextClipSeq : clipLibrary.length + 1,
+    jointLocks: sanitizeJointLocks(source.jointLocks),
   }
 }

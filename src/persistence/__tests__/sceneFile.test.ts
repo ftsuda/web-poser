@@ -40,7 +40,7 @@ const scene: SceneWorkingState = {
   environment: { background: 'dark', grid: false },
   cameraBookmarks: [bookmark],
   nextCameraBookmarkSeq: 2,
-  nextKeyframeNumber: 3,
+  nextSnapshotNumber: 3,
 }
 
 describe('sceneFile — cena completa', () => {
@@ -60,7 +60,7 @@ describe('sceneFile — cena completa', () => {
       environment: { background: 'medium', grid: true },
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
-      nextKeyframeNumber: 1,
+      nextSnapshotNumber: 1,
     }
     const glb = await exportSceneToGlb(empty)
     const restored = await importSceneFromGlb(glb)

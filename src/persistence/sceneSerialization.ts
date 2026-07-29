@@ -12,6 +12,7 @@ import {
   type JointRotation,
 } from '../figure/skeleton'
 import { MAX_HEIGHT_M, MIN_HEIGHT_M, REFERENCE_HEIGHT_M } from '../figure/skeleton'
+import { withLegacyIndexFinger } from '../figure/poseCompat'
 import { DEFAULT_FIGURE_COLOR, normalizeFigureColor } from '../store/figuresStore'
 import type { BackgroundTone, CameraBookmark, CameraProjection, EnvironmentSettings, Figure } from '../store/figuresStore'
 
@@ -38,13 +39,21 @@ export interface CameraBookmarkExtras {
   projection: CameraProjection
   fov: number
   zoom: number
+  /** Topo da tela — ausente nos arquivos gravados antes do ângulo holandês (#46). */
+  up?: Vec3Tuple
 }
 
 export interface SceneExtras {
   version: number
   name: string
   environment: EnvironmentSettings
-  keyframeCounter: number
+  /**
+   * Próximo número da sequência de instantâneos. Era `keyframeCounter` até a
+   * fase 10 (DECISOES.md #52); grava-se o nome novo e lê-se os dois, para que
+   * cenas antigas continuem a contagem em vez de reiniciar do 1. Adição de
+   * campo não sobe `SCENE_EXTRAS_VERSION`.
+   */
+  snapshotCounter: number
   nextFigureSeq: number
   nextCameraBookmarkSeq: number
   cameraBookmarks: CameraBookmarkExtras[]
@@ -59,7 +68,7 @@ export interface SceneWorkingState {
   environment: EnvironmentSettings
   cameraBookmarks: CameraBookmark[]
   nextCameraBookmarkSeq: number
-  nextKeyframeNumber: number
+  nextSnapshotNumber: number
 }
 
 const DEFAULT_BACKGROUND: BackgroundTone = 'medium'
@@ -130,7 +139,10 @@ export function figureFromExtras(extras: unknown, fallbackIndex: number): Figure
     height: typeof source.height === 'number' ? clampHeight(source.height) : REFERENCE_HEIGHT_M,
     position: tupleToVec3(source.position, [0, 0, 0]),
     rotation: tupleToRotation(source.rotation),
-    pose,
+    // Poses gravadas antes do dedo indicador separado ganham o indicador
+    // copiado do bloco (DECISOES.md #45) — sem isso um punho salvo reabriria
+    // com o indicador esticado, virando um "apontando".
+    pose: withLegacyIndexFinger(pose),
   }
 }
 
@@ -143,6 +155,7 @@ export function cameraBookmarkToExtras(bookmark: CameraBookmark): CameraBookmark
     projection: bookmark.projection,
     fov: bookmark.fov,
     zoom: bookmark.zoom,
+    ...(bookmark.up ? { up: [...bookmark.up] as Vec3Tuple } : {}),
   }
 }
 
@@ -159,6 +172,8 @@ export function cameraBookmarkFromExtras(extras: unknown, fallbackIndex: number)
       : 'perspective',
     fov: typeof source.fov === 'number' ? source.fov : 50,
     zoom: typeof source.zoom === 'number' ? source.zoom : 1,
+    // Sem `up` no arquivo, a câmera volta em pé — foi assim que ela foi salva.
+    ...(Array.isArray(source.up) ? { up: tupleToVec3(source.up, [0, 1, 0]) } : {}),
   }
 }
 
@@ -177,7 +192,7 @@ export function sceneToExtras(scene: SceneWorkingState): SceneExtras {
     version: SCENE_EXTRAS_VERSION,
     name: scene.name,
     environment: { ...scene.environment },
-    keyframeCounter: scene.nextKeyframeNumber,
+    snapshotCounter: scene.nextSnapshotNumber,
     nextFigureSeq: scene.nextFigureSeq,
     nextCameraBookmarkSeq: scene.nextCameraBookmarkSeq,
     cameraBookmarks: scene.cameraBookmarks.map(cameraBookmarkToExtras),
@@ -212,6 +227,11 @@ export function sceneFromExtras(extras: unknown): SceneWorkingState {
       typeof source.nextCameraBookmarkSeq === 'number'
         ? source.nextCameraBookmarkSeq
         : cameraBookmarks.length + 1,
-    nextKeyframeNumber: typeof source.keyframeCounter === 'number' ? source.keyframeCounter : 1,
+    nextSnapshotNumber:
+      typeof source.snapshotCounter === 'number'
+        ? source.snapshotCounter
+        : typeof source.keyframeCounter === 'number'
+          ? source.keyframeCounter
+          : 1,
   }
 }

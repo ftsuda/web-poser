@@ -2,6 +2,10 @@ import '../../i18n'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import * as THREE from 'three'
+import { applyIKTarget, toggleLimbIK } from '../../figure/ikActions'
+import { buildJointFrames } from '../../figure/jointFrames'
+import { resolvePosePreset } from '../../figure/posePresets'
 import { AXIS_COLORS } from '../../scene/axisColors'
 import { useFiguresStore } from '../../store/figuresStore'
 import { useIKStore } from '../../store/ikStore'
@@ -172,6 +176,78 @@ describe('PropertiesPanel', () => {
       expect(parceiro.pose['shoulder.R'].z).not.toBe(0)
       expect(parceiro.rotation.y).toBe(180)
       expect(parceiro.position[2]).toBeCloseTo(0.36, 5)
+    })
+
+    it('copia a pose para outro boneco pelo combo de destino', async () => {
+      const user = userEvent.setup()
+      const origem = useFiguresStore.getState().addFigure('Herói') as string
+      const destino = useFiguresStore.getState().addFigure('Coadjuvante') as string
+      useFiguresStore.getState().setPosition(destino, [2, 0, -1])
+      useFiguresStore.getState().selectFigure(origem)
+      await renderPropertiesPanel()
+
+      await escolherEAplicar(user, 'Correndo')
+      await user.selectOptions(screen.getByLabelText('Copiar pose para'), destino)
+      await user.click(screen.getByRole('button', { name: 'Copiar' }))
+
+      const figures = useFiguresStore.getState().figures
+      const alvo = figures.find((f) => f.id === destino)!
+      expect(alvo.pose).toEqual(figures.find((f) => f.id === origem)!.pose)
+      // O outro boneco não sai do lugar nem perde o nome.
+      expect(alvo.position[0]).toBe(2)
+      expect(alvo.name).toBe('Coadjuvante')
+    })
+
+    it('sem outro boneco na cena não há para onde copiar', async () => {
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+
+      expect(screen.queryByLabelText('Copiar pose para')).not.toBeInTheDocument()
+    })
+
+    it('a caixa do par só aparece quando há um par para montar', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      const { rerender } = await renderPropertiesPanel()
+
+      const caixa = 'Posar também o outro boneco'
+      // Um boneco só: não há parceiro, e marcar não mudaria nada.
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Aperto de mão')
+      expect(screen.queryByLabelText(caixa)).not.toBeInTheDocument()
+
+      act(() => {
+        useFiguresStore.getState().addFigure('Coadjuvante')
+      })
+      rerender(<PropertiesPanel />)
+      expect(screen.getByLabelText(caixa)).toBeChecked()
+
+      // Pose solo: sem par, sem caixa.
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Correndo')
+      expect(screen.queryByLabelText(caixa)).not.toBeInTheDocument()
+    })
+
+    it('desmarcada, aplicar a pose em dupla deixa o outro boneco intocado', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      const outro = useFiguresStore.getState().addFigure('Coadjuvante') as string
+      useFiguresStore.getState().setPosition(outro, [2, 0, -1])
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Dança (condutor)')
+      await user.click(screen.getByLabelText('Posar também o outro boneco'))
+
+      // O aviso troca junto: o painel passa a dizer que a montagem é manual.
+      expect(screen.getByText(/o outro boneco não será tocado/)).toBeInTheDocument()
+
+      const antes = useFiguresStore.getState().figures.find((f) => f.id === outro)!
+      await user.click(screen.getByRole('button', { name: 'Aplicar pose' }))
+
+      expect(useFiguresStore.getState().figures.find((f) => f.id === outro)).toBe(antes)
+      // E quem estava selecionado recebeu a pose normalmente.
+      expect(useFiguresStore.getState().figures.find((f) => f.id === id)!.pose['shoulder.R'].z).not.toBe(0)
     })
 
     it('lets the user jump to any joint (including ones hidden behind other body parts) via the joint select combobox', async () => {
@@ -462,14 +538,47 @@ describe('PropertiesPanel', () => {
       ).toBeInTheDocument()
     })
 
+    /**
+     * As operações de LADO somem onde não há junta pareada embaixo (cabeça); o
+     * espelho completo do boneco fica, porque não obedece ao escopo — escondê-lo
+     * justamente ali pareceria defeito.
+     */
     it('some onde não há junta pareada embaixo (cabeça), mas fica no tronco (os braços)', async () => {
       await withJointSelected('spine')
-      expect(screen.getByRole('group', { name: 'Simetria' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Copiar direito → esquerdo' })).toBeInTheDocument()
 
       await act(async () => {
         useFiguresStore.getState().selectJoint('head')
       })
-      expect(screen.queryByRole('group', { name: 'Simetria' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Copiar direito → esquerdo' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Inverter lados' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Espelhar o boneco todo' })).toBeInTheDocument()
+    })
+
+    /**
+     * Espelho completo (pedido do usuário): o que faltava ao "Inverter lados" —
+     * as juntas SEM par (tronco, pescoço, cabeça) também têm o ângulo invertido.
+     */
+    it('espelha o boneco todo, incluindo as juntas sem par', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      act(() => {
+        useFiguresStore.getState().setJointRotation(id, 'shoulder.R', { x: -50 })
+        useFiguresStore.getState().setJointRotation(id, 'head', { y: 30 })
+        useFiguresStore.getState().setJointRotation(id, 'spine', { z: 12 })
+      })
+      await renderPropertiesPanel()
+
+      await user.click(screen.getByRole('button', { name: 'Espelhar o boneco todo' }))
+
+      const pose = useFiguresStore.getState().figures.find((f) => f.id === id)!.pose
+      // Os membros trocaram de lado, como no "Inverter lados"...
+      expect(pose['shoulder.L'].x).toBe(-50)
+      expect(pose['shoulder.R'].x).toBe(0)
+      // ...e as juntas sem par foram invertidas, que é o que faltava.
+      expect(pose.head.y).toBe(-30)
+      expect(pose.spine.z).toBe(-12)
     })
   })
 })
@@ -513,5 +622,451 @@ describe('PropertiesPanel — resetar junta e cores de eixo (fase 9, itens 6 e 9
     expect(within(rotationGroup).getByRole('slider', { name: 'Z' })).toHaveStyle({
       accentColor: AXIS_COLORS.z,
     })
+  })
+})
+
+/**
+ * Biblioteca de poses e travamento de juntas no painel (DECISOES.md #42).
+ * O que estes testes travam é o contrato de UI: a pose salva aparece no MESMO
+ * combo das de fábrica, aplicar funciona para as duas, e uma junta travada
+ * mostra na tela por que os controles não respondem.
+ */
+describe('PropertiesPanel — biblioteca de poses e travamento (DECISOES.md #42)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useIKStore.setState(useIKStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  async function comBonecoSelecionado(nome = 'Herói') {
+    const id = useFiguresStore.getState().addFigure(nome) as string
+    useFiguresStore.getState().selectFigure(id)
+    const utils = await renderPropertiesPanel()
+    return { id, ...utils }
+  }
+
+  it('salva a pose atual com nome e a lista no mesmo combo das poses de fábrica', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().applyPosePreset(id, 'running')
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Salvar pose atual' }))
+    await user.type(screen.getByLabelText('Nome da pose'), 'Corrida')
+    await user.click(screen.getByRole('button', { name: 'Salvar pose' }))
+
+    expect(useFiguresStore.getState().poseLibrary.map((pose) => pose.name)).toEqual(['Corrida'])
+    const combo = screen.getByRole('combobox', { name: 'Poses predefinidas' }) as HTMLSelectElement
+    expect(within(combo).getByRole('option', { name: 'Corrida' })).toBeInTheDocument()
+    // A pose recém-salva já fica escolhida: o passo seguinte é aplicá-la.
+    expect(combo.value).toBe(`saved:${useFiguresStore.getState().poseLibrary[0].id}`)
+  })
+
+  it('aplica uma pose da biblioteca no boneco selecionado', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    let poseSalva = ''
+    let corrida: Record<string, unknown> = {}
+    act(() => {
+      useFiguresStore.getState().applyPosePreset(id, 'running')
+      poseSalva = useFiguresStore.getState().saveFigurePose(id, 'Corrida') as string
+      corrida = useFiguresStore.getState().figures[0].pose
+      useFiguresStore.getState().applyPosePreset(id, 'tpose')
+    })
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), `saved:${poseSalva}`)
+    await user.click(screen.getByRole('button', { name: 'Aplicar pose' }))
+
+    expect(useFiguresStore.getState().figures[0].pose).toEqual(corrida)
+  })
+
+  it('remove uma pose da biblioteca, e o botão só existe para poses do usuário', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    let poseSalva = ''
+    act(() => {
+      poseSalva = useFiguresStore.getState().saveFigurePose(id, 'Corrida') as string
+    })
+
+    expect(screen.queryByRole('button', { name: 'Remover da biblioteca' })).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), `saved:${poseSalva}`)
+    await user.click(screen.getByRole('button', { name: 'Remover da biblioteca' }))
+
+    expect(useFiguresStore.getState().poseLibrary).toEqual([])
+    expect(screen.queryByRole('button', { name: 'Remover da biblioteca' })).not.toBeInTheDocument()
+  })
+
+  it('trava a junta selecionada e desabilita os controles dela', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().selectJoint('elbow.L')
+    })
+
+    const travar = screen.getByRole('button', { name: 'Travar junta' })
+    expect(travar).toHaveAttribute('aria-pressed', 'false')
+    await user.click(travar)
+
+    expect(useFiguresStore.getState().jointLocks[id]).toEqual(['elbow.L'])
+    expect(screen.getByRole('button', { name: 'Destravar junta' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Junta travada — nada a altera até você destravá-la.')).toBeInTheDocument()
+
+    const rotacao = screen.getByRole('group', { name: 'Rotação (°)' })
+    expect(within(rotacao).getByRole('slider', { name: 'X' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Resetar esta junta' })).toBeDisabled()
+  })
+
+  it('mostra quantas juntas estão travadas e destrava todas de uma vez', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().toggleJointLock(id, 'elbow.L')
+      useFiguresStore.getState().toggleJointLock(id, 'knee.R')
+    })
+
+    expect(await screen.findByText('2 juntas travadas neste boneco.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Destravar todas' }))
+
+    expect(useFiguresStore.getState().jointLocks[id]).toBeUndefined()
+    expect(screen.queryByText(/juntas travadas neste boneco/)).not.toBeInTheDocument()
+  })
+
+  it('avisa que o IK não vai mover um membro com junta travada', async () => {
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().toggleJointLock(id, 'shoulder.L')
+      useFiguresStore.getState().selectJoint('wrist.L')
+      toggleLimbIK(id, 'wrist.L')
+    })
+
+    expect(await screen.findByText('Uma junta deste membro está travada: o IK não vai movê-lo.')).toBeInTheDocument()
+  })
+})
+
+/**
+ * Slider de mistura entre poses (DECISOES.md #43). O contrato de UI: as duas
+ * pontas são capturadas UMA vez, então voltar o slider a 0% devolve a pose
+ * original; trocar de pose alvo (ou de boneco) recomeça a mistura.
+ */
+describe('PropertiesPanel — mistura entre poses (DECISOES.md #43)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useIKStore.setState(useIKStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  async function comBoneco() {
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    useFiguresStore.getState().selectFigure(id)
+    await renderPropertiesPanel()
+    return id
+  }
+
+  const slider = () => screen.getByRole('slider', { name: 'Mistura com a pose escolhida' })
+  const poseDe = (id: string) => useFiguresStore.getState().figures.find((f) => f.id === id)!.pose
+
+  it('mistura a pose escolhida em meio caminho, e o valor aparece em porcentagem', async () => {
+    const user = userEvent.setup()
+    const id = await comBoneco()
+    const partida = poseDe(id)
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Correndo')
+
+    fireEvent.change(slider(), { target: { value: '50' } })
+
+    const meio = poseDe(id)['hip.L'].x
+    const extremos = [partida['hip.L'].x, resolvePosePreset('running')['hip.L'].x].sort((a, b) => a - b)
+    expect(meio).toBeGreaterThan(extremos[0])
+    expect(meio).toBeLessThan(extremos[1])
+    expect(screen.getByText('50%')).toBeInTheDocument()
+  })
+
+  it('voltar a 0% devolve exatamente a pose de partida', async () => {
+    const user = userEvent.setup()
+    const id = await comBoneco()
+    const partida = poseDe(id)
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Fetal')
+
+    fireEvent.change(slider(), { target: { value: '70' } })
+    fireEvent.change(slider(), { target: { value: '30' } })
+    fireEvent.change(slider(), { target: { value: '0' } })
+
+    expect(poseDe(id)).toEqual(partida)
+  })
+
+  it('em 100% dá o mesmo que o botão "Aplicar pose"', async () => {
+    const user = userEvent.setup()
+    const id = await comBoneco()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Sentado')
+
+    fireEvent.change(slider(), { target: { value: '100' } })
+
+    expect(poseDe(id)).toEqual(resolvePosePreset('sitting'))
+  })
+
+  it('trocar a pose escolhida recomeça a mistura do zero', async () => {
+    const user = userEvent.setup()
+    const id = await comBoneco()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Correndo')
+    fireEvent.change(slider(), { target: { value: '60' } })
+    const meioCorrendo = poseDe(id)
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Fetal')
+
+    // A pose do boneco não muda ao trocar o alvo — só o slider volta a 0.
+    expect(poseDe(id)).toEqual(meioCorrendo)
+    expect(slider()).toHaveValue('0')
+
+    // E a mistura nova parte DAQUI, não da pose original.
+    fireEvent.change(slider(), { target: { value: '0' } })
+    expect(poseDe(id)).toEqual(meioCorrendo)
+  })
+
+  it('funciona também com uma pose da biblioteca como alvo', async () => {
+    const user = userEvent.setup()
+    const id = await comBoneco()
+    let poseSalva = ''
+    act(() => {
+      useFiguresStore.getState().applyPosePreset(id, 'running')
+      poseSalva = useFiguresStore.getState().saveFigurePose(id, 'Corrida') as string
+      useFiguresStore.getState().applyPosePreset(id, 'tpose')
+    })
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), `saved:${poseSalva}`)
+    fireEvent.change(slider(), { target: { value: '100' } })
+
+    expect(poseDe(id)).toEqual(resolvePosePreset('running'))
+  })
+
+  it('depois de aplicar a pose, o slider volta a 0 e a mistura parte da pose nova', async () => {
+    const user = userEvent.setup()
+    const id = await comBoneco()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), 'Correndo')
+    fireEvent.change(slider(), { target: { value: '40' } })
+
+    await user.click(screen.getByRole('button', { name: 'Aplicar pose' }))
+    expect(slider()).toHaveValue('0')
+
+    // Misturar de novo com a MESMA pose não pode mexer em nada: as duas
+    // pontas são iguais agora.
+    fireEvent.change(slider(), { target: { value: '50' } })
+    expect(poseDe(id)).toEqual(resolvePosePreset('running'))
+  })
+})
+
+/**
+ * Giro do cotovelo/joelho no painel (DECISOES.md #44) e a correção do aviso de
+ * alcance com a cadeia travada.
+ */
+describe('PropertiesPanel — giro do cotovelo e avisos do IK', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useIKStore.setState(useIKStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  async function comIKNoBraco() {
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    useFiguresStore.getState().applyPosePreset(id, 'handsOnHips')
+    useFiguresStore.getState().selectFigure(id)
+    useFiguresStore.getState().selectJoint('wrist.L')
+    toggleLimbIK(id, 'wrist.L')
+    await renderPropertiesPanel()
+    return id
+  }
+
+  const giro = () => screen.getByRole('slider', { name: 'Giro do cotovelo (°)' })
+  const cotovelo = (id: string) => {
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    const { joints } = buildJointFrames(figure)
+    const v = new THREE.Vector3()
+    joints.get('elbow.L')!.getWorldPosition(v)
+    return v
+  }
+
+  it('mostra o giro atual lido da pose e move o cotovelo ao arrastar', async () => {
+    const id = await comIKNoBraco()
+    const antes = cotovelo(id)
+    const valorInicial = Number((giro() as HTMLInputElement).value)
+
+    fireEvent.change(giro(), { target: { value: String(valorInicial + 25) } })
+
+    expect(cotovelo(id).distanceTo(antes)).toBeGreaterThan(0.03)
+    // O valor exibido vem da pose, não do que foi digitado: eles coincidem
+    // porque o giro foi aceito.
+    expect(Number((giro() as HTMLInputElement).value)).toBeCloseTo(valorInicial + 25, 0)
+  })
+
+  it('para na borda da faixa em vez de arrancar a mão do alvo', async () => {
+    const id = await comIKNoBraco()
+    const antes = cotovelo(id)
+    const valorInicial = Number((giro() as HTMLInputElement).value)
+
+    fireEvent.change(giro(), { target: { value: String(valorInicial + 180) } })
+
+    // Nada mudou: o ângulo pedido não existe para este alvo.
+    expect(cotovelo(id).distanceTo(antes)).toBeLessThan(0.001)
+    expect(Number((giro() as HTMLInputElement).value)).toBeCloseTo(valorInicial, 0)
+  })
+
+  it('fica desabilitado com uma junta da cadeia travada', async () => {
+    const id = await comIKNoBraco()
+
+    act(() => {
+      useFiguresStore.getState().toggleJointLock(id, 'shoulder.L')
+    })
+
+    expect(giro()).toBeDisabled()
+  })
+
+  /**
+   * "Alvo fora de alcance — aproximação mais próxima aplicada" seria mentira
+   * com a cadeia travada: nada foi aplicado. Nesse caso quem explica é o aviso
+   * da trava.
+   */
+  it('não diz que aplicou uma aproximação quando a cadeia está travada', async () => {
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    useFiguresStore.getState().selectFigure(id)
+    useFiguresStore.getState().selectJoint('wrist.L')
+    toggleLimbIK(id, 'wrist.L')
+    await renderPropertiesPanel()
+
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    const { joints } = buildJointFrames(figure)
+    const ombro = new THREE.Vector3()
+    joints.get('shoulder.L')!.getWorldPosition(ombro)
+
+    // Sem trava, um alvo longe demais produz o aviso de alcance.
+    act(() => {
+      applyIKTarget(id, 'wrist.L', [ombro.x + 100, ombro.y, ombro.z])
+    })
+    expect(screen.getByText(/Alvo fora de alcance/)).toBeInTheDocument()
+
+    // Com a cadeia travada, some — e entra o aviso que diz a verdade.
+    act(() => {
+      useFiguresStore.getState().toggleJointLock(id, 'shoulder.L')
+      applyIKTarget(id, 'wrist.L', [ombro.x + 100, ombro.y, ombro.z])
+    })
+    expect(screen.queryByText(/Alvo fora de alcance/)).not.toBeInTheDocument()
+    expect(screen.getByText('Uma junta deste membro está travada: o IK não vai movê-lo.')).toBeInTheDocument()
+  })
+})
+
+describe('PropertiesPanel — apoiar no chão e espelho ao vivo (DECISOES.md #58)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useIKStore.setState(useIKStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  const bonecoSelecionado = () => {
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    useFiguresStore.getState().selectFigure(id)
+    return id
+  }
+
+  it('o botão de apoiar no chão devolve o boneco flutuando ao solo', async () => {
+    const user = userEvent.setup()
+    const id = bonecoSelecionado()
+    useFiguresStore.getState().setPosition(id, [1, 0.5, 2])
+    await renderPropertiesPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Apoiar no chão' }))
+
+    const figura = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    expect(figura.position[1]).toBeCloseTo(0, 9)
+    // Só a altura: o lugar no chão é encenação de quem monta a cena.
+    expect([figura.position[0], figura.position[2]]).toEqual([1, 2])
+  })
+
+  it('a caixa de espelhar edições liga o modo e a dica muda junto', async () => {
+    const user = userEvent.setup()
+    bonecoSelecionado()
+    await renderPropertiesPanel()
+
+    expect(screen.getByText(/Desligado: cada lado é ajustado por conta própria/)).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Espelhar edições ao vivo'))
+
+    expect(useFiguresStore.getState().liveMirrorEnabled).toBe(true)
+    expect(screen.getByText(/Ligado: ajustar uma junta de um lado/)).toBeInTheDocument()
+  })
+
+  it('com o modo ligado, mexer no slider de uma junta escreve o espelho na outra', async () => {
+    const user = userEvent.setup()
+    const id = bonecoSelecionado()
+    useFiguresStore.getState().selectJoint('shoulder.L')
+    await renderPropertiesPanel()
+
+    await user.click(screen.getByLabelText('Espelhar edições ao vivo'))
+    const grupo = screen.getByRole('group', { name: 'Rotação (°)' })
+    fireEvent.change(within(grupo).getByRole('slider', { name: 'Z' }), { target: { value: '35' } })
+
+    const pose = useFiguresStore.getState().figures.find((f) => f.id === id)!.pose
+    expect(pose['shoulder.L'].z).toBe(35)
+    // Reflexão sagital, não cópia: o mesmo valor numérico faria o movimento
+    // anatômico oposto no outro lado (DECISOES.md #14).
+    expect(pose['shoulder.R'].z).toBe(-35)
+  })
+})
+
+describe('PropertiesPanel — zerar por grupo e copiar um membro (DECISOES.md #59)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useIKStore.setState(useIKStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  const bonecoSelecionado = (nome = 'Herói') => {
+    const id = useFiguresStore.getState().addFigure(nome) as string
+    useFiguresStore.getState().selectFigure(id)
+    return id
+  }
+
+  it('zera o grupo escolhido sem tocar nos outros', async () => {
+    const user = userEvent.setup()
+    const id = bonecoSelecionado()
+    useFiguresStore.getState().setJointRotation(id, 'shoulder.R', { x: -55 })
+    useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: 40 })
+    await renderPropertiesPanel()
+
+    const grupo = screen.getByRole('group', { name: 'Zerar por grupo' })
+    await user.click(within(grupo).getByRole('button', { name: 'Braço direito' }))
+
+    const pose = useFiguresStore.getState().figures.find((f) => f.id === id)!.pose
+    expect(pose['shoulder.R']).toEqual(resolvePosePreset('standing')['shoulder.R'])
+    expect(pose['knee.L'].x).toBe(40)
+  })
+
+  it('grupo inteiro travado aparece desabilitado, em vez de virar botão inerte', async () => {
+    const id = bonecoSelecionado()
+    for (const jointName of ['neck', 'head']) useFiguresStore.getState().toggleJointLock(id, jointName)
+    await renderPropertiesPanel()
+
+    const grupo = screen.getByRole('group', { name: 'Zerar por grupo' })
+    expect(within(grupo).getByRole('button', { name: 'Cabeça' })).toBeDisabled()
+    expect(within(grupo).getByRole('button', { name: 'Tronco' })).toBeEnabled()
+  })
+
+  it('copiar com escopo de grupo leva só o membro e não mexe no lugar do destino', async () => {
+    const user = userEvent.setup()
+    const origem = bonecoSelecionado('Origem')
+    const destino = useFiguresStore.getState().addFigure('Destino') as string
+    useFiguresStore.getState().setPosition(destino, [2, 0, 0])
+    useFiguresStore.getState().setJointRotation(origem, 'shoulder.L', { x: -70 })
+    useFiguresStore.getState().setJointRotation(origem, 'knee.L', { x: 50 })
+    useFiguresStore.getState().selectFigure(origem)
+    await renderPropertiesPanel()
+
+    await user.selectOptions(screen.getByLabelText('O que copiar'), 'armLeft')
+    await user.click(screen.getByRole('button', { name: /^Copiar$/ }))
+
+    const alvo = useFiguresStore.getState().figures.find((f) => f.id === destino)!
+    expect(alvo.pose['shoulder.L'].x).toBe(-70)
+    // Só o braço: a perna e o lugar no chão ficam como estavam.
+    expect(alvo.pose['knee.L'].x).toBe(0)
+    expect(alvo.position).toEqual([2, 0, 0])
   })
 })

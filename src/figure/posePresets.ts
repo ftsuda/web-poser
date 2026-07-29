@@ -1,5 +1,5 @@
 import { resolveHandPreset, type HandPresetKey } from './handPresets'
-import { SIDES, negateAngle } from './poseMirror'
+import { SIDES, negateAngle, type Side } from './poseMirror'
 import {
   JOINT_NAMES,
   ROOT_JOINT_NAME,
@@ -100,6 +100,10 @@ export type PosePresetKey =
   | 'handOnChin'
   | 'headDown'
   | 'startled'
+  | 'kpopFingerHeart'
+  | 'kpopBoxArms'
+  | 'kpopPointDance'
+  | 'kpopShoulderWave'
   | 'jumping'
   | 'throwing'
   | 'kickingBall'
@@ -118,6 +122,8 @@ export type PosePresetKey =
   | 'beingPulledUp'
   | 'pushGiving'
   | 'pushTaking'
+  | 'kneeStrikeGiving'
+  | 'kneeStrikeTaking'
   | 'clinch'
   | 'meditating'
   | 'businessman'
@@ -130,6 +136,10 @@ export type PosePresetKey =
   | 'rearChokeSeated'
   | 'groundChokeGiving'
   | 'groundChokeTaking'
+  | 'armLockPushGiving'
+  | 'armLockPushTaking'
+  | 'armLockPullGiving'
+  | 'armLockPullTaking'
 
 export type PosePresetGroupKey =
   | 'reference'
@@ -138,6 +148,7 @@ export type PosePresetGroupKey =
   | 'pointing'
   | 'action'
   | 'expressive'
+  | 'kpop'
   | 'pairs'
   | 'fight'
 
@@ -217,6 +228,10 @@ export const POSE_PRESET_GROUPS: readonly PosePresetGroup[] = [
     ],
   },
   {
+    key: 'kpop',
+    poses: ['kpopFingerHeart', 'kpopBoxArms', 'kpopPointDance', 'kpopShoulderWave'],
+  },
+  {
     key: 'pairs',
     poses: [
       'handshake',
@@ -247,6 +262,12 @@ export const POSE_PRESET_GROUPS: readonly PosePresetGroup[] = [
       'groundChokeTaking',
       'pushGiving',
       'pushTaking',
+      'kneeStrikeGiving',
+      'kneeStrikeTaking',
+      'armLockPushGiving',
+      'armLockPushTaking',
+      'armLockPullGiving',
+      'armLockPullTaking',
       'clinch',
     ],
   },
@@ -286,12 +307,23 @@ interface PosePresetDefinition {
   rotation?: Partial<JointRotation>
   /** Altura do quadril acima do chão, em metros na altura de referência — ausente = em pé. */
   hipHeightM?: number
-  /** Pose aplicada às DUAS mãos; ausente = mãos abertas (neutras). */
-  hands?: HandPresetKey
+  /**
+   * Pose de mão do preset; ausente = mãos abertas (neutras). Uma chave só vale
+   * para as DUAS mãos; `{ L, R }` dá uma pose a cada lado — é o que permite
+   * apontar com uma mão e deixar a outra descansando (DECISOES.md #45).
+   */
+  hands?: HandPresetKey | Partial<Record<Side, HandPresetKey>>
+}
+
+/** Pose de mão de um preset para um lado (ou `null` se ele não declara nada para esse lado). */
+function presetHandFor(preset: PosePresetDefinition, side: Side): HandPresetKey | null {
+  if (!preset.hands) return null
+  return typeof preset.hands === 'string' ? preset.hands : (preset.hands[side] ?? null)
 }
 
 /** Altura da junta do quadril na pose em pé — o "neutro" de `hipHeightM`. */
-const STANDING_HIP_HEIGHT_M = getJoint(ROOT_JOINT_NAME).position[1]
+/** Altura do quadril na pose em pé — o `hipHeightM` implícito de quem não declara colocação. */
+export const STANDING_HIP_HEIGHT_M = getJoint(ROOT_JOINT_NAME).position[1]
 
 /**
  * Expande uma especificação declarada UMA vez (na convenção do lado esquerdo)
@@ -454,7 +486,16 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
       'shoulder.L': { x: -80, y: -10, z: 45 },
       'elbow.L': { x: -140 },
       'wrist.L': { x: -15 },
-      'shoulder.R': { x: -70, y: 70, z: -70 },
+      // Braço de trás re-resolvido em 2026-07-28 (pedido do usuário: cotovelo
+      // direito mais baixo). A primeira solução punha o punho no queixo mas o
+      // COTOVELO acima da linha do ombro (1,499 m) e 33 cm aberto — braço de
+      // "asa", não guarda. Re-otimizado com as mesmas penalidades explícitas
+      // do clinche (#37): cotovelo pelo menos 18 cm ABAIXO do punho e a no
+      // máximo 26 cm da linha média. Resultado medido: cotovelo em 1,237 m
+      // (26 cm mais baixo, junto às costelas, com `shoulder.R.z` na adução
+      // máxima de +20) e o punho a 2 MM de onde estava — a guarda não muda,
+      // só o cotovelo desce.
+      'shoulder.R': { x: -94, y: 37, z: 20 },
       'elbow.R': { x: -135 },
       'wrist.R': { x: -15 },
     },
@@ -634,6 +675,61 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
     hands: 'fist',
   },
 
+  // Joelhada na barriga (pedido do usuário, com foto de referência de um jogo
+  // de luta): o mesmo grip de duas mãos do clinche (`clinch`, reaproveitado —
+  // não é um alvo novo) segurando a cabeça do outro, com o joelho direito
+  // disparando para cima e para a frente. Perna de apoio (esquerda) quase reta
+  // e plantada; a que golpeia fica NO AR (`ball.R` a 0,82 m do chão).
+  //
+  // Alvo resolvido: o JOELHO (não o pé — a joelhada golpeia com a própria
+  // junta) na altura da barriga de `kneeStrikeTaking` — varredura com
+  // penalidades de perto da linha média (≤8 cm) e bem projetado à frente
+  // (≥15 cm). Fechou em 0,0 cm de erro de altura, 6,5 cm da linha média e
+  // 36,5 cm à frente do quadril.
+  kneeStrikeGiving: {
+    pose: {
+      'hip.L': { x: 5, z: 6 },
+      'knee.L': { x: 8 },
+      'ankle.L': { x: 0 },
+      'hip.R': { x: -110, y: 4, z: 22 },
+      'knee.R': { x: 57 },
+      spine: { x: -8 },
+      chest: { x: -4 },
+      'shoulder.R': { x: -91, y: 6, z: 20 },
+      'elbow.R': { x: -89, y: -130 },
+      'wrist.R': { x: -19 },
+      'shoulder.L': { x: -82, y: -9, z: -19 },
+      'elbow.L': { x: -98, y: 131 },
+      'wrist.L': { x: -33 },
+    },
+    hipHeightM: 0.9083,
+    hands: 'fist',
+  },
+
+  // Levando a joelhada na barriga: corpo dobrado para a frente com a cabeça
+  // puxada para baixo (o grip do atacante na nuca) e as mãos na barriga —
+  // mesma reação de `kickTaking`, mais dobrada (a joelhada é golpe de
+  // clinche, bem mais perto). A altura do quadril foi resolvida para a junta
+  // `spine` cair EXATAMENTE na altura do joelho de `kneeStrikeGiving`: 1,030 m
+  // nos dois.
+  kneeStrikeTaking: {
+    pose: {
+      ...symmetric({
+        hip: { x: 6, z: 6 },
+        knee: { x: 35 },
+        ankle: { x: 6 },
+        shoulder: { x: -10, z: -10 },
+        elbow: { x: -125 },
+      }),
+      spine: { x: 55 },
+      chest: { x: 25 },
+      neck: { x: 45 },
+      head: { x: 15 },
+    },
+    hipHeightM: 0.8598,
+    hands: 'fist',
+  },
+
   // Gravata por trás: o atacante fica ATRÁS da vítima (os dois encarando o
   // mesmo lado) e passa os braços em volta do pescoço dela — antebraço direito
   // cruzando a garganta e mão esquerda fechando a chave sobre o próprio punho.
@@ -669,12 +765,17 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
   apose: { pose: symmetric({ shoulder: { z: 45 } }) },
 
   // ---------------------------------------------------------------------
-  // Apontar com a MÃO ABERTA (DECISOES.md #36). Os quatro dedos do modelo são
-  // um bloco só (`fingersBase/Mid/Tip`), então apontar com o indicador é
-  // impossível — a mão reta ("mão-faca") faz o papel, e em silhueta lê melhor
-  // que um indicador, que sempre some. Três coisas fazem o gesto ler como
-  // apontar, e não como alcançar: punho zerado (a mão continua a linha do
-  // antebraço), cotovelo quase estendido, e a cabeça acompanhando o braço.
+  // Apontar (DECISOES.md #36, revisto no #45). Estas poses nasceram com a MÃO
+  // ABERTA ("mão-faca") porque os quatro dedos eram um bloco só e apontar com
+  // o indicador era impossível. Com o indicador separado (#45) elas apontam
+  // com o dedo, e só a mão do gesto (`hands: { R: 'point' }`) — a outra
+  // continua aberta, descansando. Em silhueta o dedo é fino; o que faz o
+  // gesto ler como apontar continua sendo o braço: punho zerado (a mão
+  // continua a linha do antebraço), cotovelo quase estendido, e a cabeça
+  // acompanhando.
+  //
+  // `presenting` e `pointSelf` seguem de mão aberta de propósito: são gestos
+  // de PALMA (oferecer, "quem, eu?"), não de dedo.
   //
   // `elbow.R.y` é o que decide o SENTIDO do gesto — medido, não deduzido:
   // com o braço à frente, a torção neutra (-90) deixa a palma na vertical
@@ -694,6 +795,7 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
       'shoulder.R': { x: -90, y: 0, z: 14 },
       'elbow.R': { x: -4 },
     },
+    hands: { R: 'point' },
   },
 
   // Braço acima da linha do ombro, tronco levemente arqueado e olhar junto.
@@ -710,6 +812,7 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
       'elbow.R': { x: 0, y: -10 },
     },
     hipHeightM: 0.897,
+    hands: { R: 'point' },
   },
 
   // Indicando um ponto no chão à frente: palma para baixo (resolvida junto com
@@ -730,6 +833,7 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
       'elbow.R': { x: -32, y: -3 },
     },
     hipHeightM: 0.89,
+    hands: { R: 'point' },
   },
 
   // "Olha lá!": o corpo inteiro no gesto — tronco girado, braço estendido para
@@ -753,6 +857,7 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
       'elbow.R': { x: -14 },
     },
     hipHeightM: 0.896,
+    hands: { R: 'point' },
   },
 
   // Apontando para OUTRO boneco: mão na altura do rosto dele e palma para
@@ -775,6 +880,7 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
       'elbow.R': { x: 0, y: -80 },
     },
     hipHeightM: 0.896,
+    hands: { R: 'point' },
   },
 
   // Apresentando ("por aqui"): mesmo braço estendido, porém com a PALMA PARA
@@ -811,11 +917,10 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
     },
   },
 
-  // "Ele está ali atrás": a ÚNICA pose de apontar com dedo de verdade que o
-  // modelo permite, porque o polegar é a única junta independente da mão. O
+  // "Ele está ali atrás": apontar por cima do ombro sem virar o corpo. O
   // polegar aponta exatamente para trás (medido: direção (0,0,-1) com erro de
-  // 3°). A mão esquerda também sai em joinha — a pose de mão de um preset vale
-  // para os dois lados.
+  // 3°). A mão esquerda também sai em joinha — aqui a pose de mão é declarada
+  // com uma chave só, que vale para os dois lados.
   thumbBack: {
     pose: {
       'hip.L': { z: 3 },
@@ -1202,6 +1307,89 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
       head: { x: -12 },
     },
     hipHeightM: 0.885,
+  },
+
+  // ---------------------------------------------------------------------
+  // Dança pop (pedido do usuário: 3 poses e trechos de K-pop, revisto para 4
+  // durante a conversa). As pernas em pé não mudam nada de chão; só o braço
+  // (ou a clavícula) resolve cada gesto.
+  // ---------------------------------------------------------------------
+
+  // "Coração com os dedos": mão em 'pinch' (polegar e indicador encostados,
+  // já existente no catálogo de mãos) erguida perto do rosto. Alvo resolvido:
+  // punho a (0,12; 1,57; 0,13) — ao lado da bochecha, um pouco à frente —
+  // com as MESMAS penalidades do #37/#61 (cotovelo abaixo do punho, perto da
+  // linha média). Resultado: punho a 5,2 cm do alvo, cotovelo 5,4 cm abaixo
+  // dele e a 16 cm da linha média — perto do corpo, não "de asa".
+  kpopFingerHeart: {
+    pose: {
+      'shoulder.R': { x: -150, y: 68, z: 20 },
+      'elbow.R': { x: -87 },
+    },
+    hands: { R: 'pinch' },
+  },
+
+  // Braços de robô/caixa: ombro na horizontal para o lado e cotovelo em
+  // ângulo reto, antebraço na VERTICAL (o "cactus arms" da coreografia). Não
+  // é um alvo de contato — é geometria resolvida contra dois pontos: o
+  // cotovelo exatamente na altura do ombro (deslocado 0,27 m para o lado,
+  // o comprimento do úmero) e o punho exatamente 0,245 m ACIMA do cotovelo
+  // (comprimento do antebraço). Busca numérica fechou nos dois com custo
+  // ZERO: `shoulder.R {x:-90, y:0, z:-90}` (abdução, não flexão — o eixo Z
+  // do lado R abduz com sinal NEGATIVO, ver DECISOES.md #14), `elbow.R
+  // {x:-90}`.
+  kpopBoxArms: {
+    pose: symmetric({ shoulder: { x: -90, z: 90 }, elbow: { x: -90 } }),
+    hands: 'fist',
+  },
+
+  // "Apontar" com o quadril deslocado: reaproveita a base de apoio já
+  // resolvida da pose "Modelo" (peso na perna esquerda, direita cruzada à
+  // frente na ponta do pé) e o braço já resolvido de "Apontar para cima"
+  // (`pointUp`), olhando na direção do gesto. Medido: punho a
+  // (-0,106; 1,839; 0,127) — bem acima da cabeça — e a junta mais baixa a
+  // 0,0127 m do chão (contra 0,0100 da pose neutra, 2,7 mm de folga extra —
+  // a mesma "Modelo" já assenta assim, sem `hipHeightM` declarado).
+  kpopPointDance: {
+    pose: {
+      'hip.L': { x: -3, z: 4 },
+      'knee.L': { x: 3 },
+      'hip.R': { x: -14, z: -20 },
+      'knee.R': { x: 24 },
+      'ankle.R': { x: 30 },
+      'ball.R': { x: -20 },
+      spine: { x: -5, z: -10 },
+      chest: { z: 6 },
+      neck: { x: -15, y: 15 },
+      head: { x: -8, y: 10 },
+      'clavicle.L': { z: 8 },
+      'shoulder.L': { x: 50, y: -60, z: 40 },
+      'elbow.L': { x: -90 },
+      'wrist.L': { x: 10 },
+      'shoulder.R': { x: -143, y: -85, z: 15 },
+      'elbow.R': { x: 0, y: -10 },
+    },
+    hands: { L: 'relaxed', R: 'point' },
+  },
+
+  // Onda de ombro (isolamento): o levante vem da CLAVÍCULA direita, não do
+  // braço — `clavicle.R.z` só sobe (nunca desce, ver o comentário de
+  // `headDown`), então o máximo do catálogo (20°) mais uma inclinação de
+  // tronco na mesma direção (`chest`/`spine.z` negativos) e a cabeça
+  // compensando fecham a leitura de "ombro isolado". Medido: ombro direito
+  // fica 12 cm mais alto que o esquerdo (1,396 contra 1,276 m), pernas
+  // intocadas — chão idêntico ao neutro (0,0100 m).
+  kpopShoulderWave: {
+    pose: {
+      'clavicle.R': { z: 20 },
+      chest: { z: -10 },
+      spine: { z: -8 },
+      neck: { z: 8, y: 15 },
+      head: { z: -6 },
+      'shoulder.L': { x: 10, z: 8 },
+      'shoulder.R': { x: -6, z: -14 },
+    },
+    hands: 'relaxed',
   },
 
   // ---------------------------------------------------------------------
@@ -2013,6 +2201,140 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
     hipHeightM: 0.31,
     hands: 'relaxed',
   },
+
+  // =====================================================================
+  // Chave de braço sentada (pedido do usuário, com descrição verbal do golpe,
+  // não de referência visual): A agachado atrás de B, que está sentado no
+  // chão com a perna direita esticada (o alvo do travamento). A prende o
+  // braço DIREITO de B numa chave (o próprio braço direito de A por cima,
+  // segurando o punho de B com a mão esquerda) e crava o joelho direito nas
+  // costas dele. Duas poses (instante do EMPURRÃO e do PUXÃO final) porque o
+  // golpe descrito é um vai-e-vem: empurra com o peso do corpo (B curva para
+  // a frente) e depois puxa o braço rapidamente para trás (a coluna de B gira
+  // para a esquerda e arqueia para trás, no limite da articulação).
+  //
+  // PERNAS de A (iguais nas duas poses — é o mesmo agarre parado, só o tronco
+  // e o braço da chave se movem): esquerda dobrada por baixo (mesma base de
+  // `rearChokeKneeling`), direita ativa. `hip.R`/`knee.R` foram varridos para
+  // o joelho chegar à altura da coluna de B (0,1–4,2 cm de erro vertical
+  // entre os dois instantes — a mesma perna parada não acerta os dois ao
+  // milímetro, e é esperado: é o `hipHeightM` de B que muda entre os
+  // instantes, não o joelho de A; a distância 3D total fica em ~9-10 cm por
+  // causa do offset lateral fixo do quadril, mesma leitura do "chute" e da
+  // "joelhada" acima). **Limitação assumida**: o encaixe perna-contra-perna do
+  // travamento não foi resolvido numericamente (ficaria a mais de 0,5 m um
+  // do outro com o joelho ativo nesta posição) — a perna que trava é a
+  // mesma perna direita que sobe para golpear as costas, pressionando a base
+  // da coxa presa de B, não o tornozelo. `hipHeightM` de A: 0,5212 (as duas
+  // poses).
+  //
+  // BRAÇO que prende (`shoulder.R`/`elbow.R` de A, iguais nas duas poses):
+  // posicionado por razão anatômica (gancho por cima do braço de B), não por
+  // busca numérica — medido depois: fica a 11 cm do braço de B no empurrão,
+  // a 38 cm no puxão (o braço de B sobe bastante durante o puxão e o gancho
+  // de A fica frouxo; quem traciona de verdade é o punho, não este gancho).
+  //
+  // BRAÇO que segura o punho (`shoulder.L`/`elbow.L` de A): resolvido por
+  // varredura numérica contra o punho DIREITO de B (com a chave já montada),
+  // erro de 0,7 cm no empurrão e 8,9 cm no puxão.
+  armLockPushGiving: {
+    pose: {
+      'hip.L': { x: -26 },
+      'knee.L': { x: 116 },
+      'ankle.L': { x: 45 },
+      'hip.R': { x: -35 },
+      'knee.R': { x: 116 },
+      'ankle.R': { x: 20 },
+      spine: { x: 45 },
+      chest: { x: 25 },
+      neck: { x: 15 },
+      'shoulder.R': { x: -25, y: 40, z: -15 },
+      'elbow.R': { x: -100 },
+      'shoulder.L': { x: -61, y: -21, z: -20 },
+      'elbow.L': { x: -35 },
+    },
+    hipHeightM: 0.5212,
+    hands: 'fist',
+  },
+
+  armLockPullGiving: {
+    pose: {
+      'hip.L': { x: -26 },
+      'knee.L': { x: 116 },
+      'ankle.L': { x: 45 },
+      'hip.R': { x: -35 },
+      'knee.R': { x: 116 },
+      'ankle.R': { x: 20 },
+      spine: { x: 45 },
+      chest: { x: 25 },
+      neck: { x: 5 },
+      head: { x: -10 },
+      'shoulder.R': { x: -25, y: 40, z: -15 },
+      'elbow.R': { x: -100 },
+      'shoulder.L': { x: -54, y: -27, z: -20 },
+      'elbow.L': { x: -25 },
+    },
+    hipHeightM: 0.5212,
+    hands: 'fist',
+  },
+
+  // Quem RECEBE: sentado no chão com as duas pernas esticadas à frente (a
+  // esquerda livre, a direita é o alvo do travamento de A) e a mão livre
+  // (esquerda) na própria coxa — deliberadamente perto do corpo, não escorada
+  // atrás no chão como em `sittingLegsForward`: com A a só 0,238 m atrás,
+  // apoiar a mão para trás invadiria o espaço dele.
+  //
+  // Braço DIREITO na chave (`shoulder.R`/`elbow.R`, o alvo da varredura do
+  // parceiro): no empurrão o punho fica encostado nas costas na altura da
+  // coluna (3,7 cm de profundidade, 3,9 cm da linha média); no puxão sobe e
+  // aprofunda (16,8 cm de profundidade, 18,5 cm da linha média, `shoulder.R.y`
+  // no limite de 90° — literalmente "no limite da articulação").
+  //
+  // O tronco é o que diferencia as duas: empurrão curva para a frente
+  // (`spine.x` positivo); puxão arqueia para trás E gira para a esquerda
+  // (`spine.y` positivo — confirmado numericamente: gira o ombro DIREITO para
+  // a frente, que é virar para a esquerda do próprio corpo).
+  armLockPushTaking: {
+    pose: {
+      'hip.L': { x: -90, z: 7 },
+      'knee.L': { x: 0 },
+      'ankle.L': { x: 20 },
+      'hip.R': { x: -90, z: -7 },
+      'knee.R': { x: 0 },
+      'ankle.R': { x: 20 },
+      'shoulder.L': { x: 20, z: 8 },
+      'elbow.L': { x: -100 },
+      spine: { x: 30 },
+      chest: { x: 15 },
+      neck: { x: 20 },
+      head: { x: 10 },
+      'shoulder.R': { x: 70, y: 60 },
+      'elbow.R': { x: -120 },
+    },
+    hipHeightM: 0.0536,
+    hands: 'relaxed',
+  },
+
+  armLockPullTaking: {
+    pose: {
+      'hip.L': { x: -90, z: 7 },
+      'knee.L': { x: 0 },
+      'ankle.L': { x: 20 },
+      'hip.R': { x: -90, z: -7 },
+      'knee.R': { x: 0 },
+      'ankle.R': { x: 20 },
+      'shoulder.L': { x: 20, z: 8 },
+      'elbow.L': { x: -100 },
+      spine: { x: -28, y: 20 },
+      chest: { x: -14, y: 10 },
+      neck: { x: -15, y: -10 },
+      head: { x: -5 },
+      'shoulder.R': { x: 80, y: 90, z: 10 },
+      'elbow.R': { x: -140 },
+    },
+    hipHeightM: 0.01,
+    hands: 'relaxed',
+  },
 }
 
 const POSABLE_JOINT_NAMES: readonly string[] = JOINT_NAMES.filter((name) => name !== ROOT_JOINT_NAME)
@@ -2031,7 +2353,7 @@ const POSABLE_JOINT_NAMES: readonly string[] = JOINT_NAMES.filter((name) => name
  * centrada nesse neutro ([0,180] no L, [-180,0] no R), sobra ±90° de
  * pronação/supinação para cada lado.
  */
-const NEUTRAL_ELBOW_TWIST: Partial<Record<string, number>> = { 'elbow.L': 90, 'elbow.R': -90 }
+export const NEUTRAL_ELBOW_TWIST: Partial<Record<string, number>> = { 'elbow.L': 90, 'elbow.R': -90 }
 
 /** Monta a pose completa (todas as juntas, exceto o root) de um preset, grampeada pelos limites de cada junta. */
 export function resolvePosePreset(key: PosePresetKey): Record<string, JointRotation> {
@@ -2051,12 +2373,12 @@ export function resolvePosePreset(key: PosePresetKey): Record<string, JointRotat
   // do botão da mão — uma tabela de números só. Um preset de corpo pode
   // declarar uma junta da mão à mão; nesse caso ela vence (nenhum declara
   // hoje, mas a regra fica explícita em vez de depender da ordem).
-  if (preset.hands) {
-    for (const side of SIDES) {
-      for (const [jointName, rotation] of Object.entries(resolveHandPreset(preset.hands, side))) {
-        if (preset.pose[jointName]) continue
-        pose[jointName] = rotation
-      }
+  for (const side of SIDES) {
+    const hand = presetHandFor(preset, side)
+    if (!hand) continue
+    for (const [jointName, rotation] of Object.entries(resolveHandPreset(hand, side))) {
+      if (preset.pose[jointName]) continue
+      pose[jointName] = rotation
     }
   }
 
@@ -2081,7 +2403,7 @@ export function resolvePosePresetPlacement(key: PosePresetKey): PosePresetPlacem
   }
 }
 
-/** Pose de mão que um preset de corpo aplica aos dois lados (ou `null`) — usado pelos testes de coerência. */
-export function getPosePresetHands(key: PosePresetKey): HandPresetKey | null {
-  return POSE_PRESETS[key].hands ?? null
+/** Pose de mão que um preset de corpo aplica ao lado indicado (ou `null`) — usado pelos testes de coerência. */
+export function getPosePresetHands(key: PosePresetKey, side: Side): HandPresetKey | null {
+  return presetHandFor(POSE_PRESETS[key], side)
 }

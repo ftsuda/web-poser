@@ -4,7 +4,7 @@ import { create } from 'zustand'
  * Estado de ferramenta do modo IK — quais membros (braço/perna, por
  * boneco) estão em IK em vez de FK, e a posição do alvo arrastável de cada
  * um. Fora do histórico de undo (é modo de ferramenta, não conteúdo — mesmo
- * raciocínio de `cameraStore.ts`/`keyframeCaptureStore.ts`); a pose
+ * raciocínio de `cameraStore.ts`/`snapshotCaptureStore.ts`); a pose
  * resultante do solver (`ikSolver.ts`) é que entra no undo, como qualquer
  * outra edição de `figure.pose` (ver PLANO.md > "Interação de pose", item 5).
  */

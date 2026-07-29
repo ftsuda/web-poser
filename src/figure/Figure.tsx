@@ -27,6 +27,16 @@ import {
  * camada de dados). Com a remoção daquele, o "2" perdeu o sentido e o nome
  * voltou ao original — ver DECISOES.md #32.
  */
+/**
+ * Boneco desenhado como FANTASMA (papel-cebola, item 31): translúcido, de uma
+ * cor só e sem sombra. Não é um boneco da cena — é uma referência visual do
+ * keyframe vizinho, então também não recebe clique nem gizmo.
+ */
+export interface GhostStyle {
+  color: string
+  opacity: number
+}
+
 export interface FigureProps {
   figure: FigureData
   /** Nome da junta selecionada (ganha destaque emissivo). */
@@ -35,6 +45,8 @@ export interface FigureProps {
   onSelectJoint?: (jointName: string) => void
   /** Registra/desregistra (null) o `Group` ao vivo de cada junta — usado para anexar o gizmo. */
   onJointRef?: (jointName: string, object: THREE.Group | null) => void
+  /** Quando presente, o boneco vira fantasma: sem sombra, sem clique, sem gizmo. */
+  ghost?: GhostStyle | null
 }
 
 /**
@@ -145,11 +157,12 @@ interface PartMeshProps {
   name?: string
   color: string
   selected: boolean
+  ghost?: GhostStyle | null
   onClick?: (event: ThreeEvent<MouseEvent>) => void
 }
 
 /** Uma peça visual de junta (`SegmentPart` do `skeleton.ts`), no espaço local da junta. */
-function PartMesh({ part, name, color, selected, onClick }: PartMeshProps) {
+function PartMesh({ part, name, color, selected, ghost, onClick }: PartMeshProps) {
   const isEye = part.tint === 'eye'
   const isMarker = part.tint === 'marker'
   const fixedColor = isEye ? EYE_COLOR : isMarker ? MARKER_COLOR : null
@@ -179,10 +192,19 @@ function PartMesh({ part, name, color, selected, onClick }: PartMeshProps) {
       )}
       {part.kind === 'ellipsoid' && <sphereGeometry args={[1, PART_LATHE_SEGMENTS, 12]} />}
       {part.kind === 'box' && <boxGeometry args={[part.size[0], part.size[1], part.size[2]]} />}
+      {/* No fantasma a cor do papel vence até os olhos e o pino de latão: ele é
+          uma silhueta de referência, e manchas pretas dentro de um corpo
+          translúcido só chamariam atenção para o lugar errado.
+
+          `depthWrite` desligado é o que permite dois fantasmas se atravessarem
+          sem um recortar o outro em pedaços — o mesmo truque da sombra. */}
       <meshStandardMaterial
-        color={fixedColor ?? color}
-        emissive={selected && !isEye ? SELECTED_EMISSIVE : '#000000'}
-        emissiveIntensity={selected && !isEye ? SELECTED_EMISSIVE_INTENSITY : 0}
+        color={ghost ? ghost.color : (fixedColor ?? color)}
+        emissive={selected && !isEye && !ghost ? SELECTED_EMISSIVE : '#000000'}
+        emissiveIntensity={selected && !isEye && !ghost ? SELECTED_EMISSIVE_INTENSITY : 0}
+        transparent={Boolean(ghost)}
+        opacity={ghost ? ghost.opacity : 1}
+        depthWrite={!ghost}
       />
     </mesh>
   )
@@ -192,10 +214,11 @@ interface BoneProps {
   to: readonly [number, number, number]
   style: Exclude<BoneStyle, { kind: 'hidden' }>
   color: string
+  ghost?: GhostStyle | null
 }
 
 /** Osso ligando a origem da junta (0,0,0) ao offset local da junta filha, com o perfil da camada visual do `skeleton.ts`. */
-function Bone({ to, style, color }: BoneProps) {
+function Bone({ to, style, color, ghost }: BoneProps) {
   const { length, quaternion, midpoint, profile, bladeGeometry } = useMemo(() => {
     const target = new THREE.Vector3(...to)
     const boneLength = target.length()
@@ -220,10 +243,17 @@ function Bone({ to, style, color }: BoneProps) {
       blade = createBladeGeometry(style.widthStart, style.widthEnd, style.thickness, boneLength)
     }
 
+    // `offsetX` das lâminas é somado ao PONTO MÉDIO, ou seja no espaço local
+    // da junta pai — e não à geometria, cujo eixo X vem invertido pela
+    // rotação de 180° que alinha o +Y do molde ao -Y do osso. Assim o sinal
+    // do deslocamento é o mesmo que se lê no `skeleton.ts` (DECISOES.md #45).
+    const center = target.multiplyScalar(0.5)
+    if (style.kind === 'blade' && style.offsetX) center.x += style.offsetX
+
     return {
       length: boneLength,
       quaternion: [q.x, q.y, q.z, q.w] as [number, number, number, number],
-      midpoint: target.multiplyScalar(0.5).toArray() as [number, number, number],
+      midpoint: center.toArray() as [number, number, number],
       profile: turnedProfile,
       bladeGeometry: blade,
     }
@@ -241,7 +271,12 @@ function Bone({ to, style, color }: BoneProps) {
       geometry={bladeGeometry ?? undefined}
     >
       {profile && <latheGeometry args={[profile, BONE_LATHE_SEGMENTS]} />}
-      <meshStandardMaterial color={color} />
+      <meshStandardMaterial
+        color={ghost ? ghost.color : color}
+        transparent={Boolean(ghost)}
+        opacity={ghost ? ghost.opacity : 1}
+        depthWrite={!ghost}
+      />
     </mesh>
   )
 }
@@ -250,11 +285,12 @@ interface JointBodyProps {
   name: string
   color: string
   selected: boolean
+  ghost?: GhostStyle | null
   onSelect?: () => void
 }
 
 /** Todas as peças da junta. O destaque emissivo cobre a peça inteira (ovo+nariz/orelhas na cabeça); os olhos ficam sempre pretos e sem destaque. */
-function JointBody({ name, color, selected, onSelect }: JointBodyProps) {
+function JointBody({ name, color, selected, ghost, onSelect }: JointBodyProps) {
   const parts = getJointParts(name)
   const handleClick = createSelectHandler(onSelect)
 
@@ -264,9 +300,10 @@ function JointBody({ name, color, selected, onSelect }: JointBodyProps) {
         <PartMesh
           key={index}
           part={part}
-          name={index === 0 ? `segment-${name}` : undefined}
+          name={index === 0 && !ghost ? `segment-${name}` : undefined}
           color={color}
           selected={selected}
+          ghost={ghost}
           onClick={handleClick}
         />
       ))}
@@ -278,11 +315,19 @@ interface JointNodeProps {
   name: string
   figure: FigureData
   selectedJointName?: string | null
+  ghost?: GhostStyle | null
   onSelectJoint?: (jointName: string) => void
   onJointRef?: (jointName: string, object: THREE.Group | null) => void
 }
 
-function JointNode({ name, figure, selectedJointName, onSelectJoint, onJointRef }: JointNodeProps) {
+function JointNode({
+  name,
+  figure,
+  selectedJointName,
+  ghost,
+  onSelectJoint,
+  onJointRef,
+}: JointNodeProps) {
   const joint = getJoint(name)
   const isRoot = name === ROOT_JOINT_NAME
   const rotation = isRoot ? figure.rotation : (figure.pose[name] ?? ZERO_ROTATION)
@@ -302,7 +347,7 @@ function JointNode({ name, figure, selectedJointName, onSelectJoint, onJointRef 
   // `figure.position` de fato.
   return (
     <group
-      name={`joint-${name}`}
+      name={ghost ? undefined : `joint-${name}`}
       position={joint.position}
       rotation={degToRadTriple(rotation)}
       ref={
@@ -315,12 +360,21 @@ function JointNode({ name, figure, selectedJointName, onSelectJoint, onJointRef 
         name={name}
         color={figure.color}
         selected={name === selectedJointName}
+        ghost={ghost}
         onSelect={onSelectJoint && interactive ? () => onSelectJoint(name) : undefined}
       />
       {children.map((child) => {
         const style = getBoneStyle(child.name)
         if (style.kind === 'hidden') return null
-        return <Bone key={child.name} to={child.position} style={style} color={figure.color} />
+        return (
+          <Bone
+            key={child.name}
+            to={child.position}
+            style={style}
+            color={figure.color}
+            ghost={ghost}
+          />
+        )
       })}
       {children.map((child) => (
         <JointNode
@@ -328,6 +382,7 @@ function JointNode({ name, figure, selectedJointName, onSelectJoint, onJointRef 
           name={child.name}
           figure={figure}
           selectedJointName={selectedJointName}
+          ghost={ghost}
           onSelectJoint={onSelectJoint}
           onJointRef={onJointRef}
         />
@@ -359,32 +414,49 @@ function FigureShadow({ figureId, color }: FigureShadowProps) {
   )
 }
 
-export function Figure({ figure, selectedJointName, onSelectJoint, onJointRef }: FigureProps) {
+export function Figure({ figure, selectedJointName, onSelectJoint, onJointRef, ghost }: FigureProps) {
   const scale = getHeightScale(figure.height)
   const [x, , z] = figure.position
 
+  // Fantasma não é um boneco da cena: não recebe clique, não registra junta
+  // para gizmo e não tem junta selecionada. Cortar aqui, num lugar só, é o que
+  // evita ter de lembrar disso em cada ponto de chamada.
+  const selected = ghost ? null : selectedJointName
+  const handleSelectJoint = ghost ? undefined : onSelectJoint
+  const handleJointRef = ghost ? undefined : onJointRef
+
   return (
     <>
+      {/* Fantasma NÃO carrega os nomes da cena (`figure-`, `joint-`,
+          `segment-`). `CameraRig` acha o boneco por `getObjectByName`, que
+          devolve o primeiro da travessia: com nomes repetidos, "enquadrar
+          boneco" mediria a caixa de um keyframe vizinho, e o erro só apareceria
+          como um enquadramento estranho, sem pista de causa. */}
       <group
-        name={`figure-${figure.id}`}
+        name={ghost ? undefined : `figure-${figure.id}`}
         position={figure.position}
         scale={scale}
         visible={figure.visible}
-        ref={onJointRef ? (object) => onJointRef(ROOT_JOINT_NAME, object) : undefined}
+        ref={handleJointRef ? (object) => handleJointRef(ROOT_JOINT_NAME, object) : undefined}
       >
         <JointNode
           name={ROOT_JOINT_NAME}
           figure={figure}
-          selectedJointName={selectedJointName}
-          onSelectJoint={onSelectJoint}
-          onJointRef={onJointRef}
+          selectedJointName={selected}
+          ghost={ghost}
+          onSelectJoint={handleSelectJoint}
+          onJointRef={handleJointRef}
         />
       </group>
 
-      {/* Grupo separado do boneco: acompanha X/Z, mas fica sempre no chão (mesma lógica de `Figure`). */}
-      <group position={[x, SHADOW_GROUND_OFFSET, z]} scale={scale} visible={figure.visible}>
-        <FigureShadow figureId={figure.id} color={figure.color} />
-      </group>
+      {/* Grupo separado do boneco: acompanha X/Z, mas fica sempre no chão (mesma lógica de `Figure`).
+          O fantasma não projeta sombra — duas manchas a mais no chão só sujariam
+          a leitura de onde o boneco de trabalho está pisando. */}
+      {!ghost && (
+        <group position={[x, SHADOW_GROUND_OFFSET, z]} scale={scale} visible={figure.visible}>
+          <FigureShadow figureId={figure.id} color={figure.color} />
+        </group>
+      )}
     </>
   )
 }

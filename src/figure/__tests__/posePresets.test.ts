@@ -61,7 +61,7 @@ describe('resolvePosePreset', () => {
     const fromGroups = POSE_PRESET_GROUPS.flatMap((group) => group.poses)
     expect(POSE_PRESET_KEYS).toEqual(fromGroups)
     expect(new Set(fromGroups).size).toBe(fromGroups.length)
-    expect(POSE_PRESET_KEYS).toHaveLength(71)
+    expect(POSE_PRESET_KEYS).toHaveLength(81)
   })
 
   it('groups the poses in the order shown in the panel', () => {
@@ -72,6 +72,7 @@ describe('resolvePosePreset', () => {
       'pointing',
       'action',
       'expressive',
+      'kpop',
       'pairs',
       'fight',
     ])
@@ -254,6 +255,7 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
     'punchGiving',
     'punchTaking',
     'kickTaking',
+    'kneeStrikeTaking',
     'chokeGiving',
     'chokeTaking',
     // Expressivas e pares em pé (#37) — todas plantadas; as que tiram um pé
@@ -266,6 +268,12 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
     'handOnChin',
     'headDown',
     'startled',
+    // Dança pop (K-pop): as 4 usam a base em pé (ou a "Modelo", já na lista) —
+    // nenhuma tira o pé do chão de propósito.
+    'kpopFingerHeart',
+    'kpopBoxArms',
+    'kpopPointDance',
+    'kpopShoulderWave',
     'carryingBox',
     'handshake',
     'hug',
@@ -430,6 +438,27 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
       expect(taking.get('chest')!.z).toBeGreaterThan(taking.get('root')!.z + 0.1)
     })
 
+    it('joelhada: o JOELHO do atacante chega na altura da barriga de quem leva', () => {
+      const knee = worldPositions(placedFigure('kneeStrikeGiving')).get('knee.R')!
+      const belly = worldPositions(placedFigure('kneeStrikeTaking')).get('spine')!
+      expect(Math.abs(knee.y - belly.y)).toBeLessThan(0.01)
+      expect(knee.z).toBeGreaterThan(0.3)
+    })
+
+    it('joelhada: perna direita erguida e perto da linha média em quem dá; corpo bem dobrado com a cabeça baixa em quem leva', () => {
+      const giving = worldPositions(placedFigure('kneeStrikeGiving'))
+      expect(giving.get('knee.R')!.y).toBeGreaterThan(0.9)
+      expect(Math.abs(giving.get('knee.R')!.x)).toBeLessThan(0.1)
+      expect(giving.get('ball.L')!.y).toBeLessThan(0.03)
+      // Perna que golpeia claramente fora do chão (é ela que golpeia, não pisa).
+      expect(giving.get('ball.R')!.y).toBeGreaterThan(0.5)
+
+      const taking = worldPositions(placedFigure('kneeStrikeTaking'))
+      expect(taking.get('head')!.z).toBeGreaterThan(taking.get('root')!.z + 0.25)
+      // Mais dobrado que o chute (golpe de clinche, bem mais perto).
+      expect(resolvePosePreset('kneeStrikeTaking').spine.x).toBeGreaterThan(resolvePosePreset('kickTaking').spine.x)
+    })
+
     it('gravata: os punhos de quem aplica chegam na altura do pescoço de quem recebe, à frente do próprio corpo', () => {
       const giving = worldPositions(placedFigure('chokeGiving'))
       const neck = worldPositions(placedFigure('chokeTaking')).get('neck')!
@@ -471,6 +500,12 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
       const kickGap = footZ + worldPositions(placedFigure('kickTaking')).get('spine')!.z
       expect(kickGap).toBeGreaterThan(0.6)
       expect(kickGap).toBeLessThan(1.4)
+
+      // Joelhada: golpe de clinche, bem mais perto que soco/chute.
+      const kneeZ = worldPositions(placedFigure('kneeStrikeGiving')).get('knee.R')!.z
+      const kneeGap = kneeZ + worldPositions(placedFigure('kneeStrikeTaking')).get('spine')!.z
+      expect(kneeGap).toBeGreaterThan(0.2)
+      expect(kneeGap).toBeLessThan(0.6)
     })
   })
 
@@ -486,13 +521,17 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
       return new THREE.Vector3(0, 0, -1).transformDirection(joints.get(`wrist.${side}`)!.matrixWorld)
     }
 
-    it('apontando à frente: mão-faca (palma na vertical) na altura do ombro', () => {
+    it('apontando à frente: indicador estendido, palma na vertical, na altura do ombro', () => {
       const world = worldPositions(placedFigure('pointForward'))
-      const tip = world.get('fingersTip.R')!
+      // Quem marca o alcance do gesto agora é o INDICADOR: o bloco dos outros
+      // três está fechado (DECISOES.md #45).
+      const tip = world.get('indexTip.R')!
       expect(tip.z).toBeGreaterThan(0.6)
       expect(Math.abs(tip.y - world.get('shoulder.R')!.y)).toBeLessThan(0.1)
       // Palma na vertical = a normal dela não tem componente vertical.
       expect(Math.abs(palmDirection('pointForward', 'R').y)).toBeLessThan(0.2)
+      // E o dedo continua reto, na linha do antebraço.
+      expect(resolvePosePreset('pointForward')['indexBase.R'].x).toBe(0)
     })
 
     it('o punho continua a linha do antebraço — é o que separa apontar de alcançar', () => {
@@ -530,13 +569,13 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
       const world = worldPositions(placedFigure('thumbBack'))
       const thumb = world.get('thumb2.R')!.clone().sub(world.get('wrist.R')!).normalize()
       expect(thumb.z).toBeLessThan(-0.9)
-      expect(getPosePresetHands('thumbBack')).toBe('thumbsUp')
+      expect(getPosePresetHands('thumbBack', 'R')).toBe('thumbsUp')
     })
 
     it('apontando ao longe e para o outro: o gesto sai à frente do corpo, alto', () => {
       for (const key of ['pointFar', 'pointAtOther'] as const) {
         const world = worldPositions(placedFigure(key))
-        const tip = world.get('fingersTip.R')!
+        const tip = world.get('indexTip.R')!
         expect({ [`${key}.z`]: tip.z > 0.6 }).toEqual({ [`${key}.z`]: true })
         expect({ [`${key}.y`]: tip.y > 1.4 }).toEqual({ [`${key}.y`]: true })
       }
@@ -638,7 +677,10 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
   })
 
   it('cada pose de corpo usa a mão que o usuário escolheu para ela', () => {
-    const byPreset = Object.fromEntries(POSE_PRESET_KEYS.map((key) => [key, getPosePresetHands(key)]))
+    // Lado ESQUERDO: é o que todo preset declara igual para as duas mãos. As
+    // cinco poses de apontar dão o indicador só à mão direita — o teste
+    // seguinte cuida delas.
+    const byPreset = Object.fromEntries(POSE_PRESET_KEYS.map((key) => [key, getPosePresetHands(key, 'L')]))
     expect(byPreset).toEqual({
       // "Em pé" e T-pose ficam com a mão aberta (pedido explícito do usuário):
       // são as poses de referência do esqueleto e a T-pose é como um boneco
@@ -659,10 +701,16 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
       punchTaking: 'relaxed',
       kickGiving: 'fist',
       kickTaking: 'fist',
+      kneeStrikeGiving: 'fist',
+      kneeStrikeTaking: 'fist',
+      armLockPushGiving: 'fist',
+      armLockPushTaking: 'relaxed',
+      armLockPullGiving: 'fist',
+      armLockPullTaking: 'relaxed',
       chokeGiving: 'fist',
       chokeTaking: 'relaxed',
-      // Referência e apontar ficam com a mão ABERTA: a mão-faca é o gesto, e
-      // qualquer curvatura de dedo o desmancharia (DECISOES.md #36).
+      // Referência fica com a mão ABERTA; nas poses de apontar é a mão que
+      // NÃO aponta que fica aberta, descansando (DECISOES.md #45).
       apose: null,
       pointForward: null,
       pointUp: null,
@@ -671,7 +719,7 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
       pointAtOther: null,
       presenting: null,
       pointSelf: null,
-      // A única que aponta com dedo de verdade — o polegar.
+      // Aponta com o polegar, nas duas mãos.
       thumbBack: 'thumbsUp',
       // Apoios no chão: mão relaxada em pé/sentado, aberta onde a palma
       // apoia no piso (de quatro, flexão, cotovelos).
@@ -693,6 +741,13 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
       handOnChin: 'relaxed',
       headDown: 'relaxed',
       startled: null,
+      // Dança pop: fechada no robô (mão firme), relaxada no quadril de quem
+      // aponta; "Coração" declara só a mão direita (a esquerda fica aberta,
+      // ver o teste dedicado abaixo).
+      kpopFingerHeart: null,
+      kpopBoxArms: 'fist',
+      kpopPointDance: 'relaxed',
+      kpopShoulderWave: 'relaxed',
       // Ação: fecha a mão quem agarra (escalar) ou impulsiona (saltar,
       // arremessar); aberta quem sustenta a caixa por baixo.
       jumping: 'fist',
@@ -734,11 +789,32 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
     })
   })
 
+  /**
+   * O que o dedo indicador separado (DECISOES.md #45) mudou: as poses de
+   * apontar apontam com o DEDO, e só na mão do gesto — a outra continua
+   * aberta. As duas poses de PALMA continuam de mão aberta nos dois lados.
+   */
+  it('as poses de apontar usam o indicador só na mão do gesto', () => {
+    for (const key of ['pointForward', 'pointUp', 'pointDown', 'pointFar', 'pointAtOther'] as const) {
+      expect({ [key]: getPosePresetHands(key, 'R') }).toEqual({ [key]: 'point' })
+      expect({ [key]: getPosePresetHands(key, 'L') }).toEqual({ [key]: null })
+    }
+    for (const key of ['presenting', 'pointSelf'] as const) {
+      expect({ [key]: getPosePresetHands(key, 'R') }).toEqual({ [key]: null })
+    }
+  })
+
+  it('coração e apontar (dança pop): a mão do gesto certa em cada lado', () => {
+    expect(getPosePresetHands('kpopFingerHeart', 'R')).toBe('pinch')
+    expect(getPosePresetHands('kpopFingerHeart', 'L')).toBe(null)
+    expect(getPosePresetHands('kpopPointDance', 'R')).toBe('point')
+    expect(getPosePresetHands('kpopPointDance', 'L')).toBe('relaxed')
+  })
+
   it.each(POSE_PRESET_KEYS)('%s: as juntas da mão são exatamente a pose de mão declarada', (key) => {
-    const hands = getPosePresetHands(key)
     const pose = resolvePosePreset(key)
     for (const side of ['L', 'R'] as const) {
-      const expected = resolveHandPreset(hands ?? 'open', side)
+      const expected = resolveHandPreset(getPosePresetHands(key, side) ?? 'open', side)
       for (const [jointName, rotation] of Object.entries(expected)) {
         expect({ [jointName]: pose[jointName] }).toEqual({ [jointName]: rotation })
       }
@@ -756,6 +832,7 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
     // helper `symmetric`): levar o chute na barriga e ser preso pela gravata.
     'kickTaking',
     'chokeTaking',
+    'kneeStrikeTaking',
     // 2ª entrega (#37): declaradas inteiras com o helper `symmetric`.
     // "Carregado no colo" fica de fora apesar de a POSE ser simétrica — a
     // colocação gira o boneco 90° em Z, e aí o espelho sagital do MUNDO
@@ -764,6 +841,7 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
     'celebrating',
     'headDown',
     'startled',
+    'kpopBoxArms',
     'jumping',
     'carryingBox',
     'carryingPiggyback',
@@ -1347,5 +1425,74 @@ describe('3ª entrega do catálogo de poses (DECISOES.md #38)', () => {
     expect(folga).toBeLessThan(0.06)
     // E os joelhos de quem aplica ficam ATRÁS do quadril de quem senta.
     expect(at('rearChokeKneeling', 'knee.L').z - D).toBeLessThan(-0.081)
+  })
+})
+
+/**
+ * 4ª entrega do catálogo de poses: "Dança pop" (pedido do usuário — 4 poses
+ * de K-pop e os trechos de animação associados, ver DECISOES.md). Cada `it`
+ * trava a restrição geométrica resolvida numericamente no comentário do
+ * preset em `posePresets.ts`.
+ */
+describe('4ª entrega do catálogo de poses — dança pop (K-pop)', () => {
+  function placedFigure(key: PosePresetKey): Figure {
+    const placement = resolvePosePresetPlacement(key)
+    return {
+      ...figureWithPose(resolvePosePreset(key)),
+      position: [0, placement.groundOffsetM, 0],
+      rotation: placement.rotation,
+    }
+  }
+
+  function at(key: PosePresetKey, joint: string): THREE.Vector3 {
+    const { joints } = buildJointFrames(placedFigure(key))
+    const v = new THREE.Vector3()
+    joints.get(joint)!.getWorldPosition(v)
+    return v
+  }
+
+  it('coração: punho perto da cabeça/bochecha, cotovelo abaixo dele e perto do corpo', () => {
+    const wrist = at('kpopFingerHeart', 'wrist.R')
+    const elbow = at('kpopFingerHeart', 'elbow.R')
+    const head = at('kpopFingerHeart', 'head')
+    expect(wrist.distanceTo(head)).toBeLessThan(0.3)
+    expect(elbow.y).toBeLessThan(wrist.y - 0.03)
+    expect(Math.abs(elbow.x)).toBeLessThan(0.2)
+  })
+
+  it('robô: cotovelo na altura do ombro (abdução) e punho em cima dele (antebraço vertical)', () => {
+    for (const side of ['L', 'R'] as const) {
+      const shoulder = at('kpopBoxArms', `shoulder.${side}`)
+      const elbow = at('kpopBoxArms', `elbow.${side}`)
+      const wrist = at('kpopBoxArms', `wrist.${side}`)
+      expect(Math.abs(elbow.y - shoulder.y)).toBeLessThan(0.01)
+      expect(Math.abs(elbow.x)).toBeGreaterThan(Math.abs(shoulder.x) + 0.2)
+      expect(wrist.y - elbow.y).toBeGreaterThan(0.2)
+      expect(Math.abs(wrist.x - elbow.x)).toBeLessThan(0.01)
+    }
+  })
+
+  it('apontar: quadril deslocado (base da pose "Modelo") e punho direito bem acima da cabeça', () => {
+    const pose = resolvePosePreset('kpopPointDance')
+    // Mesma assinatura da pose "Modelo": perna esquerda de apoio, direita cruzada.
+    expect(pose['knee.L'].x).toBeLessThan(pose['knee.R'].x)
+    const wristL = at('kpopPointDance', 'wrist.L')
+    const hipL = at('kpopPointDance', 'hip.L')
+    expect(wristL.distanceTo(hipL)).toBeLessThan(0.16)
+    const wristR = at('kpopPointDance', 'wrist.R')
+    const head = at('kpopPointDance', 'head')
+    expect(wristR.y).toBeGreaterThan(head.y + 0.2)
+  })
+
+  it('onda de ombro: o ombro direito fica bem mais alto que o esquerdo, pernas intocadas', () => {
+    const shoulderL = at('kpopShoulderWave', 'shoulder.L')
+    const shoulderR = at('kpopShoulderWave', 'shoulder.R')
+    expect(shoulderR.y - shoulderL.y).toBeGreaterThan(0.08)
+    // As pernas continuam as da pose em pé — nenhum pé sai do lugar.
+    const standing = resolvePosePreset('standing')
+    const pose = resolvePosePreset('kpopShoulderWave')
+    for (const joint of ['hip.L', 'hip.R', 'knee.L', 'knee.R', 'ankle.L', 'ankle.R'] as const) {
+      expect(pose[joint]).toEqual(standing[joint])
+    }
   })
 })

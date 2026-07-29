@@ -1,0 +1,263 @@
+import { create } from 'zustand'
+import type { AnimationClipKey } from '../animation/animationClips'
+import type { AnimationSample } from '../animation/animationSampler'
+import { DEFAULT_FPS, clampFps, type Fps } from '../animation/frameTimeline'
+import {
+  DEFAULT_VIDEO_RESOLUTION_PRESET,
+  MAX_SNAPSHOT_DIMENSION,
+  MIN_SNAPSHOT_DIMENSION,
+  SNAPSHOT_RESOLUTION_PRESETS,
+  type ResolutionPresetKey,
+} from '../snapshot/constants'
+import { toEvenDimension } from '../animation/videoExport'
+
+/**
+ * Estado de FERRAMENTA do animador: qual animação está aberta, onde a linha do
+ * tempo está, se está tocando, e a configuração e o andamento da exportação.
+ *
+ * O conteúdo — as animações e seus keyframes — vive no `figuresStore`, com
+ * undo e autosave, como a biblioteca de poses (DECISOES.md #52). A divisão é a
+ * mesma de sempre no projeto: conteúdo entra no histórico, navegação e
+ * configuração de ferramenta não (ver PLANO.md > "Interação de pose", item 5).
+ */
+
+/** Comando executado uma única vez pelo `AnimationPlayer`, dentro do `<Canvas>`. */
+export type AnimationCommand =
+  /** Lê a câmera viva e captura um keyframe novo com a cena inteira. */
+  | { type: 'captureKeyframe' }
+  /**
+   * Lê a câmera viva e acrescenta um trecho predefinido ao final da linha do
+   * tempo. `figureAIds` é lista porque um trecho individual pode ser aplicado a
+   * vários bonecos de uma vez (item 37); `label` é o rótulo do grupo que os
+   * keyframes recebem (item 38).
+   */
+  | {
+      type: 'appendClip'
+      clipKey: AnimationClipKey
+      figureAIds: string[]
+      figureBId?: string
+      label?: string
+    }
+  /**
+   * Acrescenta um TRECHO SALVO pelo usuário (item 39) ao final da linha do
+   * tempo. `casts` é a lista de elencos — um boneco por papel do trecho.
+   */
+  | { type: 'appendSavedClip'; clipId: string; casts: string[][]; label?: string }
+  /** Regrava um keyframe existente com o estado atual. */
+  | { type: 'updateKeyframe'; keyframeId: string }
+  /** Põe a cena e a câmera no estado daquele keyframe, para poder ajustá-lo. */
+  | { type: 'goToKeyframe'; keyframeId: string }
+  /** Mostra o instante em que a linha do tempo parou, sem tocar na cena de trabalho. */
+  | { type: 'seek' }
+  /** Gera a miniatura de cada keyframe da animação de trabalho (item 30). */
+  | { type: 'renderThumbnails' }
+  /** Renderiza a animação quadro a quadro e grava o MP4. */
+  | { type: 'exportVideo' }
+
+export type ExportPhase = 'idle' | 'running' | 'done' | 'error' | 'cancelled'
+
+function resolutionFor(key: ResolutionPresetKey, fallback: { width: number; height: number }) {
+  const preset = SNAPSHOT_RESOLUTION_PRESETS.find((p) => p.key === key)
+  return preset ? { width: preset.width, height: preset.height } : fallback
+}
+
+function clampDimension(value: number): number {
+  return toEvenDimension(Math.min(MAX_SNAPSHOT_DIMENSION, Math.max(MIN_SNAPSHOT_DIMENSION, Math.round(value))))
+}
+
+export interface AnimationUIState {
+  /** Onde a linha do tempo está, em ms. */
+  timeMs: number
+  playing: boolean
+  /**
+   * Laço da reprodução NA TELA (item 27): chegar ao fim recomeça em vez de
+   * parar. O vídeo exportado continua com uma passada só — o laço serve para
+   * acertar um ciclo sem clicar em "Tocar" a cada volta.
+   */
+  repeat: boolean
+  /**
+   * Papel-cebola (item 31): desenha o keyframe anterior e o seguinte em
+   * fantasma, para ajustar o atual sabendo de onde ele vem e para onde vai.
+   *
+   * Estado de FERRAMENTA, como `repeat`: fora do undo e fora do arquivo — é uma
+   * ajuda de tela, não conteúdo da cena. E fica desligado por padrão, porque
+   * dois bonecos translúcidos a mais atrapalham quem só está posando.
+   */
+  onionSkin: boolean
+  fps: Fps
+  presetKey: ResolutionPresetKey
+  width: number
+  height: number
+  /**
+   * A cena amostrada, quando o animador está no comando. O `Viewport`
+   * renderiza isto no lugar dos bonecos do store — a cena de trabalho não é
+   * tocada, então parar a reprodução devolve tudo intacto.
+   */
+  preview: AnimationSample | null
+  pendingCommand: AnimationCommand | null
+  exportPhase: ExportPhase
+  exportedFrames: number
+  exportTotalFrames: number
+  exportErrorKey: string | null
+  lastExportFilename: string | null
+  cancelRequested: boolean
+
+  /**
+   * Volta a ferramenta ao começo: linha do tempo em zero, parada e sem
+   * pré-visualização. É o que se faz ao ABRIR uma animação da biblioteca — o
+   * que estava na tela era o retrato de outra linha do tempo.
+   */
+  resetTimeline: () => void
+  setTimeMs: (timeMs: number) => void
+  /** Arrastar a linha do tempo: anda até o instante E mostra o que há lá. */
+  requestSeek: (timeMs: number) => void
+  play: () => void
+  pause: () => void
+  setRepeat: (repeat: boolean) => void
+  setOnionSkin: (onionSkin: boolean) => void
+  setFps: (fps: number) => void
+  selectPreset: (key: ResolutionPresetKey) => void
+  setWidth: (width: number) => void
+  setHeight: (height: number) => void
+  setPreview: (preview: AnimationSample | null) => void
+  requestCaptureKeyframe: () => void
+  requestAppendClip: (
+    clipKey: AnimationClipKey,
+    figureAIds: string[],
+    figureBId?: string,
+    label?: string,
+  ) => void
+  requestAppendSavedClip: (clipId: string, casts: string[][], label?: string) => void
+  requestUpdateKeyframe: (keyframeId: string) => void
+  /**
+   * Leva a cena de trabalho para o retrato do keyframe E o playhead para o
+   * instante dele. O instante vem de fora porque quem chama já o tem em mãos
+   * (`keyframeStartTimesMs`), e assim a loja não precisa da animação.
+   */
+  requestGoToKeyframe: (keyframeId: string, timeMs: number) => void
+  requestThumbnails: () => void
+  requestExport: () => void
+  clearPendingCommand: () => void
+  startExport: (totalFrames: number) => void
+  reportExportProgress: (rendered: number) => void
+  finishExport: (filename: string) => void
+  failExport: (errorKey: string) => void
+  cancelExport: () => void
+}
+
+const initialResolution = resolutionFor(DEFAULT_VIDEO_RESOLUTION_PRESET, { width: 1280, height: 720 })
+
+export const useAnimationStore = create<AnimationUIState>((set, get) => ({
+  timeMs: 0,
+  playing: false,
+  repeat: false,
+  onionSkin: false,
+  fps: DEFAULT_FPS,
+  presetKey: DEFAULT_VIDEO_RESOLUTION_PRESET,
+  width: initialResolution.width,
+  height: initialResolution.height,
+  preview: null,
+  pendingCommand: null,
+  exportPhase: 'idle',
+  exportedFrames: 0,
+  exportTotalFrames: 0,
+  exportErrorKey: null,
+  lastExportFilename: null,
+  cancelRequested: false,
+
+  resetTimeline: () => set({ timeMs: 0, playing: false, preview: null }),
+
+  setTimeMs: (timeMs) => set({ timeMs: Math.max(0, timeMs) }),
+
+  requestSeek: (timeMs) =>
+    set({ timeMs: Math.max(0, timeMs), playing: false, pendingCommand: { type: 'seek' } }),
+
+  play: () => set({ playing: true }),
+
+  pause: () => set({ playing: false }),
+
+  setRepeat: (repeat) => set({ repeat }),
+
+  setOnionSkin: (onionSkin) => set({ onionSkin }),
+
+  setFps: (fps) => set({ fps: clampFps(fps) }),
+
+  selectPreset: (key) => {
+    const { width, height } = get()
+    set({ presetKey: key, ...resolutionFor(key, { width, height }) })
+  },
+
+  setWidth: (width) => {
+    if (get().presetKey !== 'custom') return
+    set({ width: clampDimension(width) })
+  },
+
+  setHeight: (height) => {
+    if (get().presetKey !== 'custom') return
+    set({ height: clampDimension(height) })
+  },
+
+  setPreview: (preview) => set({ preview }),
+
+  // Capturar sempre larga a pré-visualização: o retrato é da CENA DE TRABALHO,
+  // e com a animação na tela o usuário estaria vendo uma coisa e gravando
+  // outra.
+  requestCaptureKeyframe: () =>
+    set({ playing: false, preview: null, pendingCommand: { type: 'captureKeyframe' } }),
+
+  // Mesma regra da captura: o trecho congela a câmera VIVA em todos os
+  // keyframes, então a pré-visualização sai da frente para o usuário ver
+  // exatamente o enquadramento que vai ficar gravado.
+  requestAppendClip: (clipKey, figureAIds, figureBId, label) =>
+    set({
+      playing: false,
+      preview: null,
+      pendingCommand: { type: 'appendClip', clipKey, figureAIds, figureBId, label },
+    }),
+
+  requestAppendSavedClip: (clipId, casts, label) =>
+    set({
+      playing: false,
+      preview: null,
+      pendingCommand: { type: 'appendSavedClip', clipId, casts, label },
+    }),
+
+  requestUpdateKeyframe: (keyframeId) =>
+    set({ playing: false, preview: null, pendingCommand: { type: 'updateKeyframe', keyframeId } }),
+
+  // O playhead ANDA JUNTO. Sem isso a régua marcava 0,0s enquanto a cena
+  // mostrava o keyframe 3 — e o papel-cebola (item 31), que se ancora no
+  // instante, desenhava os vizinhos do keyframe errado: os fantasmas caíam em
+  // cima do próprio boneco, só deixando a cena lavada.
+  requestGoToKeyframe: (keyframeId, timeMs) =>
+    set({ playing: false, timeMs, pendingCommand: { type: 'goToKeyframe', keyframeId } }),
+
+  // As miniaturas são renderizadas a partir do RETRATO de cada keyframe, então
+  // a pré-visualização é usada e devolvida pelo próprio player.
+  requestThumbnails: () => set({ playing: false, pendingCommand: { type: 'renderThumbnails' } }),
+
+  requestExport: () =>
+    set({
+      playing: false,
+      cancelRequested: false,
+      exportPhase: 'running',
+      exportedFrames: 0,
+      exportTotalFrames: 0,
+      exportErrorKey: null,
+      pendingCommand: { type: 'exportVideo' },
+    }),
+
+  clearPendingCommand: () => set({ pendingCommand: null }),
+
+  startExport: (totalFrames) => set({ exportPhase: 'running', exportedFrames: 0, exportTotalFrames: totalFrames }),
+
+  reportExportProgress: (rendered) => set({ exportedFrames: rendered }),
+
+  finishExport: (filename) => set({ exportPhase: 'done', lastExportFilename: filename, preview: null }),
+
+  failExport: (errorKey) => set({ exportPhase: 'error', exportErrorKey: errorKey, preview: null }),
+
+  // Marca a intenção; quem interrompe de fato é o laço, entre um quadro e o
+  // seguinte — abortar no meio de um quadro deixaria o codificador aberto.
+  cancelExport: () => set({ cancelRequested: true, exportPhase: 'cancelled' }),
+}))

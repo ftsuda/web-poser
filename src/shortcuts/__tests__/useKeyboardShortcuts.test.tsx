@@ -4,7 +4,7 @@ import { JOINT_NAMES } from '../../figure/skeleton'
 import { useCameraStore } from '../../store/cameraStore'
 import { useFiguresStore } from '../../store/figuresStore'
 import { useIKStore } from '../../store/ikStore'
-import { useKeyframeCaptureStore } from '../../store/keyframeCaptureStore'
+import { useSnapshotCaptureStore } from '../../store/snapshotCaptureStore'
 import { useUIStore } from '../../store/uiStore'
 import { useKeyboardShortcuts } from '../useKeyboardShortcuts'
 
@@ -18,7 +18,7 @@ describe('useKeyboardShortcuts', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useFiguresStore.temporal.getState().clear()
     useCameraStore.setState(useCameraStore.getInitialState())
-    useKeyframeCaptureStore.setState(useKeyframeCaptureStore.getInitialState())
+    useSnapshotCaptureStore.setState(useSnapshotCaptureStore.getInitialState())
     useIKStore.setState(useIKStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
     renderHook(() => useKeyboardShortcuts())
@@ -248,9 +248,9 @@ describe('useKeyboardShortcuts', () => {
     expect(useCameraStore.getState().pendingCommand).toEqual({ type: 'applyBookmark', id })
   })
 
-  it('requests a keyframe capture with Space', () => {
+  it('requests a snapshot capture with Space', () => {
     press({ key: ' ', code: 'Space' })
-    expect(useKeyframeCaptureStore.getState().pendingCapture).toBe(true)
+    expect(useSnapshotCaptureStore.getState().pendingCapture).toBe(true)
   })
 
   it('ignores shortcuts while typing in a text field', () => {

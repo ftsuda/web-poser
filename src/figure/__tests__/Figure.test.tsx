@@ -26,6 +26,34 @@ describe('Figure — manequim de madeira', () => {
     expect(jointGroups).toHaveLength(JOINT_NAMES.length)
   })
 
+  /**
+   * O `offsetX` das lâminas (DECISOES.md #45) é somado ao ponto médio do osso,
+   * ou seja no espaço local da junta PAI — e não à geometria, cujo eixo X vem
+   * invertido pela rotação de 180° que alinha o molde ao osso. Este teste é o
+   * que trava o SINAL: o bloco de 3 dedos tem de sair para o lado do mindinho
+   * (+X no lado L, -X no R), deixando o quarto do polegar para o indicador.
+   */
+  it('desenha o bloco de 3 dedos deslocado para o lado do mindinho de cada mão', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure()} />)
+
+    for (const [side, expected] of [
+      ['L', 0.01],
+      ['R', -0.01],
+    ] as const) {
+      const group = renderer.scene.findByProps({ name: `joint-fingersBase.${side}` })
+      // Dentro do grupo da junta: as peças dela (nomeadas) e o osso até a
+      // junta filha (sem nome) — este último é a lâmina das falanges.
+      const blade = group.children.filter((child) => child.props.name === undefined)
+      expect(blade).toHaveLength(1)
+      expect(blade[0].instance.position.x).toBeCloseTo(expected, 6)
+
+      // E o indicador não é deslocado: quem já está fora do centro é a junta.
+      const indexGroup = renderer.scene.findByProps({ name: `joint-indexMid.${side}` })
+      const indexBlade = indexGroup.children.filter((child) => child.props.name === undefined)
+      expect(indexBlade[0].instance.position.x).toBeCloseTo(0, 6)
+    }
+  })
+
   it('aninha as juntas seguindo a hierarquia do esqueleto', async () => {
     const renderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure()} />)
 

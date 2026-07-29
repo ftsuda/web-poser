@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { SavedPose } from '../../figure/poseLibrary'
 import { getJoint, getJointLimitOverrides, setJointLimitOverrides } from '../../figure/skeleton'
 import type { Figure, SceneSnapshot } from '../../store/figuresStore'
 import { JOINT_LIMITS_FILENAME, buildJointLimitsFile } from '../jointLimitsFile'
+import { POSES_FILENAME, buildPosesFile } from '../posesFile'
 import { exportSceneToGlb } from '../sceneFile'
 import { WORKSPACE_MANIFEST_FILENAME, buildWorkspaceManifest } from '../workspaceManifest'
 import { loadWorkspaceFromDirectory, loadWorkspaceFromFiles, saveWorkspaceToDirectory } from '../workspaceFolder'
@@ -12,7 +14,7 @@ const emptyData = {
   environment: { background: 'medium' as const, grid: true },
   cameraBookmarks: [],
   nextCameraBookmarkSeq: 1,
-  nextKeyframeNumber: 1,
+  nextSnapshotNumber: 1,
 }
 
 const scenes: SceneSnapshot[] = [
@@ -190,5 +192,90 @@ describe('workspaceFolder — limites articulares customizados (DECISOES.md #29)
 
     expect(loaded.jointLimits).toEqual({})
     expect(getJoint('knee.L').limits.x).toEqual({ min: 0, max: 150 })
+  })
+})
+
+/**
+ * Biblioteca de poses do usuário (DECISOES.md #42): mesmo contrato do arquivo
+ * de limites — arquivo próprio, apontado pelo manifesto e sanitizado na
+ * leitura. A diferença é que ele não mexe em estado global nenhum: sem
+ * arquivo, a biblioteca só fica vazia.
+ */
+describe('workspaceFolder — biblioteca de poses (DECISOES.md #42)', () => {
+  const poses: SavedPose[] = [
+    {
+      id: 'pose-1',
+      name: 'Guarda alta',
+      pose: { 'shoulder.L': { x: 10, y: 90, z: 20 } },
+      rotation: { x: 0, y: 0, z: 0 },
+      groundOffsetM: 0,
+      preservesHeading: true,
+    },
+    {
+      id: 'pose-2',
+      name: 'Deitado de lado',
+      pose: { 'knee.L': { x: 90, y: 0, z: 0 } },
+      rotation: { x: -90, y: 0, z: 0 },
+      groundOffsetM: -0.79,
+      preservesHeading: false,
+    },
+  ]
+
+  it('grava o poses.json na pasta e o aponta no manifesto', async () => {
+    const { directoryHandle, files } = createFakeDirectory()
+
+    await saveWorkspaceToDirectory(directoryHandle, scenes, null, poses)
+
+    const written = JSON.parse(String(files.get(POSES_FILENAME)))
+    expect(written.poses).toHaveLength(2)
+    expect(written.poses[0].pose['shoulder.L']).toEqual([10, 90, 20])
+    expect(JSON.parse(String(files.get(WORKSPACE_MANIFEST_FILENAME))).posesFile).toBe(POSES_FILENAME)
+  })
+
+  it('faz o round-trip da biblioteca, com o assentamento da pose deitada', async () => {
+    const { directoryHandle } = createFakeDirectory()
+    await saveWorkspaceToDirectory(directoryHandle, scenes, null, poses)
+
+    const loaded = await loadWorkspaceFromDirectory(directoryHandle)
+
+    expect(loaded.poses.map((pose) => pose.name)).toEqual(['Guarda alta', 'Deitado de lado'])
+    expect(loaded.poses[1].rotation).toEqual({ x: -90, y: 0, z: 0 })
+    expect(loaded.poses[1].groundOffsetM).toBeCloseTo(-0.79, 6)
+    expect(loaded.poses[1].preservesHeading).toBe(false)
+  })
+
+  it('abre normalmente uma pasta sem poses.json (workspaces anteriores ao recurso)', async () => {
+    const { directoryHandle, files } = createFakeDirectory()
+    await saveWorkspaceToDirectory(directoryHandle, scenes, null, poses)
+    files.delete(POSES_FILENAME)
+
+    const loaded = await loadWorkspaceFromDirectory(directoryHandle)
+
+    expect(loaded.poses).toEqual([])
+    expect(loaded.scenes).toHaveLength(2)
+  })
+
+  it('ignora um poses.json corrompido sem derrubar o resto do workspace', async () => {
+    const { directoryHandle, files } = createFakeDirectory()
+    await saveWorkspaceToDirectory(directoryHandle, scenes, 'scene-1', poses)
+    files.set(POSES_FILENAME, '{ isso não é json')
+
+    const loaded = await loadWorkspaceFromDirectory(directoryHandle)
+
+    expect(loaded.poses).toEqual([])
+    expect(loaded.scenes).toHaveLength(2)
+    expect(loaded.activeSceneId).toBe('scene-1')
+  })
+
+  it('lê a biblioteca também pelo caminho sem File System Access API', async () => {
+    const manifest = buildWorkspaceManifest(scenes, null)
+    const files = [
+      new File([JSON.stringify(manifest)], WORKSPACE_MANIFEST_FILENAME),
+      new File([JSON.stringify(buildPosesFile(poses))], POSES_FILENAME),
+    ]
+
+    const loaded = await loadWorkspaceFromFiles(files)
+
+    expect(loaded?.poses).toHaveLength(2)
   })
 })

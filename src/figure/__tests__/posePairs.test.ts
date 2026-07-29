@@ -72,6 +72,10 @@ describe('POSE_PAIRINGS', () => {
   it('cobre as poses em dupla, e só elas', () => {
     expect(Object.keys(POSE_PAIRINGS).sort()).toEqual(
       [
+        'armLockPullGiving',
+        'armLockPullTaking',
+        'armLockPushGiving',
+        'armLockPushTaking',
         'beingPulledUp',
         'carriedCradle',
         'carriedPiggyback',
@@ -88,6 +92,8 @@ describe('POSE_PAIRINGS', () => {
         'hug',
         'kickGiving',
         'kickTaking',
+        'kneeStrikeGiving',
+        'kneeStrikeTaking',
         'punchGiving',
         'punchTaking',
         'pullingUp',
@@ -239,6 +245,41 @@ describe('o par montado pelo pareamento encaixa', () => {
 
   it('chute: o pé chega à barriga de quem leva', () => {
     expect(at(anchorFigure('kickGiving'), 'ankle.R').distanceTo(at(partnerFigure('kickGiving'), 'spine'))).toBeLessThan(0.05)
+  })
+
+  it('joelhada: o joelho chega à barriga de quem leva', () => {
+    // Altura exata (0,0 cm de erro); os 6,5 cm de folga são o desvio do
+    // joelho em relação à linha média, já medido e aceito na resolução da
+    // pose (`posePresets.ts`).
+    expect(
+      at(anchorFigure('kneeStrikeGiving'), 'knee.R').distanceTo(at(partnerFigure('kneeStrikeGiving'), 'spine')),
+    ).toBeLessThan(0.07)
+  })
+
+  it('chave de braço: o joelho de quem aplica chega às costas de quem leva (empurrão e puxão)', () => {
+    // Os 9 cm de folga são o offset lateral fixo do quadril (`knee.R` nunca
+    // cai exatamente na linha média da coluna — mesma leitura do "chute" e da
+    // "joelhada" acima). A ALTURA é o que foi varrido numericamente: 4,2 cm de
+    // erro no empurrão, 0,1 cm no puxão (a mesma perna ativa de quem aplica
+    // não muda entre os dois instantes; é o `hipHeightM` de quem leva que
+    // muda) — medido em `posePresets.ts`.
+    expect(
+      at(anchorFigure('armLockPushGiving'), 'knee.R').distanceTo(at(partnerFigure('armLockPushGiving'), 'spine')),
+    ).toBeLessThan(0.11)
+    expect(
+      at(anchorFigure('armLockPullGiving'), 'knee.R').distanceTo(at(partnerFigure('armLockPullGiving'), 'spine')),
+    ).toBeLessThan(0.11)
+  })
+
+  it('chave de braço: o punho de quem aplica encontra o punho preso de quem leva (empurrão e puxão)', () => {
+    expect(
+      at(anchorFigure('armLockPushGiving'), 'wrist.L').distanceTo(at(partnerFigure('armLockPushGiving'), 'wrist.R')),
+    ).toBeLessThan(0.02)
+    // O puxão aprofunda a chave (punho mais alto, mais para trás) — a
+    // varredura numérica converge com folga maior (8,9 cm) neste instante.
+    expect(
+      at(anchorFigure('armLockPullGiving'), 'wrist.L').distanceTo(at(partnerFigure('armLockPullGiving'), 'wrist.R')),
+    ).toBeLessThan(0.1)
   })
 
   it('gravata: os dois punhos envolvem o pescoço de quem recebe, por trás', () => {

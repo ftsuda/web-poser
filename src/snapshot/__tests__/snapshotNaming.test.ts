@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatKeyframeFilename, slugifySceneName } from '../keyframeNaming'
+import { formatSnapshotFilename, slugifySceneName } from '../snapshotNaming'
 
 describe('slugifySceneName', () => {
   it('replaces spaces with hyphens', () => {
@@ -33,17 +33,17 @@ describe('slugifySceneName', () => {
   })
 })
 
-describe('formatKeyframeFilename', () => {
+describe('formatSnapshotFilename', () => {
   it('zero-pads the sequence number to 3 digits', () => {
-    expect(formatKeyframeFilename('Cena 1', 1)).toBe('Cena-1_kf001.png')
-    expect(formatKeyframeFilename('Cena 1', 42)).toBe('Cena-1_kf042.png')
+    expect(formatSnapshotFilename('Cena 1', 1)).toBe('Cena-1_snap001.png')
+    expect(formatSnapshotFilename('Cena 1', 42)).toBe('Cena-1_snap042.png')
   })
 
   it('extends the padding instead of truncating once the sequence reaches 4 digits', () => {
-    expect(formatKeyframeFilename('Cena 1', 1000)).toBe('Cena-1_kf1000.png')
+    expect(formatSnapshotFilename('Cena 1', 1000)).toBe('Cena-1_snap1000.png')
   })
 
   it('slugifies the scene name as part of the filename', () => {
-    expect(formatKeyframeFilename('Minha Cena Legal', 1)).toBe('Minha-Cena-Legal_kf001.png')
+    expect(formatSnapshotFilename('Minha Cena Legal', 1)).toBe('Minha-Cena-Legal_snap001.png')
   })
 })

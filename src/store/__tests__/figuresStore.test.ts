@@ -4,11 +4,14 @@ import {
   MIN_HEIGHT_M,
   REFERENCE_HEIGHT_M,
   ROOT_JOINT_NAME,
+  clampJointRotation,
   getJoint,
   setJointLimitOverrides,
 } from '../../figure/skeleton'
 import { resolveHandPreset } from '../../figure/handPresets'
-import { resolvePosePreset } from '../../figure/posePresets'
+import { figureBlendState, resolveBlendTarget } from '../../figure/poseBlend'
+import { mirrorRotation } from '../../figure/poseMirror'
+import { resolvePosePreset, resolvePosePresetPlacement } from '../../figure/posePresets'
 import { COLOR_PALETTE, MAX_FIGURES, useFiguresStore } from '../figuresStore'
 
 describe('figuresStore', () => {
@@ -583,35 +586,35 @@ describe('figuresStore — scene name', () => {
   })
 })
 
-describe('figuresStore — keyframe sequence counter', () => {
+describe('figuresStore — snapshot sequence counter', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useFiguresStore.temporal.getState().clear()
   })
 
   it('starts at 1', () => {
-    expect(useFiguresStore.getState().nextKeyframeNumber).toBe(1)
+    expect(useFiguresStore.getState().nextSnapshotNumber).toBe(1)
   })
 
-  it('consumeKeyframeNumber returns the current number and advances the counter', () => {
-    const { consumeKeyframeNumber } = useFiguresStore.getState()
-    expect(consumeKeyframeNumber()).toBe(1)
-    expect(consumeKeyframeNumber()).toBe(2)
-    expect(consumeKeyframeNumber()).toBe(3)
-    expect(useFiguresStore.getState().nextKeyframeNumber).toBe(4)
+  it('consumeSnapshotNumber returns the current number and advances the counter', () => {
+    const { consumeSnapshotNumber } = useFiguresStore.getState()
+    expect(consumeSnapshotNumber()).toBe(1)
+    expect(consumeSnapshotNumber()).toBe(2)
+    expect(consumeSnapshotNumber()).toBe(3)
+    expect(useFiguresStore.getState().nextSnapshotNumber).toBe(4)
   })
 
-  it('is not tracked in the undo history — capturing a keyframe is not an undoable content edit', () => {
-    useFiguresStore.getState().consumeKeyframeNumber()
+  it('is not tracked in the undo history — capturing a snapshot is not an undoable content edit', () => {
+    useFiguresStore.getState().consumeSnapshotNumber()
     expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
 
     useFiguresStore.getState().addFigure()
-    useFiguresStore.getState().consumeKeyframeNumber()
+    useFiguresStore.getState().consumeSnapshotNumber()
     useFiguresStore.temporal.getState().undo()
     // Desfazer não deve "devolver" o número consumido: o arquivo já foi
     // (ou seria) salvo em disco com aquele número, então voltar o contador
     // arriscaria reescrever um arquivo existente na próxima captura.
-    expect(useFiguresStore.getState().nextKeyframeNumber).toBe(3)
+    expect(useFiguresStore.getState().nextSnapshotNumber).toBe(3)
     expect(useFiguresStore.getState().figures).toHaveLength(0)
   })
 })
@@ -766,7 +769,7 @@ describe('figuresStore — importação de arquivo (.glb)', () => {
       environment: { background: 'light', grid: false },
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
-      nextKeyframeNumber: 9,
+      nextSnapshotNumber: 9,
     })
 
     const state = useFiguresStore.getState()
@@ -774,7 +777,7 @@ describe('figuresStore — importação de arquivo (.glb)', () => {
     expect(state.figures).toHaveLength(0)
     expect(state.nextFigureSeq).toBe(5)
     expect(state.environment).toEqual({ background: 'light', grid: false })
-    expect(state.nextKeyframeNumber).toBe(9)
+    expect(state.nextSnapshotNumber).toBe(9)
     expect(state.activeSceneId).toBeNull() // não é um snapshot salvo do catálogo
     expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(1)
   })
@@ -854,7 +857,7 @@ describe('figuresStore — importação de arquivo (.glb)', () => {
           environment: { background: 'dark' as const, grid: false },
           cameraBookmarks: [],
           nextCameraBookmarkSeq: 1,
-          nextKeyframeNumber: 1,
+          nextSnapshotNumber: 1,
         },
       },
     ]
@@ -1133,6 +1136,29 @@ describe('figuresStore — poses em dupla aplicadas nos dois bonecos', () => {
     expect(figureById(b)).toBe(before)
   })
 
+  it('com o par automático desligado, só quem recebeu a pose muda', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setPosition(b, [3, 0, -4])
+    const before = figureById(b)
+
+    useFiguresStore.getState().applyPosePreset(a, 'handshake', { pairPartner: false })
+
+    // O parceiro fica EXATAMENTE como estava — mesma pose, mesmo lugar, mesmo
+    // objeto: a montagem do par volta a ser manual.
+    expect(figureById(b)).toBe(before)
+    expect(figureById(a).pose).toEqual(resolvePosePreset('handshake'))
+  })
+
+  it('o par automático continua ligado quando ninguém diz o contrário', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+
+    useFiguresStore.getState().applyPosePreset(a, 'handshake', {})
+
+    expect(figureById(b).pose).toEqual(resolvePosePreset('handshake'))
+  })
+
   it('não mexe em ninguém com três bonecos em cena: não há como saber qual é o parceiro', () => {
     const a = useFiguresStore.getState().addFigure() as string
     const b = useFiguresStore.getState().addFigure() as string
@@ -1224,6 +1250,58 @@ describe('figuresStore — poses de mão e simetria (DECISOES.md #30)', () => {
 
     useFiguresStore.getState().swapSides(id)
     expect(figureById(id).pose).toEqual(before)
+  })
+
+  /**
+   * Espelho completo (pedido do usuário): o que "Inverter lados" não fazia —
+   * as juntas SEM par também são refletidas.
+   */
+  it('mirrorWholeFigure espelha membros E juntas sem par, e é reversível', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'shoulder.R', { x: -40, z: -70 })
+    useFiguresStore.getState().setJointRotation(id, 'head', { y: 25, z: -8 })
+    useFiguresStore.getState().setJointRotation(id, 'spine', { y: -14 })
+    const before = figureById(id).pose
+
+    useFiguresStore.getState().mirrorWholeFigure(id)
+
+    const pose = figureById(id).pose
+    expect(pose['shoulder.L']).toEqual({ x: -40, y: 0, z: 70 })
+    // O ombro direito recebe o espelho do que o ESQUERDO tinha — que na pose
+    // padrão não é zero (os braços nascem baixos, com z perto de ±90).
+    expect(pose['shoulder.R']).toEqual(mirrorRotation(before['shoulder.L']))
+    expect(pose.head).toEqual({ x: 0, y: -25, z: 8 })
+    expect(pose.spine.y).toBe(14)
+
+    useFiguresStore.getState().mirrorWholeFigure(id)
+    expect(figureById(id).pose).toEqual(before)
+  })
+
+  /** A colocação é do boneco, não da pose — espelhar não o tira do lugar. */
+  it('mirrorWholeFigure não mexe em onde o boneco está nem para onde encara', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setPosition(id, [1.2, 0, -0.4])
+    useFiguresStore.getState().setRootRotation(id, { y: 30 })
+    useFiguresStore.getState().setJointRotation(id, 'head', { y: 25 })
+
+    useFiguresStore.getState().mirrorWholeFigure(id)
+
+    const figure = figureById(id)
+    expect(figure.position).toEqual([1.2, 0, -0.4])
+    expect(figure.rotation).toEqual({ x: 0, y: 30, z: 0 })
+  })
+
+  it('mirrorWholeFigure respeita as juntas travadas', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'head', { y: 25 })
+    useFiguresStore.getState().setJointRotation(id, 'shoulder.R', { x: -40 })
+    useFiguresStore.getState().toggleJointLock(id, 'head')
+
+    useFiguresStore.getState().mirrorWholeFigure(id)
+
+    const pose = figureById(id).pose
+    expect(pose.head.y).toBe(25)
+    expect(pose['shoulder.L'].x).toBe(-40)
   })
 
   it('applyRandomPose sorteia uma pose nova sem tirar o boneco do lugar (DECISOES.md #35)', () => {
@@ -1334,7 +1412,7 @@ describe('figuresStore — novo workspace (fase 9, item 7)', () => {
     store.saveSceneSnapshot('Cena salva')
     store.renameScene('Praia')
     store.setBackground('dark')
-    store.consumeKeyframeNumber()
+    store.consumeSnapshotNumber()
 
     useFiguresStore.getState().resetWorkspace()
 
@@ -1349,7 +1427,7 @@ describe('figuresStore — novo workspace (fase 9, item 7)', () => {
     expect(after.nextFigureSeq).toBe(1)
     expect(after.nextCameraBookmarkSeq).toBe(1)
     expect(after.nextSceneSnapshotSeq).toBe(1)
-    expect(after.nextKeyframeNumber).toBe(1)
+    expect(after.nextSnapshotNumber).toBe(1)
     expect(after.environment).toEqual({ background: 'medium', grid: true })
     expect(after.jointLimits).toEqual({})
   })
@@ -1478,5 +1556,630 @@ describe('figuresStore — salvar a cena ativa (Ctrl+S)', () => {
 
     useFiguresStore.temporal.getState().undo()
     expect(useFiguresStore.getState().scenes).toHaveLength(0)
+  })
+})
+
+/**
+ * Biblioteca de poses do usuário (DECISOES.md #42, PLANO.md > A.1). O que o
+ * store garante: a pose salva volta inteira (juntas E assentamento), a
+ * biblioteca é do WORKSPACE — atravessa a troca de cena — e salvar/remover é
+ * conteúdo, com undo como o catálogo de cenas.
+ */
+describe('figuresStore — biblioteca de poses do usuário', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  const figureById = (id: string) => useFiguresStore.getState().figures.find((f) => f.id === id)!
+
+  it('salva a pose do boneco com nome e devolve o id', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().applyPosePreset(id, 'running')
+
+    const poseId = useFiguresStore.getState().saveFigurePose(id, 'Corrida')
+
+    const library = useFiguresStore.getState().poseLibrary
+    expect(library).toHaveLength(1)
+    expect(library[0].id).toBe(poseId)
+    expect(library[0].name).toBe('Corrida')
+    expect(library[0].pose['hip.L']).toEqual(figureById(id).pose['hip.L'])
+  })
+
+  it('cai num nome automático quando nenhum é informado', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().saveFigurePose(id, '   ')
+
+    expect(useFiguresStore.getState().poseLibrary[0].name).toBe('Pose 1')
+  })
+
+  it('não salva nada para um boneco inexistente', () => {
+    expect(useFiguresStore.getState().saveFigurePose('figure-inexistente')).toBeNull()
+    expect(useFiguresStore.getState().poseLibrary).toEqual([])
+  })
+
+  it('aplica a pose salva em OUTRO boneco, preservando onde ele está e para onde encara', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().applyPosePreset(a, 'running')
+    useFiguresStore.getState().setPosition(b, [3, 0, -4])
+    useFiguresStore.getState().setRootRotation(b, { y: 45 })
+
+    const poseId = useFiguresStore.getState().saveFigurePose(a, 'Corrida') as string
+    useFiguresStore.getState().applySavedPose(b, poseId)
+
+    expect(figureById(b).pose).toEqual(figureById(a).pose)
+    expect(figureById(b).position[0]).toBe(3)
+    expect(figureById(b).position[2]).toBe(-4)
+    expect(figureById(b).rotation).toEqual({ x: 0, y: 45, z: 0 })
+  })
+
+  /** O ganho da decisão "pose + assentamento": deitado volta deitado. */
+  it('devolve a inclinação e a altura do quadril de uma pose deitada', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().applyPosePreset(a, 'lyingSpreadSupine')
+
+    const poseId = useFiguresStore.getState().saveFigurePose(a, 'Deitado') as string
+    useFiguresStore.getState().applySavedPose(b, poseId)
+
+    expect(figureById(b).rotation).toEqual({ x: -90, y: 0, z: 0 })
+    expect(figureById(b).position[1]).toBeCloseTo(figureById(a).position[1], 6)
+  })
+
+  it('escala o assentamento pela altura de quem recebe a pose', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setHeight(b, 1.5)
+    useFiguresStore.getState().applyPosePreset(a, 'sitting')
+
+    const poseId = useFiguresStore.getState().saveFigurePose(a, 'Sentado') as string
+    useFiguresStore.getState().applySavedPose(b, poseId)
+
+    expect(figureById(b).position[1]).toBeCloseTo((0.485 - 0.9) * (1.5 / 1.7), 5)
+  })
+
+  it('ignora uma pose que não está na biblioteca', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    const before = figureById(id)
+
+    useFiguresStore.getState().applySavedPose(id, 'pose-inexistente')
+
+    expect(figureById(id)).toBe(before)
+  })
+
+  it('renomeia e remove poses da biblioteca', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    const poseId = useFiguresStore.getState().saveFigurePose(id, 'Rascunho') as string
+
+    useFiguresStore.getState().renameSavedPose(poseId, ' Guarda alta ')
+    expect(useFiguresStore.getState().poseLibrary[0].name).toBe('Guarda alta')
+
+    // Nome vazio não apaga o que já estava lá.
+    useFiguresStore.getState().renameSavedPose(poseId, '   ')
+    expect(useFiguresStore.getState().poseLibrary[0].name).toBe('Guarda alta')
+
+    useFiguresStore.getState().removeSavedPose(poseId)
+    expect(useFiguresStore.getState().poseLibrary).toEqual([])
+  })
+
+  /** É o que faz dela uma BIBLIOTECA, e não uma propriedade da cena. */
+  it('sobrevive a trocar de cena — a biblioteca é do workspace', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().saveFigurePose(id, 'Guarda')
+    useFiguresStore.getState().saveSceneSnapshot('Cena A')
+
+    useFiguresStore.getState().addFigure()
+    const sceneId = useFiguresStore.getState().scenes[0].id
+    useFiguresStore.getState().loadSceneSnapshot(sceneId)
+
+    expect(useFiguresStore.getState().poseLibrary).toHaveLength(1)
+  })
+
+  it('salvar uma pose é conteúdo: entra no histórico de undo', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().saveFigurePose(id, 'Guarda')
+    expect(useFiguresStore.getState().poseLibrary).toHaveLength(1)
+
+    useFiguresStore.temporal.getState().undo()
+    expect(useFiguresStore.getState().poseLibrary).toEqual([])
+  })
+
+  it('loadPoseLibrary substitui a biblioteca e continua a sequência acima dos ids lidos', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().loadPoseLibrary([
+      {
+        id: 'pose-7',
+        name: 'Da pasta',
+        pose: { 'shoulder.L': { x: 0, y: 90, z: 40 } },
+        rotation: { x: 0, y: 0, z: 0 },
+        groundOffsetM: 0,
+        preservesHeading: true,
+      },
+    ])
+
+    expect(useFiguresStore.getState().poseLibrary.map((pose) => pose.name)).toEqual(['Da pasta'])
+    // Sem isto, a próxima pose salva nasceria com um id já usado pelo arquivo.
+    expect(useFiguresStore.getState().saveFigurePose(id, 'Nova')).toBe('pose-8')
+  })
+
+  it('novo workspace limpa a biblioteca junto com o resto', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().saveFigurePose(id, 'Guarda')
+
+    useFiguresStore.getState().resetWorkspace()
+
+    expect(useFiguresStore.getState().poseLibrary).toEqual([])
+    expect(useFiguresStore.getState().nextPoseSeq).toBe(1)
+  })
+})
+
+/**
+ * Travamento de juntas (DECISOES.md #42, PLANO.md > A.5). A regra escolhida
+ * pelo usuário é UMA só: junta travada não muda por nada automático. Estes
+ * testes percorrem justamente cada caminho que escreve pose — é a lista de
+ * lugares onde a regra poderia vazar.
+ */
+describe('figuresStore — travamento de juntas', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  const figureById = (id: string) => useFiguresStore.getState().figures.find((f) => f.id === id)!
+
+  function figuraComCotoveloTravado() {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: -40 })
+    useFiguresStore.getState().toggleJointLock(id, 'elbow.L')
+    return id
+  }
+
+  it('trava e destrava, por boneco', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+
+    useFiguresStore.getState().toggleJointLock(a, 'elbow.L')
+
+    expect(useFiguresStore.getState().jointLocks[a]).toEqual(['elbow.L'])
+    expect(useFiguresStore.getState().jointLocks[b]).toBeUndefined()
+
+    useFiguresStore.getState().toggleJointLock(a, 'elbow.L')
+    expect(useFiguresStore.getState().jointLocks[a]).toBeUndefined()
+  })
+
+  it('a raiz não pode ser travada: ela é colocação do boneco, não pose', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().toggleJointLock(id, 'root')
+    expect(useFiguresStore.getState().jointLocks).toEqual({})
+  })
+
+  it('bloqueia a edição direta da junta (slider, gizmo, teclado) e o reset dela', () => {
+    const id = figuraComCotoveloTravado()
+
+    useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: 0 })
+    expect(figureById(id).pose['elbow.L'].x).toBe(-40)
+
+    useFiguresStore.getState().resetJointRotation(id, 'elbow.L')
+    expect(figureById(id).pose['elbow.L'].x).toBe(-40)
+
+    // E não atrapalha as outras juntas.
+    useFiguresStore.getState().setJointRotation(id, 'elbow.R', { x: -30 })
+    expect(figureById(id).pose['elbow.R'].x).toBe(-30)
+  })
+
+  it('preserva a junta travada ao aplicar uma pose predefinida', () => {
+    const id = figuraComCotoveloTravado()
+
+    useFiguresStore.getState().applyPosePreset(id, 'running')
+
+    expect(figureById(id).pose['elbow.L'].x).toBe(-40)
+    // O resto da pose entra normalmente.
+    expect(figureById(id).pose['hip.L'].x).not.toBe(0)
+  })
+
+  it('preserva a junta travada ao aplicar uma pose da biblioteca', () => {
+    const id = figuraComCotoveloTravado()
+    const outro = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().applyPosePreset(outro, 'running')
+    const poseId = useFiguresStore.getState().saveFigurePose(outro, 'Corrida') as string
+
+    useFiguresStore.getState().applySavedPose(id, poseId)
+
+    expect(figureById(id).pose['elbow.L'].x).toBe(-40)
+    expect(figureById(id).pose['hip.L']).toEqual(figureById(outro).pose['hip.L'])
+  })
+
+  it('preserva a junta travada no sorteio, no espelho, na inversão e na pose de mão', () => {
+    const id = figuraComCotoveloTravado()
+    useFiguresStore.getState().toggleJointLock(id, 'fingersBase.L')
+    const dedosAntes = figureById(id).pose['fingersBase.L']
+
+    useFiguresStore.getState().applyRandomPose(id)
+    expect(figureById(id).pose['elbow.L'].x).toBe(-40)
+
+    useFiguresStore.getState().setJointRotation(id, 'elbow.R', { x: -70 })
+    useFiguresStore.getState().mirrorSide(id, 'R', null)
+    expect(figureById(id).pose['elbow.L'].x).toBe(-40)
+
+    useFiguresStore.getState().swapSides(id, null)
+    expect(figureById(id).pose['elbow.L'].x).toBe(-40)
+
+    useFiguresStore.getState().applyHandPreset(id, 'L', 'fist')
+    expect(figureById(id).pose['fingersBase.L']).toEqual(dedosAntes)
+    // A outra mão fecha normalmente.
+    useFiguresStore.getState().applyHandPreset(id, 'R', 'fist')
+    expect(figureById(id).pose['fingersBase.R'].x).toBeGreaterThan(60)
+  })
+
+  it('preserva a junta travada ao aplicar uma pose importada de arquivo', () => {
+    const id = figuraComCotoveloTravado()
+
+    useFiguresStore.getState().applyImportedPose(id, {
+      height: 1.8,
+      pose: { ...resolvePosePreset('running'), 'elbow.L': { x: 0, y: 90, z: 0 } },
+    })
+
+    expect(figureById(id).pose['elbow.L'].x).toBe(-40)
+    expect(figureById(id).height).toBe(1.8)
+  })
+
+  it('protege o PARCEIRO numa pose em dupla, e não só quem recebe a pose', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(b, 'elbow.L', { x: -40 })
+    useFiguresStore.getState().toggleJointLock(b, 'elbow.L')
+
+    useFiguresStore.getState().applyPosePreset(a, 'handshake')
+
+    expect(figureById(b).pose['elbow.L'].x).toBe(-40)
+    // O par continua sendo montado: o parceiro é posado e posicionado.
+    expect(figureById(b).position[2]).toBeCloseTo(0.755, 3)
+  })
+
+  it('destrava tudo de um boneco de uma vez', () => {
+    const id = figuraComCotoveloTravado()
+    useFiguresStore.getState().toggleJointLock(id, 'knee.R')
+
+    useFiguresStore.getState().clearJointLocks(id)
+
+    expect(useFiguresStore.getState().jointLocks[id]).toBeUndefined()
+    useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: 0 })
+    expect(figureById(id).pose['elbow.L'].x).toBe(0)
+  })
+
+  it('remover o boneco leva as travas dele junto', () => {
+    const id = figuraComCotoveloTravado()
+    useFiguresStore.getState().removeFigure(id)
+    expect(useFiguresStore.getState().jointLocks).toEqual({})
+  })
+
+  it('duplicar o boneco leva as travas junto — a cópia tem a mesma pose a proteger', () => {
+    const id = figuraComCotoveloTravado()
+    const copia = useFiguresStore.getState().duplicateFigure(id) as string
+
+    expect(useFiguresStore.getState().jointLocks[copia]).toEqual(['elbow.L'])
+    useFiguresStore.getState().setJointRotation(copia, 'elbow.L', { x: 0 })
+    expect(figureById(copia).pose['elbow.L'].x).toBe(-40)
+  })
+
+  it('carregar uma cena descarta travas de bonecos que não estão nela', () => {
+    const id = figuraComCotoveloTravado()
+    useFiguresStore.getState().saveSceneSnapshot('Com boneco')
+    const sceneId = useFiguresStore.getState().scenes[0].id
+    useFiguresStore.getState().removeFigure(id)
+    useFiguresStore.getState().toggleJointLock(useFiguresStore.getState().addFigure() as string, 'knee.L')
+
+    useFiguresStore.getState().loadSceneSnapshot(sceneId)
+
+    // O boneco da cena carregada tem o mesmo id do que estava em tela: sem a
+    // poda, a trava do outro boneco recairia sobre ele.
+    expect(Object.keys(useFiguresStore.getState().jointLocks)).toEqual([])
+  })
+
+  /** Travar é modo de trabalho, não edição: desfazer não pode reabrir a proteção. */
+  it('não entra no histórico de undo', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: -40 })
+    const antes = useFiguresStore.temporal.getState().pastStates.length
+
+    useFiguresStore.getState().toggleJointLock(id, 'elbow.L')
+
+    expect(useFiguresStore.temporal.getState().pastStates.length).toBe(antes)
+    useFiguresStore.temporal.getState().undo()
+    expect(useFiguresStore.getState().jointLocks[id]).toEqual(['elbow.L'])
+  })
+
+  it('novo workspace limpa as travas', () => {
+    figuraComCotoveloTravado()
+    useFiguresStore.getState().resetWorkspace()
+    expect(useFiguresStore.getState().jointLocks).toEqual({})
+  })
+})
+
+describe('figuresStore — abrir workspace traz a biblioteca de poses da pasta', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  const daPasta = [
+    {
+      id: 'pose-5',
+      name: 'Da pasta',
+      pose: { 'shoulder.L': { x: 0, y: 90, z: 40 } },
+      rotation: { x: 0, y: 0, z: 0 },
+      groundOffsetM: 0,
+      preservesHeading: true,
+    },
+  ]
+
+  it('substitui a biblioteca em memória pela do workspace aberto', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().saveFigurePose(id, 'Antiga')
+
+    useFiguresStore.getState().loadWorkspaceCatalog([], null, {}, daPasta)
+
+    expect(useFiguresStore.getState().poseLibrary.map((pose) => pose.name)).toEqual(['Da pasta'])
+    expect(useFiguresStore.getState().nextPoseSeq).toBe(6)
+  })
+
+  /** Abrir um workspace é UMA edição: um Ctrl+Z não pode deixar a biblioteca nova com o catálogo velho. */
+  it('traz biblioteca e catálogo na mesma entrada de histórico', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().saveFigurePose(id, 'Antiga')
+    const antes = useFiguresStore.temporal.getState().pastStates.length
+
+    useFiguresStore.getState().loadWorkspaceCatalog(
+      [{ id: 'scene-1', name: 'Cena da pasta', data: useFiguresStore.getState().scenes[0]?.data ?? {
+        figures: [],
+        nextFigureSeq: 1,
+        environment: { background: 'medium', grid: true },
+        cameraBookmarks: [],
+        nextCameraBookmarkSeq: 1,
+        nextSnapshotNumber: 1,
+      } }],
+      'scene-1',
+      {},
+      daPasta,
+    )
+
+    expect(useFiguresStore.temporal.getState().pastStates.length).toBe(antes + 1)
+  })
+
+  it('sem arquivo de poses, mantém a biblioteca que já estava em memória', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().saveFigurePose(id, 'Antiga')
+
+    useFiguresStore.getState().loadWorkspaceCatalog([], null, {})
+
+    expect(useFiguresStore.getState().poseLibrary.map((pose) => pose.name)).toEqual(['Antiga'])
+  })
+})
+
+/**
+ * Mistura entre duas poses (DECISOES.md #43, PLANO.md > A.6). A geometria da
+ * interpolação está travada em `poseBlend.test.ts`; aqui trava-se o que o
+ * store garante: 100% é idêntico a aplicar a pose, 0% devolve exatamente a
+ * pose de partida, e a mistura respeita junta travada como toda escrita.
+ */
+describe('figuresStore — mistura entre duas poses', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  const figureById = (id: string) => useFiguresStore.getState().figures.find((f) => f.id === id)!
+
+  function pontas(id: string, key: Parameters<typeof resolvePosePreset>[0]) {
+    const figure = figureById(id)
+    return {
+      base: figureBlendState(figure),
+      target: resolveBlendTarget(figure, { pose: resolvePosePreset(key), ...resolvePosePresetPlacement(key) }),
+    }
+  }
+
+  it('em 100% chega exatamente ao mesmo resultado de aplicar a pose', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setRootRotation(a, { y: 40 })
+    useFiguresStore.getState().setRootRotation(b, { y: 40 })
+
+    const { base, target } = pontas(a, 'sitting')
+    useFiguresStore.getState().blendPose(a, base, target, 1)
+    useFiguresStore.getState().applyPosePreset(b, 'sitting')
+
+    expect(figureById(a).pose).toEqual(figureById(b).pose)
+    expect(figureById(a).rotation).toEqual(figureById(b).rotation)
+    expect(figureById(a).position[1]).toBeCloseTo(figureById(b).position[1], 6)
+  })
+
+  it('vale também para uma pose deitada, que impõe a inclinação e a altura', () => {
+    const a = useFiguresStore.getState().addFigure() as string
+    const b = useFiguresStore.getState().addFigure() as string
+
+    const { base, target } = pontas(a, 'lyingSpreadSupine')
+    useFiguresStore.getState().blendPose(a, base, target, 1)
+    useFiguresStore.getState().applyPosePreset(b, 'lyingSpreadSupine')
+
+    expect(figureById(a).rotation).toEqual({ x: -90, y: 0, z: 0 })
+    expect(figureById(a).position[1]).toBeCloseTo(figureById(b).position[1], 6)
+  })
+
+  it('em 0% devolve a pose de partida, mesmo depois de passear pelo slider', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    const antes = figureById(id)
+    const { base, target } = pontas(id, 'fetal')
+
+    for (const t of [0.3, 0.7, 1, 0.5, 0]) {
+      useFiguresStore.getState().blendPose(id, base, target, t)
+    }
+
+    expect(figureById(id).pose).toEqual(antes.pose)
+    expect(figureById(id).rotation).toEqual(antes.rotation)
+    expect(figureById(id).position).toEqual(antes.position)
+  })
+
+  it('no meio do caminho a pose fica entre as duas, sem sair dos limites', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    const { base, target } = pontas(id, 'running')
+
+    useFiguresStore.getState().blendPose(id, base, target, 0.5)
+
+    const meio = figureById(id).pose['hip.L'].x
+    const extremos = [base.pose['hip.L'].x, target.pose['hip.L'].x].sort((x, y) => x - y)
+    expect(meio).toBeGreaterThan(extremos[0])
+    expect(meio).toBeLessThan(extremos[1])
+    for (const [jointName, rotation] of Object.entries(figureById(id).pose)) {
+      expect(clampJointRotation(jointName, rotation)).toEqual(rotation)
+    }
+  })
+
+  it('preserva onde o boneco está no chão', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setPosition(id, [3, 0, -4])
+    const { base, target } = pontas(id, 'sitting')
+
+    useFiguresStore.getState().blendPose(id, base, target, 0.5)
+
+    expect(figureById(id).position[0]).toBe(3)
+    expect(figureById(id).position[2]).toBe(-4)
+  })
+
+  it('respeita junta travada, como toda escrita de pose', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: -40 })
+    useFiguresStore.getState().toggleJointLock(id, 'elbow.L')
+    const { base, target } = pontas(id, 'running')
+
+    useFiguresStore.getState().blendPose(id, base, target, 0.5)
+
+    expect(figureById(id).pose['elbow.L'].x).toBe(-40)
+    expect(figureById(id).pose['hip.L'].x).not.toBe(base.pose['hip.L'].x)
+  })
+
+  it('é uma edição normal: entra no histórico de undo', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    const antes = figureById(id).pose
+    const { base, target } = pontas(id, 'running')
+
+    useFiguresStore.getState().blendPose(id, base, target, 0.4)
+    expect(figureById(id).pose).not.toEqual(antes)
+
+    useFiguresStore.temporal.getState().undo()
+    expect(figureById(id).pose).toEqual(antes)
+  })
+
+  it('não faz nada para um boneco inexistente', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    const { base, target } = pontas(id, 'running')
+    expect(() => useFiguresStore.getState().blendPose('figure-inexistente', base, target, 0.5)).not.toThrow()
+    expect(figureById(id).pose).toEqual(base.pose)
+  })
+})
+
+/**
+ * Copiar a pose de um boneco para outro. Segue exatamente a regra da biblioteca
+ * de poses (DECISOES.md #42): vai o ASSENTAMENTO junto — juntas, inclinação do
+ * corpo e altura do quadril —, e NÃO vai o que é identidade e encenação de cada
+ * boneco: onde ele está no chão, a altura, a cor e o nome.
+ */
+describe('figuresStore — copiar pose entre bonecos', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  const figureById = (id: string) => useFiguresStore.getState().figures.find((f) => f.id === id)!
+
+  it('copia as juntas de um boneco para o outro', () => {
+    const origem = useFiguresStore.getState().addFigure('Herói') as string
+    const destino = useFiguresStore.getState().addFigure('Coadjuvante') as string
+    useFiguresStore.getState().applyPosePreset(origem, 'running', { pairPartner: false })
+
+    useFiguresStore.getState().copyFigurePose(origem, destino)
+
+    expect(figureById(destino).pose).toEqual(figureById(origem).pose)
+  })
+
+  it('não leva lugar no chão, altura, cor nem nome — isso é de cada boneco', () => {
+    const origem = useFiguresStore.getState().addFigure('Herói') as string
+    const destino = useFiguresStore.getState().addFigure('Coadjuvante') as string
+    useFiguresStore.getState().setPosition(destino, [3, 0, -4])
+    useFiguresStore.getState().setHeight(destino, 1.5)
+    useFiguresStore.getState().setColor(destino, '#2255cc')
+    useFiguresStore.getState().applyPosePreset(origem, 'sitting', { pairPartner: false })
+
+    useFiguresStore.getState().copyFigurePose(origem, destino)
+
+    const alvo = figureById(destino)
+    expect(alvo.name).toBe('Coadjuvante')
+    expect(alvo.color).toBe('#2255cc')
+    expect(alvo.height).toBe(1.5)
+    expect(alvo.position[0]).toBe(3)
+    expect(alvo.position[2]).toBe(-4)
+  })
+
+  it('leva o assentamento: copiar uma pose deitada deita o outro também', () => {
+    const origem = useFiguresStore.getState().addFigure() as string
+    const destino = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().applyPosePreset(origem, 'lyingHandsBehindHead', { pairPartner: false })
+
+    useFiguresStore.getState().copyFigurePose(origem, destino)
+
+    // Sem o assentamento, o boneco voltaria em pé e atravessando o chão.
+    expect(figureById(destino).rotation.x).toBeCloseTo(figureById(origem).rotation.x, 6)
+    expect(figureById(destino).position[1]).toBeCloseTo(figureById(origem).position[1], 6)
+  })
+
+  it('a altura do quadril acompanha a escala de quem recebe', () => {
+    const origem = useFiguresStore.getState().addFigure() as string
+    const destino = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setHeight(destino, 1.5)
+    useFiguresStore.getState().applyPosePreset(origem, 'lyingHandsBehindHead', { pairPartner: false })
+
+    useFiguresStore.getState().copyFigurePose(origem, destino)
+
+    // A mesma pose num boneco menor assenta mais baixo, na proporção da altura.
+    const razao = figureById(destino).position[1] / figureById(origem).position[1]
+    expect(razao).toBeCloseTo(1.5 / 1.7, 4)
+  })
+
+  it('boneco em pé preserva o giro de encenação de quem recebe', () => {
+    const origem = useFiguresStore.getState().addFigure() as string
+    const destino = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setRootRotation(destino, { y: 40 })
+    useFiguresStore.getState().applyPosePreset(origem, 'running', { pairPartner: false })
+
+    useFiguresStore.getState().copyFigurePose(origem, destino)
+
+    // Em pé, o giro em Y é para onde o boneco encara na cena — não faz parte da pose.
+    expect(figureById(destino).rotation.y).toBe(40)
+  })
+
+  it('junta travada no destino não muda — a regra do #42 vale aqui também', () => {
+    const origem = useFiguresStore.getState().addFigure() as string
+    const destino = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().setJointRotation(destino, 'elbow.R', { z: 0 })
+    useFiguresStore.getState().toggleJointLock(destino, 'elbow.R')
+    const travada = { ...figureById(destino).pose['elbow.R'] }
+    useFiguresStore.getState().applyPosePreset(origem, 'running', { pairPartner: false })
+
+    useFiguresStore.getState().copyFigurePose(origem, destino)
+
+    expect(figureById(destino).pose['elbow.R']).toEqual(travada)
+    expect(figureById(destino).pose['knee.R']).toEqual(figureById(origem).pose['knee.R'])
+  })
+
+  it('copiar para si mesmo, ou de/para boneco inexistente, não faz nada', () => {
+    const origem = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().applyPosePreset(origem, 'running', { pairPartner: false })
+    const antes = figureById(origem)
+
+    useFiguresStore.getState().copyFigurePose(origem, origem)
+    useFiguresStore.getState().copyFigurePose(origem, 'nao-existe')
+    useFiguresStore.getState().copyFigurePose('nao-existe', origem)
+
+    expect(figureById(origem)).toBe(antes)
   })
 })

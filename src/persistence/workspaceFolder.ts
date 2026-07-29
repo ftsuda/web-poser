@@ -1,6 +1,12 @@
+import type { Animation } from '../animation/animation'
+import type { SavedPose } from '../figure/poseLibrary'
+import type { SavedClip } from '../animation/clipLibrary'
 import { resetJointLimitOverrides, setJointLimitOverrides, type JointLimitOverrides } from '../figure/skeleton'
 import type { SceneSnapshot, SceneSnapshotData } from '../store/figuresStore'
+import { buildAnimationsFile, parseAnimationsFile } from './animationsFile'
+import { buildClipsFile, parseClipsFile } from './clipsFile'
 import { buildJointLimitsFile, parseJointLimitsFile } from './jointLimitsFile'
+import { buildPosesFile, parsePosesFile } from './posesFile'
 import { exportSceneToGlb, importSceneFromGlb } from './sceneFile'
 import {
   WORKSPACE_MANIFEST_FILENAME,
@@ -25,6 +31,12 @@ export interface LoadedWorkspace {
   activeSceneId: string | null
   /** Limites customizados que este workspace trouxe (vazio = padrões do código); já aplicados. */
   jointLimits: JointLimitOverrides
+  /** Biblioteca de poses do usuário que este workspace trouxe (ver DECISOES.md #42) — vazia quando não há arquivo. */
+  poses: SavedPose[]
+  /** Animações que este workspace trouxe (ver DECISOES.md #52) — vazias quando não há arquivo. */
+  animations: Animation[]
+  /** Trechos salvos que este workspace trouxe (item 39) — vazios quando não há arquivo. */
+  clips: SavedClip[]
 }
 
 function sceneToSnapshotData(scene: {
@@ -33,7 +45,7 @@ function sceneToSnapshotData(scene: {
   environment: SceneSnapshotData['environment']
   cameraBookmarks: SceneSnapshotData['cameraBookmarks']
   nextCameraBookmarkSeq: number
-  nextKeyframeNumber: number
+  nextSnapshotNumber: number
 }): SceneSnapshotData {
   return {
     figures: scene.figures,
@@ -41,7 +53,7 @@ function sceneToSnapshotData(scene: {
     environment: scene.environment,
     cameraBookmarks: scene.cameraBookmarks,
     nextCameraBookmarkSeq: scene.nextCameraBookmarkSeq,
-    nextKeyframeNumber: scene.nextKeyframeNumber,
+    nextSnapshotNumber: scene.nextSnapshotNumber,
   }
 }
 
@@ -61,6 +73,9 @@ export async function saveWorkspaceToDirectory(
   directoryHandle: FileSystemDirectoryHandle,
   scenes: readonly SceneSnapshot[],
   activeSceneId: string | null,
+  poses: readonly SavedPose[] = [],
+  animations: readonly Animation[] = [],
+  clips: readonly SavedClip[] = [],
 ): Promise<void> {
   const manifest = buildWorkspaceManifest(scenes, activeSceneId)
 
@@ -76,6 +91,17 @@ export async function saveWorkspaceToDirectory(
     manifest.jointLimitsFile,
     JSON.stringify(buildJointLimitsFile(), null, 2),
   )
+  // A biblioteca de poses é do workspace (não de uma cena), e por isso vive
+  // num arquivo próprio ao lado do de limites — ver DECISOES.md #42.
+  await writeToDirectory(directoryHandle, manifest.posesFile, JSON.stringify(buildPosesFile(poses), null, 2))
+  // Animações também são do workspace, e pelo mesmo motivo (DECISOES.md #52).
+  await writeToDirectory(
+    directoryHandle,
+    manifest.animationsFile,
+    JSON.stringify(buildAnimationsFile(animations), null, 2),
+  )
+  // Trechos salvos, mesma regra das duas bibliotecas acima (item 39).
+  await writeToDirectory(directoryHandle, manifest.clipsFile, JSON.stringify(buildClipsFile(clips), null, 2))
   await writeToDirectory(directoryHandle, WORKSPACE_MANIFEST_FILENAME, JSON.stringify(manifest, null, 2))
 }
 
@@ -100,6 +126,40 @@ async function applyJointLimitsFile(file: File | null): Promise<JointLimitOverri
   } catch {
     resetJointLimitOverrides()
     return {}
+  }
+}
+
+/**
+ * Biblioteca de poses do workspace. Diferente dos limites, ela não altera
+ * estado global nenhum — arquivo ausente ou ilegível é simplesmente uma
+ * biblioteca vazia, e as poses de fábrica continuam valendo.
+ */
+async function readPosesFile(file: File | null): Promise<SavedPose[]> {
+  if (!file) return []
+  try {
+    return parsePosesFile(JSON.parse(await file.text()))
+  } catch {
+    return []
+  }
+}
+
+/** Animações do workspace — mesma política da biblioteca de poses: ausente ou ilegível é lista vazia. */
+async function readAnimationsFile(file: File | null): Promise<Animation[]> {
+  if (!file) return []
+  try {
+    return parseAnimationsFile(JSON.parse(await file.text()))
+  } catch {
+    return []
+  }
+}
+
+/** Trechos do workspace — mesma política dos dois acima: ausente ou ilegível é lista vazia. */
+async function readClipsFile(file: File | null): Promise<SavedClip[]> {
+  if (!file) return []
+  try {
+    return parseClipsFile(JSON.parse(await file.text()))
+  } catch {
+    return []
   }
 }
 
@@ -131,9 +191,12 @@ export async function loadWorkspaceFromDirectory(directoryHandle: FileSystemDire
   }
 
   const jointLimits = await applyJointLimitsFile(await readOrNull(manifest.jointLimitsFile))
+  const poses = await readPosesFile(await readOrNull(manifest.posesFile))
+  const animations = await readAnimationsFile(await readOrNull(manifest.animationsFile))
+  const clips = await readClipsFile(await readOrNull(manifest.clipsFile))
   const scenes = await loadScenesFromEntries(manifest.scenes, readOrNull)
 
-  return { scenes, activeSceneId: manifest.activeSceneId, jointLimits }
+  return { scenes, activeSceneId: manifest.activeSceneId, jointLimits, poses, animations, clips }
 }
 
 /**
@@ -149,7 +212,10 @@ export async function loadWorkspaceFromFiles(files: readonly File[]): Promise<Lo
   const findFile = async (filename: string) => files.find((file) => file.name === filename) ?? null
 
   const jointLimits = await applyJointLimitsFile(await findFile(manifest.jointLimitsFile))
+  const poses = await readPosesFile(await findFile(manifest.posesFile))
+  const animations = await readAnimationsFile(await findFile(manifest.animationsFile))
+  const clips = await readClipsFile(await findFile(manifest.clipsFile))
   const scenes = await loadScenesFromEntries(manifest.scenes, findFile)
 
-  return { scenes, activeSceneId: manifest.activeSceneId, jointLimits }
+  return { scenes, activeSceneId: manifest.activeSceneId, jointLimits, poses, animations, clips }
 }
