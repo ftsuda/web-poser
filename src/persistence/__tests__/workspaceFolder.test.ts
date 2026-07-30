@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SavedPose } from '../../figure/poseLibrary'
 import { getJoint, getJointLimitOverrides, setJointLimitOverrides } from '../../figure/skeleton'
+import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import type { Figure, SceneSnapshot } from '../../store/figuresStore'
 import { JOINT_LIMITS_FILENAME, buildJointLimitsFile } from '../jointLimitsFile'
 import { POSES_FILENAME, buildPosesFile } from '../posesFile'
@@ -15,6 +16,7 @@ const emptyData = {
   cameraBookmarks: [],
   nextCameraBookmarkSeq: 1,
   nextSnapshotNumber: 1,
+  sceneCamera: DEFAULT_SCENE_CAMERA,
 }
 
 const scenes: SceneSnapshot[] = [

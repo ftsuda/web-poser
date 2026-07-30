@@ -105,8 +105,9 @@ export function Toolbar() {
           {t('toolbar.frameMask')}
           <select value={frameMaskSource} onChange={handleFrameMaskChange}>
             <option value="off">{t('toolbar.frameMaskOff')}</option>
-            <option value="snapshot">{t('toolbar.frameMaskSnapshot')}</option>
-            <option value="animation">{t('toolbar.frameMaskAnimation')}</option>
+            <option value="wide">{t('toolbar.frameMaskWide')}</option>
+            <option value="vertical">{t('toolbar.frameMaskVertical')}</option>
+            <option value="square">{t('toolbar.frameMaskSquare')}</option>
           </select>
         </label>
 

@@ -40,12 +40,22 @@ export type CameraCommand =
   | { type: 'applyReverseAngle' }
   /** Reaplica só o topo da tela, com a inclinação holandesa atual. */
   | { type: 'applyRoll' }
-  /** Lê a câmera viva e guarda como ponta A ou B do movimento. */
+  /** Lê a câmera de cena e guarda como ponta A ou B do movimento. */
   | { type: 'captureMovePoint'; point: MovePoint }
   /** Põe a câmera no ponto do movimento indicado pelo slider. */
   | { type: 'applyMove' }
+  /** Leva a câmera de cena para onde a vista de trabalho está olhando (fase 11). */
+  | { type: 'placeCameraAtView' }
 
 export type MovePoint = 'a' | 'b'
+
+/**
+ * O que o viewport mostra (fase 11): a bancada de trabalho (`edit`, navegação
+ * livre por órbita/pan/zoom) ou o quadro da câmera de cena (`camera`, vista
+ * travada — é o "olhar pela câmera" do Blender). O badge do viewport anuncia o
+ * modo em vigor.
+ */
+export type CameraViewMode = 'edit' | 'camera'
 
 /**
  * Um enquadramento inteiro, do jeito que o painel o monta: tamanho do plano,
@@ -84,6 +94,15 @@ export interface CameraState {
   moveB: CameraViewState | null
   moveT: number
   pendingCommand: CameraCommand | null
+  /** Modo do viewport (fase 11): bancada de trabalho ou vista pela câmera de cena. */
+  viewMode: CameraViewMode
+  /** O gizmo da câmera de cena está selecionado (mover/girar com W/E)? Exclusivo com a seleção de boneco. */
+  cameraSelected: boolean
+  setViewMode: (mode: CameraViewMode) => void
+  toggleViewMode: () => void
+  setCameraSelected: (selected: boolean) => void
+  /** Pede ao rig para levar a câmera de cena até a vista de trabalho atual. */
+  requestPlaceCameraAtView: () => void
   setFov: (fov: number) => void
   setFocalLength: (focalMm: number) => void
   /**
@@ -135,6 +154,16 @@ export const useCameraStore = create<CameraState>((set, get) => ({
   moveB: null,
   moveT: 0,
   pendingCommand: null,
+  viewMode: 'edit',
+  cameraSelected: false,
+
+  setViewMode: (viewMode) => set({ viewMode }),
+
+  toggleViewMode: () => set((state) => ({ viewMode: state.viewMode === 'edit' ? 'camera' : 'edit' })),
+
+  setCameraSelected: (cameraSelected) => set({ cameraSelected }),
+
+  requestPlaceCameraAtView: () => set({ pendingCommand: { type: 'placeCameraAtView' } }),
 
   setFov: (fov) => set({ fov, focalMm: fovToFocalLength(fov) }),
 
@@ -158,24 +187,34 @@ export const useCameraStore = create<CameraState>((set, get) => ({
     set({ focalMm: focal, fov: focalLengthToFov(focal) })
   },
 
+  // As vistas ortográficas são ferramenta do VIEWPORT (fase 11): aplicá-las
+  // volta ao modo edição — no modo visão-câmera não haveria onde vê-las, já que
+  // a câmera de cena é sempre perspectiva. O `shot` fica: ele descreve a câmera
+  // de cena, que uma vista de trabalho não toca.
   applyPreset: (preset) =>
-    set({ projection: 'orthographic', shot: null, pendingCommand: { type: 'preset', preset } }),
+    set({ projection: 'orthographic', viewMode: 'edit', pendingCommand: { type: 'preset', preset } }),
 
   requestPerspective: () =>
-    set({ projection: 'perspective', pendingCommand: { type: 'toPerspective' } }),
+    set({ projection: 'perspective', viewMode: 'edit', pendingCommand: { type: 'toPerspective' } }),
 
   applyBookmark: (id) => {
     const bookmark = useFiguresStore.getState().cameraBookmarks.find((b) => b.id === id)
+    // Bookmark ortográfico é vista de TRABALHO e vale para o viewport (modo
+    // edição); bookmark perspectivo vale para a câmera de cena, em qualquer
+    // modo (fase 11).
     set({
       ...(bookmark ? { projection: bookmark.projection, fov: bookmark.fov, focalMm: fovToFocalLength(bookmark.fov) } : {}),
-      shot: null,
+      ...(bookmark?.projection === 'orthographic' ? { viewMode: 'edit' as CameraViewMode } : { shot: null }),
       pendingCommand: { type: 'applyBookmark', id },
     })
   },
 
   requestSaveBookmark: (name) => set({ pendingCommand: { type: 'requestSaveBookmark', name } }),
 
-  frameFigure: (figureId) => set({ shot: null, pendingCommand: { type: 'frameFigure', figureId } }),
+  // Enquadrar (tecla F) é navegação da bancada: aproxima a VISTA DE TRABALHO
+  // do boneco, então só faz sentido no modo edição — e não toca no `shot`, que
+  // é da câmera de cena.
+  frameFigure: (figureId) => set({ viewMode: 'edit', pendingCommand: { type: 'frameFigure', figureId } }),
 
   applyShot: (shot) => set({ shot, pendingCommand: { type: 'applyShot' } }),
 

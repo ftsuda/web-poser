@@ -3,6 +3,7 @@ import type { JointLockMap } from '../../figure/jointLocks'
 import type { Animation } from '../../animation/animation'
 import type { SavedPose } from '../../figure/poseLibrary'
 import { getJoint, type JointLimitOverrides } from '../../figure/skeleton'
+import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import type { SceneSnapshot } from '../../store/figuresStore'
 import { loadWorkspaceFromLocalStorage, saveWorkspaceToLocalStorage } from '../autosave'
 
@@ -14,6 +15,7 @@ const baseState = {
   environment: emptyEnvironment,
   cameraBookmarks: [],
   nextCameraBookmarkSeq: 1,
+  sceneCamera: DEFAULT_SCENE_CAMERA,
   sceneName: 'Cena 1',
   nextSnapshotNumber: 1,
   scenes: [] as SceneSnapshot[],
@@ -65,6 +67,7 @@ describe('autosave — persistência do workspace em localStorage', () => {
             cameraBookmarks: [],
             nextCameraBookmarkSeq: 1,
             nextSnapshotNumber: 4,
+            sceneCamera: DEFAULT_SCENE_CAMERA,
           },
         },
       ],

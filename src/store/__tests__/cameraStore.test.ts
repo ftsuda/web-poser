@@ -219,3 +219,93 @@ describe('cameraStore — lente, enquadramento e movimento', () => {
     expect(useCameraStore.getState().pendingCommand).toBeNull()
   })
 })
+
+/**
+ * Modo de visão e câmera de cena (fase 11): o painel comanda a câmera de
+ * cena; as vistas ortográficas continuam sendo do viewport de trabalho e
+ * voltam ao modo edição — a câmera de cena é sempre perspectiva.
+ */
+describe('cameraStore — modo de visão (fase 11)', () => {
+  beforeEach(() => {
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  it('começa no modo edição, com a câmera de cena não selecionada', () => {
+    expect(useCameraStore.getState().viewMode).toBe('edit')
+    expect(useCameraStore.getState().cameraSelected).toBe(false)
+  })
+
+  it('alterna entre edição e visão da câmera', () => {
+    useCameraStore.getState().toggleViewMode()
+    expect(useCameraStore.getState().viewMode).toBe('camera')
+    useCameraStore.getState().toggleViewMode()
+    expect(useCameraStore.getState().viewMode).toBe('edit')
+  })
+
+  it('uma vista ortográfica volta ao modo edição — e não apaga o plano da câmera de cena', () => {
+    useCameraStore.getState().applyShot('closeUp')
+    useCameraStore.getState().clearPendingCommand()
+    useCameraStore.getState().setViewMode('camera')
+
+    useCameraStore.getState().applyPreset('front')
+
+    expect(useCameraStore.getState().viewMode).toBe('edit')
+    expect(useCameraStore.getState().shot).toBe('closeUp')
+  })
+
+  it('bookmark ortográfico volta ao modo edição; perspectivo mantém o modo e limpa o plano', () => {
+    const ortho = useFiguresStore.getState().addCameraBookmark({
+      name: 'Frente',
+      position: [0, 1, 5],
+      target: [0, 1, 0],
+      projection: 'orthographic',
+      fov: 50,
+      zoom: 80,
+    })
+    const perspective = useFiguresStore.getState().addCameraBookmark({
+      name: 'Plano geral',
+      position: [3, 2, 4],
+      target: [0, 1, 0],
+      projection: 'perspective',
+      fov: 50,
+      zoom: 1,
+    })
+
+    useCameraStore.getState().setViewMode('camera')
+    useCameraStore.getState().applyShot('closeUp')
+    useCameraStore.getState().clearPendingCommand()
+
+    useCameraStore.getState().applyBookmark(perspective)
+    expect(useCameraStore.getState().viewMode).toBe('camera')
+    expect(useCameraStore.getState().shot).toBeNull()
+
+    useCameraStore.getState().applyBookmark(ortho)
+    expect(useCameraStore.getState().viewMode).toBe('edit')
+  })
+
+  it('enquadrar com F volta ao modo edição e mantém o plano da câmera de cena', () => {
+    useCameraStore.getState().applyShot('medium')
+    useCameraStore.getState().clearPendingCommand()
+    useCameraStore.getState().setViewMode('camera')
+
+    useCameraStore.getState().frameFigure('figure-1')
+
+    expect(useCameraStore.getState().viewMode).toBe('edit')
+    expect(useCameraStore.getState().shot).toBe('medium')
+    expect(useCameraStore.getState().pendingCommand).toEqual({ type: 'frameFigure', figureId: 'figure-1' })
+  })
+
+  it('posicionar na vista atual enfileira o comando para o rig', () => {
+    useCameraStore.getState().requestPlaceCameraAtView()
+    expect(useCameraStore.getState().pendingCommand).toEqual({ type: 'placeCameraAtView' })
+  })
+
+  it('selecionar e desselecionar a câmera de cena', () => {
+    useCameraStore.getState().setCameraSelected(true)
+    expect(useCameraStore.getState().cameraSelected).toBe(true)
+    useCameraStore.getState().setCameraSelected(false)
+    expect(useCameraStore.getState().cameraSelected).toBe(false)
+  })
+})

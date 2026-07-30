@@ -1,8 +1,14 @@
-import { useState, type ChangeEvent, type FocusEvent, type FormEvent } from 'react'
+import { useMemo, useState, type ChangeEvent, type FocusEvent, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { exportCameraBookmarksToGlb, importCameraBookmarksFromGlb } from '../persistence/sceneFile'
+import { AXIS_COLORS } from '../scene/axisColors'
 import { ORTHO_PRESET_NAMES, type OrthoPresetName } from '../scene/cameraPresets'
+import {
+  sceneCameraEulerDeg,
+  withSceneCameraEulerDeg,
+  withSceneCameraPosition,
+} from '../scene/sceneCameraTransform'
 import { MOVE_GENERATOR_KEYS, MOVE_TERMS, type MoveGeneratorKey } from '../scene/cameraMove'
 import { LENS_FAMILY_TERMS, LENS_PRESETS, MAX_FOCAL_MM, MIN_FOCAL_MM, lensFamilyKey } from '../scene/lens'
 import {
@@ -30,6 +36,7 @@ import {
 } from '../scene/shotFraming'
 import { useCameraStore } from '../store/cameraStore'
 import { useFiguresStore } from '../store/figuresStore'
+import { useUIStore, type GizmoMode } from '../store/uiStore'
 import { importErrorKey } from './fileFeedback'
 import { CollapsiblePanel } from './CollapsiblePanel'
 
@@ -114,6 +121,22 @@ type CompositionChoice = 'centered' | 'thirds' | 'leadRoom' | 'both'
 /** Vistas que substituem o enquadramento em vez de compor com ele. */
 type ViewChoice = 'overTheShoulder' | 'pov' | 'twoShot' | 'reverseAngle'
 
+type CameraAxis = 'x' | 'y' | 'z'
+
+const CAMERA_AXES: readonly CameraAxis[] = ['x', 'y', 'z']
+
+/**
+ * Faixa dos sliders de rotação da câmera (fase 11.1). Y e Z dão a volta
+ * completa, como a colocação do boneco; X (olhar para cima/baixo) para em
+ * ±90° — além disso a câmera estaria de cabeça para baixo e o slider deixaria
+ * de bater com o ângulo extraído (ver `sceneCameraTransform.ts`).
+ */
+const CAMERA_ROTATION_RANGE: Record<CameraAxis, { min: number; max: number }> = {
+  x: { min: -90, max: 90 },
+  y: { min: -180, max: 180 },
+  z: { min: -180, max: 180 },
+}
+
 function TermButton({ term, caption, pressed, disabled, onClick }: TermButtonProps) {
   return (
     <button
@@ -131,6 +154,13 @@ function TermButton({ term, caption, pressed, disabled, onClick }: TermButtonPro
 
 export function CameraPanel() {
   const { t } = useTranslation()
+  const viewMode = useCameraStore((state) => state.viewMode)
+  const toggleViewMode = useCameraStore((state) => state.toggleViewMode)
+  const requestPlaceCameraAtView = useCameraStore((state) => state.requestPlaceCameraAtView)
+  const cameraSelected = useCameraStore((state) => state.cameraSelected)
+  const setCameraSelected = useCameraStore((state) => state.setCameraSelected)
+  const gizmoMode = useUIStore((state) => state.gizmoMode)
+  const setGizmoMode = useUIStore((state) => state.setGizmoMode)
   const fov = useCameraStore((state) => state.fov)
   const focalMm = useCameraStore((state) => state.focalMm)
   const projection = useCameraStore((state) => state.projection)
@@ -161,6 +191,9 @@ export function CameraPanel() {
   const requestPerspective = useCameraStore((state) => state.requestPerspective)
   const applyBookmark = useCameraStore((state) => state.applyBookmark)
   const requestSaveBookmark = useCameraStore((state) => state.requestSaveBookmark)
+  const sceneCamera = useFiguresStore((state) => state.sceneCamera)
+  const setSceneCamera = useFiguresStore((state) => state.setSceneCamera)
+  const selectFigure = useFiguresStore((state) => state.selectFigure)
   const cameraBookmarks = useFiguresStore((state) => state.cameraBookmarks)
   const removeCameraBookmark = useFiguresStore((state) => state.removeCameraBookmark)
   const importCameraBookmarks = useFiguresStore((state) => state.importCameraBookmarks)
@@ -232,6 +265,39 @@ export function CameraPanel() {
     else applyReverseAngle()
   }
 
+  /**
+   * Controles numéricos da câmera de cena (fase 11.1) — o caminho de mão
+   * dupla com o gizmo: os valores são LIDOS do estado (arrastar o gizmo os
+   * atualiza ao vivo) e editá-los grava de volta pelo mesmo `setSceneCamera`.
+   */
+  const cameraEuler = useMemo(() => sceneCameraEulerDeg(sceneCamera), [sceneCamera])
+
+  const handleCameraPositionChange = (index: number) => (event: ChangeEvent<HTMLInputElement>) => {
+    const value = Number(event.target.value)
+    if (!Number.isFinite(value)) return
+    const position = [...sceneCamera.position] as [number, number, number]
+    position[index] = value
+    setSceneCamera(withSceneCameraPosition(sceneCamera, position))
+  }
+
+  const handleCameraRotationChange = (axis: CameraAxis) => (event: ChangeEvent<HTMLInputElement>) => {
+    const value = Number(event.target.value)
+    if (!Number.isFinite(value)) return
+    setSceneCamera(withSceneCameraEulerDeg(sceneCamera, { ...cameraEuler, [axis]: value }))
+  }
+
+  /**
+   * Alternador do gizmo da câmera (mover/girar). Age no MESMO modo global dos
+   * W/E — é o mesmo gizmo compartilhado com as juntas — e, apertado daqui,
+   * também SELECIONA a câmera: o gesto é "quero mover/girar a câmera", e sem a
+   * seleção o botão trocaria um gizmo que não está na tela.
+   */
+  const selectCameraGizmo = (mode: GizmoMode) => {
+    setGizmoMode(mode)
+    selectFigure(null)
+    setCameraSelected(true)
+  }
+
   const [isNamingBookmark, setIsNamingBookmark] = useState(false)
   const [bookmarkNameDraft, setBookmarkNameDraft] = useState('')
   /** Chave i18n do último erro de importação de bookmarks (fase 9, item 4). */
@@ -294,7 +360,102 @@ export function CameraPanel() {
 
   return (
     <CollapsiblePanel panelKey="camera" className="panel--camera" title={t('panels.camera.title')}>
-      
+      {/* A câmera de cena (fase 11): alternar entre a bancada e o quadro dela,
+          e trazê-la para onde a bancada está olhando. Tudo o mais neste painel
+          comanda a CÂMERA DE CENA — as vistas ortográficas, mais abaixo, são a
+          exceção: navegação do viewport de trabalho. */}
+      <fieldset aria-label={t('panels.camera.sceneCamera')}>
+        <legend>{t('panels.camera.sceneCamera')}</legend>
+
+        <button
+          type="button"
+          className="camera-panel__apply"
+          aria-pressed={viewMode === 'camera'}
+          onClick={toggleViewMode}
+        >
+          {t(viewMode === 'camera' ? 'panels.camera.exitCameraView' : 'panels.camera.enterCameraView')}
+        </button>
+
+        <button
+          type="button"
+          disabled={viewMode === 'camera'}
+          title={t('panels.camera.placeAtViewHint')}
+          onClick={requestPlaceCameraAtView}
+        >
+          {t('panels.camera.placeAtView')}
+        </button>
+
+        {/* Mover/Girar da câmera — mesmo par (e mesmos rótulos) do gizmo das
+            juntas, agindo no modo global dos atalhos W/E. Desabilitado no modo
+            visão-câmera: ali o gizmo não está na tela. */}
+        <div className="camera-panel__presets">
+          <button
+            type="button"
+            aria-pressed={cameraSelected && gizmoMode === 'translate'}
+            disabled={viewMode === 'camera'}
+            title={t('panels.camera.gizmoHint')}
+            onClick={() => selectCameraGizmo('translate')}
+          >
+            {t('panels.properties.gizmoTranslate')}
+          </button>
+          <button
+            type="button"
+            aria-pressed={cameraSelected && gizmoMode === 'rotate'}
+            disabled={viewMode === 'camera'}
+            title={t('panels.camera.gizmoHint')}
+            onClick={() => selectCameraGizmo('rotate')}
+          >
+            {t('panels.properties.gizmoRotate')}
+          </button>
+        </div>
+
+        <p className="camera-panel__hint">
+          {t(viewMode === 'camera' ? 'panels.camera.cameraViewHint' : 'panels.camera.editViewHint')}
+        </p>
+      </fieldset>
+
+      {/* Controles numéricos da câmera (fase 11.1), no mesmo desenho da
+          colocação do boneco no painel de Propriedades: posição em campos
+          numéricos, rotação em sliders com a cor de cada eixo. Mão dupla com o
+          gizmo — arrastar/girar no viewport mexe nestes valores ao vivo. */}
+      <fieldset aria-label={t('panels.camera.position')}>
+        <legend>{t('panels.camera.position')}</legend>
+        {CAMERA_AXES.map((axis, index) => (
+          <label key={axis} htmlFor={`camera-position-${axis}`} className="properties-panel__field">
+            <span style={{ color: AXIS_COLORS[axis] }}>{axis.toUpperCase()}</span>
+            <input
+              id={`camera-position-${axis}`}
+              type="number"
+              step={0.01}
+              style={{ accentColor: AXIS_COLORS[axis] }}
+              value={sceneCamera.position[index]}
+              onChange={handleCameraPositionChange(index)}
+            />
+          </label>
+        ))}
+      </fieldset>
+
+      <fieldset aria-label={t('panels.camera.rotation')}>
+        <legend>{t('panels.camera.rotation')}</legend>
+        {CAMERA_AXES.map((axis) => (
+          <div key={axis} className="properties-panel__axis-row">
+            <span className="properties-panel__axis-tag" style={{ color: AXIS_COLORS[axis], borderColor: AXIS_COLORS[axis] }}>
+              {axis.toUpperCase()}
+            </span>
+            <input
+              type="range"
+              aria-label={t(`panels.camera.rotation${axis.toUpperCase()}`)}
+              style={{ accentColor: AXIS_COLORS[axis] }}
+              min={CAMERA_ROTATION_RANGE[axis].min}
+              max={CAMERA_ROTATION_RANGE[axis].max}
+              value={Math.round(cameraEuler[axis])}
+              onChange={handleCameraRotationChange(axis)}
+            />
+            <span className="properties-panel__value">{Math.round(cameraEuler[axis])}°</span>
+          </div>
+        ))}
+      </fieldset>
+
       <fieldset aria-label={t('panels.camera.lens')}>
         <legend>{t('panels.camera.lens')}</legend>
 

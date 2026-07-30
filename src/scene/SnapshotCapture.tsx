@@ -5,6 +5,7 @@ import { writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { useFiguresStore } from '../store/figuresStore'
 import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
 import { hideSceneOverlays, renderAtResolution } from './sceneCapture'
+import { getSceneCameraObject } from './sceneCameraObject'
 
 /**
  * Componente sem visual (`return null`) dentro do `<Canvas>` que executa a
@@ -48,7 +49,9 @@ export function SnapshotCapture() {
   useEffect(() => {
     if (!pendingCapture) return
 
-    const camera = getThree().camera
+    // O PNG sai da CÂMERA DE CENA (fase 11), em qualquer modo do viewport: a
+    // foto é da câmera, não da bancada — o mesmo contrato do vídeo.
+    const camera = getSceneCameraObject()
     const restoreScene = hideOverlaysOnCapture ? hideSceneOverlays(scene) : () => {}
 
     const sequence = consumeSnapshotNumber()
@@ -64,9 +67,10 @@ export function SnapshotCapture() {
     })
 
     // Overlays de volta na mesma tarefa síncrona — `toBlob` já capturou o
-    // conteúdo no momento da chamada, então isso não gera flash visual.
+    // conteúdo no momento da chamada, então isso não gera flash visual. A tela
+    // volta pela câmera ATIVA, que no modo edição é a da bancada.
     restoreScene()
-    gl.render(scene, camera)
+    gl.render(scene, getThree().camera)
 
     clearPendingCapture()
   }, [

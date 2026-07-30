@@ -1,7 +1,6 @@
-import { useCallback, useEffect, type RefObject } from 'react'
+import { useCallback, useEffect } from 'react'
 import { flushSync as flushSceneSync, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import {
   advancePlayheadMs,
   animationDurationMs,
@@ -25,16 +24,14 @@ import { useFiguresStore } from '../store/figuresStore'
 import { useKeyframeThumbnailStore } from '../store/keyframeThumbnailStore'
 import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
 import type { CameraViewState } from './cameraMove'
-import { focalLengthToFov, fovToFocalLength } from './lens'
+import { CAMERA_DEFAULTS } from './constants'
 import { hideSceneOverlays, renderAtResolution } from './sceneCapture'
+import { applyViewToCamera, getSceneCameraObject } from './sceneCameraObject'
 
 /** Tamanho da miniatura de keyframe (item 30) — 16:9, pequena o bastante para caber no card. */
 const THUMBNAIL_WIDTH = 160
 const THUMBNAIL_HEIGHT = 90
 
-export interface AnimationPlayerProps {
-  controlsRef: RefObject<OrbitControlsImpl | null>
-}
 
 /**
  * O animador propriamente dito, dentro do `<Canvas>` (PLANO.md > "Mini
@@ -42,7 +39,7 @@ export interface AnimationPlayerProps {
  * toca a animação na tela e roda a exportação de vídeo.
  *
  * Vive aqui, e não num painel, porque tudo o que ele faz depende de coisas que
- * só existem dentro do canvas — a câmera viva, o `OrbitControls` e o
+ * só existem dentro do canvas — o objeto vivo da câmera de cena e o
  * renderizador. Mesma razão de `CameraRig.tsx` e `SnapshotCapture.tsx`, e
  * mesma consequência: não tem teste automatizado (WebGL e WebCodecs não
  * existem em jsdom). O que dá para testar sem GPU está em `animationSampler`,
@@ -53,7 +50,7 @@ export interface AnimationPlayerProps {
  * lugar dos bonecos do store; parar devolve a cena intacta, sem passar pelo
  * histórico de undo.
  */
-export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
+export function AnimationPlayer() {
   const gl = useThree((state) => state.gl)
   const scene = useThree((state) => state.scene)
   const activeCamera = useThree((state) => state.camera)
@@ -62,38 +59,25 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
   const pendingCommand = useAnimationStore((state) => state.pendingCommand)
   const playing = useAnimationStore((state) => state.playing)
 
-  /** Estado da câmera viva, no formato que o keyframe guarda. */
-  const readCameraView = useCallback((): CameraViewState | null => {
-    const controls = controlsRef.current
-    const camera = getThree().camera
-    if (!controls || !(camera instanceof THREE.PerspectiveCamera)) return null
-    return {
-      position: [camera.position.x, camera.position.y, camera.position.z],
-      target: [controls.target.x, controls.target.y, controls.target.z],
-      up: [camera.up.x, camera.up.y, camera.up.z],
-      focalMm: fovToFocalLength(camera.fov),
-    }
-  }, [controlsRef, getThree])
-
-  /** Põe a câmera exatamente onde a amostra manda — posição, alvo, topo da tela e lente. */
-  const applyCameraView = useCallback(
-    (view: CameraViewState) => {
-      const controls = controlsRef.current
-      const camera = getThree().camera
-      if (!controls || !(camera instanceof THREE.PerspectiveCamera)) return
-      controls.target.set(...view.target)
-      camera.position.set(...view.position)
-      camera.up.set(...view.up)
-      camera.lookAt(controls.target)
-      // A lente entra direto no objeto vivo: passar pelo `cameraStore` a cada
-      // quadro empilharia um re-render de React por quadro só para mudar um
-      // número que já está aplicado aqui. O painel é sincronizado ao parar.
-      camera.fov = focalLengthToFov(view.focalMm)
-      camera.updateProjectionMatrix()
-      controls.update()
-    },
-    [controlsRef, getThree],
+  /**
+   * A câmera dos keyframes é a CÂMERA DE CENA (fase 11) — sempre disponível no
+   * store, em qualquer projeção do viewport: capturar não depende mais de onde
+   * a bancada está olhando.
+   */
+  const readCameraView = useCallback(
+    (): CameraViewState => useFiguresStore.getState().sceneCamera,
+    [],
   )
+
+  /**
+   * Põe a câmera de cena exatamente onde a amostra manda — no OBJETO vivo,
+   * não no store: um `set` de store por quadro empilharia um re-render de
+   * React por quadro. O gizmo segue o objeto (`useFrame`), e o modo
+   * visão-câmera renderiza por ele; o store é sincronizado ao parar.
+   */
+  const applyCameraView = useCallback((view: CameraViewState) => {
+    applyViewToCamera(getSceneCameraObject(), view)
+  }, [])
 
   // ------------------------------------------------------------------
   // Comandos (capturar, regravar, ir para, exportar)
@@ -123,48 +107,40 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
 
     switch (pendingCommand.type) {
       case 'captureKeyframe': {
-        const view = readCameraView()
-        if (view) figuresState.addAnimationKeyframe(animation?.id ?? null, view)
+        figuresState.addAnimationKeyframe(animation?.id ?? null, readCameraView())
         break
       }
 
       case 'appendClip': {
-        // A câmera viva vai congelada em TODOS os keyframes do trecho — o
+        // A câmera de cena vai congelada em TODOS os keyframes do trecho — o
         // enquadramento durante o trecho é decisão de quem monta (decidido
         // com o usuário, DECISOES.md #60).
-        const view = readCameraView()
-        if (view) {
-          figuresState.appendAnimationClip(
-            animation?.id ?? null,
-            pendingCommand.clipKey,
-            view,
-            pendingCommand.figureAIds,
-            pendingCommand.figureBId,
-            pendingCommand.label,
-          )
-        }
+        figuresState.appendAnimationClip(
+          animation?.id ?? null,
+          pendingCommand.clipKey,
+          readCameraView(),
+          pendingCommand.figureAIds,
+          pendingCommand.figureBId,
+          pendingCommand.label,
+        )
         break
       }
 
       case 'appendSavedClip': {
-        // Mesma regra do trecho de fábrica: a câmera viva vai congelada em
+        // Mesma regra do trecho de fábrica: a câmera de cena vai congelada em
         // todos os keyframes (item 39).
-        const view = readCameraView()
-        if (view) {
-          figuresState.appendSavedClip(
-            animation?.id ?? null,
-            pendingCommand.clipId,
-            view,
-            pendingCommand.casts,
-            pendingCommand.label,
-          )
-        }
+        figuresState.appendSavedClip(
+          animation?.id ?? null,
+          pendingCommand.clipId,
+          readCameraView(),
+          pendingCommand.casts,
+          pendingCommand.label,
+        )
         break
       }
 
       case 'updateKeyframe': {
-        const view = readCameraView()
-        if (view && animation) figuresState.updateAnimationKeyframe(animation.id, pendingCommand.keyframeId, view)
+        if (animation) figuresState.updateAnimationKeyframe(animation.id, pendingCommand.keyframeId, readCameraView())
         break
       }
 
@@ -172,7 +148,10 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
         if (!animation) break
         const keyframe = animation.keyframes.find((candidate) => candidate.id === pendingCommand.keyframeId)
         if (!keyframe) break
-        applyCameraView(keyframe.camera)
+        // A câmera do keyframe vira a câmera de cena DE VERDADE (store, não só
+        // o objeto vivo): ir para um keyframe é para poder ajustá-lo, e o
+        // ajuste parte do que está gravado.
+        figuresState.setSceneCamera(keyframe.camera)
         useCameraStore.getState().setFocalLengthQuietly(keyframe.camera.focalMm)
         // Ir para um keyframe é para PODER AJUSTÁ-LO: a cena de trabalho passa
         // a ser aquele retrato de verdade, e a pré-visualização sai da frente.
@@ -184,11 +163,14 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
       case 'seek': {
         if (!animation) break
         // Navegar mostra o instante SEM tocar na cena de trabalho — quem quer
-        // ajustar um keyframe usa "Ir para", que é outra coisa.
+        // ajustar um keyframe usa "Ir para", que é outra coisa. A câmera de
+        // cena, porém, ANDA de verdade: capturar logo após navegar deve gravar
+        // o enquadramento daquele instante (o gizmo mostra onde ela está).
         const sample = sampleAnimation(animation, animationState.timeMs)
         if (!sample) break
         useAnimationStore.getState().setPreview(sample)
-        applyCameraView(sample.camera)
+        figuresState.setSceneCamera(sample.camera)
+        useCameraStore.getState().setFocalLengthQuietly(sample.camera.focalMm)
         break
       }
 
@@ -196,18 +178,24 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
         if (!animation) break
         // Um retrato pequeno por keyframe (item 30). Renderizado aqui porque
         // depende do canvas vivo, como o instantâneo e o vídeo — e guardado
-        // num cache de FERRAMENTA, fora do undo e do arquivo.
-        const camera = getThree().camera
-        const anterior = readCameraView()
+        // num cache de FERRAMENTA, fora do undo e do arquivo. A câmera é uma
+        // DESCARTÁVEL montada de cada keyframe (fase 11): nem a vista de
+        // trabalho nem a câmera de cena se mexem por causa de miniaturas.
+        const thumbnailCamera = new THREE.PerspectiveCamera(
+          CAMERA_DEFAULTS.fov,
+          THUMBNAIL_WIDTH / THUMBNAIL_HEIGHT,
+          CAMERA_DEFAULTS.near,
+          CAMERA_DEFAULTS.far,
+        )
         for (const keyframe of animation.keyframes) {
           flushSceneSync(() =>
             useAnimationStore.getState().setPreview({ figures: keyframe.figures, camera: keyframe.camera }),
           )
-          applyCameraView(keyframe.camera)
+          applyViewToCamera(thumbnailCamera, keyframe.camera)
           // Esconder a cada quadro, como na exportação: o commit do React acima
           // pode reacender um apoio de tela.
           const restoreScene = hideSceneOverlays(scene)
-          renderAtResolution(gl, scene, camera, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, () => {
+          renderAtResolution(gl, scene, thumbnailCamera, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, () => {
             useKeyframeThumbnailStore
               .getState()
               .setThumbnail(keyframe.id, gl.domElement.toDataURL('image/jpeg', 0.6))
@@ -217,8 +205,7 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
         // A bancada volta a ser o que era: nem a cena nem o enquadramento
         // mudam por ter gerado miniaturas.
         useAnimationStore.getState().setPreview(null)
-        if (anterior) applyCameraView(anterior)
-        gl.render(scene, camera)
+        gl.render(scene, getThree().camera)
         break
       }
 
@@ -241,7 +228,14 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
       // não a mesma coisa com quadros repetidos.
       const frames = frameTimeline(animationOutputDurationMs(animation!), store.fps)
 
-      const camera = getThree().camera
+      // A câmera do vídeo é uma DESCARTÁVEL montada quadro a quadro do
+      // keyframe (fase 11): o viewport não é mais sequestrado pela exportação.
+      const camera = new THREE.PerspectiveCamera(
+        CAMERA_DEFAULTS.fov,
+        width / height,
+        CAMERA_DEFAULTS.near,
+        CAMERA_DEFAULTS.far,
+      )
 
       try {
         const codec = await pickVideoCodec(width, height)
@@ -273,7 +267,7 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
             // entrega a cena por um `root.render()` assíncrono, que nenhum
             // `flushSync` alcança.
             flushSceneSync(() => useAnimationStore.getState().setPreview(sample))
-            applyCameraView(sample.camera)
+            applyViewToCamera(camera, sample.camera)
 
             // Esconder A CADA QUADRO, e não uma vez antes do laço: o commit do
             // React acima e o `update` do `TransformControls` podem reacender
@@ -308,7 +302,9 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
         // painel travado em "exportando".
         useAnimationStore.getState().failExport('panels.animation.errorExport')
       } finally {
-        gl.render(scene, camera)
+        // A tela volta a ser desenhada pela câmera ATIVA (a da bancada ou a de
+        // cena, conforme o modo) — a descartável era só do arquivo.
+        gl.render(scene, getThree().camera)
       }
     }
   }, [pendingCommand, gl, scene, activeCamera, getThree, readCameraView, applyCameraView])
@@ -335,6 +331,8 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
 
     let frameId = 0
     let previous = performance.now()
+    /** Último enquadramento aplicado ao objeto vivo — devolvido ao store ao parar. */
+    let lastView: CameraViewState | null = null
 
     const tick = (now: number) => {
       const store = useAnimationStore.getState()
@@ -352,7 +350,10 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
       previous = now
 
       const sample = sampleAnimation(animation, timeMs)
-      if (sample) applyCameraView(sample.camera)
+      if (sample) {
+        applyCameraView(sample.camera)
+        lastView = sample.camera
+      }
       // Chegar ao fim LARGA a pré-visualização: enquanto ela está na tela, o
       // que se vê é o retrato da animação, e editar a cena não aparece em lugar
       // nenhum. Antes disso era preciso apertar "Parar" para voltar a
@@ -369,18 +370,18 @@ export function AnimationPlayer({ controlsRef }: AnimationPlayerProps) {
     }
 
     frameId = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frameId)
-  }, [playing, applyCameraView])
-
-  // Parar de tocar devolve a lente ao painel: durante a reprodução ela é
-  // escrita direto na câmera, para não custar um re-render por quadro.
-  useEffect(() => {
-    if (playing) return
-    const camera = getThree().camera
-    if (camera instanceof THREE.PerspectiveCamera) {
-      useCameraStore.getState().setFocalLengthQuietly(fovToFocalLength(camera.fov))
+    return () => {
+      cancelAnimationFrame(frameId)
+      // Parar (no fim ou no botão) devolve ao STORE o enquadramento em que a
+      // câmera de cena ficou: durante a reprodução ela andou só no objeto
+      // vivo, para não custar um `set` de store por quadro. A lente volta ao
+      // painel pelo mesmo commit.
+      if (lastView) {
+        useFiguresStore.getState().setSceneCamera(lastView)
+        useCameraStore.getState().setFocalLengthQuietly(lastView.focalMm)
+      }
     }
-  }, [playing, getThree])
+  }, [playing, applyCameraView])
 
   return null
 }

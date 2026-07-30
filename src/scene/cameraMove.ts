@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { clampFocalLength } from './lens'
+import { DEFAULT_FOCAL_MM, clampFocalLength } from './lens'
 import type { Vector3Tuple } from './cameraPresets'
 
 /**
@@ -27,6 +27,19 @@ export interface CameraViewState {
   /** Topo da tela — carrega a inclinação holandesa, quando houver. */
   up: Vector3Tuple
   focalMm: number
+}
+
+/**
+ * A câmera de cena de uma cena recém-criada: o mesmo ponto de partida da
+ * navegação (`CAMERA_DEFAULTS.position`), mirando a altura do peito de um
+ * boneco na origem. É daqui que uma cena sem campo `sceneCamera` gravado
+ * (arquivos anteriores à separação câmera/viewport) também parte.
+ */
+export const DEFAULT_SCENE_CAMERA: CameraViewState = {
+  position: [3, 2, 4],
+  target: [0, 1, 0],
+  up: [0, 1, 0],
+  focalMm: DEFAULT_FOCAL_MM,
 }
 
 export type MoveGeneratorKey = 'zoomIn' | 'zoomOut' | 'orbit' | 'truck' | 'dollyZoom' | 'crane'

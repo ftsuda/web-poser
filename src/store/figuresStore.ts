@@ -40,13 +40,15 @@ import {
   type AnimationKeyframe,
 } from '../animation/animation'
 import { sampleAnimation, splitCameraView } from '../animation/animationSampler'
+import { remapImportedKeyframes } from '../animation/animationRemap'
+import type { ImportedAnimation } from '../persistence/animationsFile'
 import {
   ANIMATION_CLIPS,
   resolveClipFigure,
   type AnimationClipKey,
   type ResolvedClipFigure,
 } from '../animation/animationClips'
-import type { CameraViewState } from '../scene/cameraMove'
+import { DEFAULT_SCENE_CAMERA, type CameraViewState } from '../scene/cameraMove'
 import { blendPoses, type BlendablePose } from '../figure/poseBlend'
 import { captureFigurePose, type SavedPose } from '../figure/poseLibrary'
 import {
@@ -76,6 +78,12 @@ import { resolveRandomPose } from '../figure/randomPose'
 import { loadWorkspaceFromLocalStorage } from '../persistence/autosave'
 
 export const MAX_FIGURES = 5
+
+/**
+ * O que fazer com a animação lida de um arquivo (fase 12): trocar a da bancada
+ * por ela, ou emendá-la no fim do que já está lá.
+ */
+export type AnimationImportMode = 'replace' | 'append'
 
 export type BackgroundTone = 'light' | 'medium' | 'dark'
 
@@ -180,6 +188,8 @@ export interface SceneSnapshotData {
   cameraBookmarks: CameraBookmark[]
   nextCameraBookmarkSeq: number
   nextSnapshotNumber: number
+  /** A câmera de cena faz parte do retrato: cada cena guarda o próprio enquadramento. */
+  sceneCamera: CameraViewState
 }
 
 export interface SceneSnapshot {
@@ -208,6 +218,14 @@ export interface FiguresState {
   cameraBookmarks: CameraBookmark[]
   nextCameraBookmarkSeq: number
   environment: EnvironmentSettings
+  /**
+   * A CÂMERA DE CENA (fase 11): um elemento da cena, separado da navegação do
+   * viewport. É dela que saem os keyframes, o PNG e o MP4 — o viewport passa a
+   * ser só a bancada de trabalho. Persistida com a cena (autosave, snapshots e
+   * `.glb`), mas FORA do histórico de undo, como a navegação: mover a câmera é
+   * enquadrar, não editar conteúdo (decidido com o usuário — DECISOES.md).
+   */
+  sceneCamera: CameraViewState
   sceneName: string
   /** Próximo número de sequência de instantâneo (`snap001`, `snap002`…). Não entra no histórico de undo — ver `consumeSnapshotNumber`. */
   nextSnapshotNumber: number
@@ -306,6 +324,8 @@ export interface FiguresState {
   resetJointGroup: (id: string, group: JointGroupKey) => void
   addCameraBookmark: (bookmark: Omit<CameraBookmark, 'id'>) => string
   removeCameraBookmark: (id: string) => void
+  /** Move a câmera de cena — chamado pelo gizmo, pelos comandos do painel e pelo animador. */
+  setSceneCamera: (view: CameraViewState) => void
   setBackground: (background: BackgroundTone) => void
   toggleGrid: () => void
   renameScene: (name: string) => void
@@ -541,6 +561,26 @@ export interface FiguresState {
   loadClipLibrary: (clips: readonly SavedClip[]) => void
   /** Substitui as animações pelas lidas de um workspace (já sanitizadas). */
   loadAnimationLibrary: (animations: readonly Animation[]) => void
+  /**
+   * Traz para a bancada a animação lida de um arquivo JSON (fase 12). A
+   * biblioteca não entra na história: o arquivo SUBSTITUI a animação de
+   * trabalho ou é ANEXADO ao final dela — decisão de quem importa, no diálogo.
+   *
+   * Com `assignment`, a animação é remapeada para os bonecos da cena
+   * (`animationRemap.ts`): os keyframes passam a ser executados pelo elenco que
+   * já está ali, e não pelos bonecos gravados. Sem ele, os keyframes entram
+   * literais, com os bonecos do arquivo — o modo "recriar", que é o único fiel
+   * a nomes, cores e alturas de origem e a única saída quando a cena não tem
+   * bonecos suficientes.
+   *
+   * Tudo num `set` só: importar é UM passo de undo, como abrir uma animação da
+   * biblioteca. Devolve `false` sem mexer em nada quando não há o que importar
+   * (arquivo sem keyframes, ou remapeamento sem nenhum papel com boneco).
+   */
+  importAnimation: (
+    imported: ImportedAnimation,
+    options: { mode: AnimationImportMode; assignment?: readonly string[] | null },
+  ) => boolean
   /**
    * Põe a cena de trabalho no retrato de um keyframe — é o "ir para" do
    * animador, que existe para poder AJUSTAR aquele keyframe. Edição de
@@ -785,6 +825,47 @@ function nextKeyframeIdFor(animation: Animation): string {
   return `k${maxKeyframeSeq(animation) + 1}`
 }
 
+/** Os mesmos keyframes com ids em sequência a partir de `baseSeq` — id de keyframe é único DENTRO da animação. */
+function renumberKeyframes(keyframes: readonly AnimationKeyframe[], baseSeq: number): AnimationKeyframe[] {
+  return keyframes.map((keyframe, index) => ({ ...keyframe, id: `k${baseSeq + index + 1}` }))
+}
+
+/**
+ * Desconflita os rótulos de grupo (item 38) de keyframes que estão ENTRANDO
+ * numa linha do tempo: cada bloco de rótulo igual vira um grupo, e um rótulo já
+ * usado ganha sufixo numérico — "Andando" importado sobre uma animação que já
+ * tem "Andando" vira "Andando 2", dois grupos, e não um bloco emendado.
+ *
+ * A conta é feita bloco a bloco contra o que já está lá MAIS o que já entrou:
+ * dois blocos "Andando" no mesmo arquivo têm de sair com rótulos diferentes.
+ */
+function withFreeGroupLabels(
+  existing: readonly AnimationKeyframe[],
+  incoming: readonly AnimationKeyframe[],
+): AnimationKeyframe[] {
+  const pool: AnimationKeyframe[] = [...existing]
+  let sourceLabel: string | null = null
+  let freeLabel = ''
+
+  return incoming.map((keyframe) => {
+    const label = keyframe.label?.trim() ?? ''
+    if (label === '') {
+      sourceLabel = null
+      pool.push(keyframe)
+      return keyframe
+    }
+
+    if (label !== sourceLabel) {
+      sourceLabel = label
+      freeLabel = freeKeyframeLabel(pool, label)
+    }
+
+    const renamed = freeLabel === label ? keyframe : { ...keyframe, label: freeLabel }
+    pool.push(renamed)
+    return renamed
+  })
+}
+
 /**
  * A animação onde a edição vai cair, criando a de trabalho se for preciso
  * (item 36). Devolve a lista já com ela dentro, para que criar e editar caibam
@@ -859,6 +940,7 @@ export const useFiguresStore = create<FiguresState>()(
       cameraBookmarks: restoredWorkspace?.workingScene.cameraBookmarks ?? [],
       nextCameraBookmarkSeq: restoredWorkspace?.workingScene.nextCameraBookmarkSeq ?? 1,
       environment: restoredWorkspace?.workingScene.environment ?? INITIAL_ENVIRONMENT,
+      sceneCamera: restoredWorkspace?.workingScene.sceneCamera ?? DEFAULT_SCENE_CAMERA,
       sceneName: restoredWorkspace?.workingScene.name ?? 'Cena 1',
       nextSnapshotNumber: restoredWorkspace?.workingScene.nextSnapshotNumber ?? 1,
       scenes: restoredWorkspace?.scenes ?? [],
@@ -1168,6 +1250,8 @@ export const useFiguresStore = create<FiguresState>()(
         }))
       },
 
+      setSceneCamera: (view) => set({ sceneCamera: view }),
+
       setBackground: (background) =>
         set((state) => ({ environment: { ...state.environment, background } })),
 
@@ -1195,6 +1279,7 @@ export const useFiguresStore = create<FiguresState>()(
             cameraBookmarks: state.cameraBookmarks,
             nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
             nextSnapshotNumber: state.nextSnapshotNumber,
+            sceneCamera: state.sceneCamera,
           },
         }
         set({
@@ -1219,6 +1304,7 @@ export const useFiguresStore = create<FiguresState>()(
           cameraBookmarks: state.cameraBookmarks,
           nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
           nextSnapshotNumber: state.nextSnapshotNumber,
+          sceneCamera: state.sceneCamera,
         }
         set({
           scenes: state.scenes.map((scene) =>
@@ -1272,6 +1358,7 @@ export const useFiguresStore = create<FiguresState>()(
           cameraBookmarks: data.cameraBookmarks,
           nextCameraBookmarkSeq: data.nextCameraBookmarkSeq,
           nextSnapshotNumber: data.nextSnapshotNumber,
+          sceneCamera: data.sceneCamera,
           sceneName: data.name,
           activeSceneId: null,
           selectedFigureId: null,
@@ -1405,6 +1492,7 @@ export const useFiguresStore = create<FiguresState>()(
           cameraBookmarks: [],
           nextCameraBookmarkSeq: 1,
           environment: { ...INITIAL_ENVIRONMENT },
+          sceneCamera: DEFAULT_SCENE_CAMERA,
           sceneName: 'Cena 1',
           nextSnapshotNumber: 1,
           scenes: [],
@@ -2191,6 +2279,57 @@ export const useFiguresStore = create<FiguresState>()(
         set({ animations: [...animations], nextAnimationSeq: nextAnimationSeqFor(animations) })
       },
 
+      importAnimation: (imported, options) => {
+        const state = get()
+        if (imported.keyframes.length === 0) return false
+
+        // Como a captura e os trechos: sem animação de trabalho, a importação
+        // cria a dela aqui dentro, no mesmo passo de undo (item 36).
+        const { animations, target } = withTargetAnimation(state.animations, WORKING_ANIMATION_ID)
+        const appending = options.mode === 'append'
+        const assignment = options.assignment ?? null
+
+        const baseSeq = appending ? maxKeyframeSeq(target) : 0
+        const keyframes = assignment
+          ? remapImportedKeyframes({
+              keyframes: imported.keyframes,
+              sceneFigures: state.figures,
+              assignment,
+              // Substituir traz a animação onde ela foi gravada, e a câmera do
+              // arquivo continua valendo; anexar a transporta para onde os
+              // bonecos estão, com a câmera junto (decisão do usuário).
+              anchoring: appending ? 'anchored' : 'absolute',
+              baseSeq,
+            })
+          : renumberKeyframes(imported.keyframes, baseSeq)
+
+        // Remapeamento sem nenhum papel com boneco não produz animação nenhuma
+        // — melhor não mexer em nada do que esvaziar a bancada.
+        if (keyframes.length === 0) return false
+
+        if (!appending) {
+          set({
+            animations: updateAnimation(animations, target.id, (working) => ({
+              ...working,
+              name: imported.name,
+              speed: clampAnimationSpeed(imported.speed),
+              keyframes,
+            })),
+          })
+          return true
+        }
+
+        // Anexar mantém nome e velocidade da bancada: a velocidade é da linha
+        // do tempo inteira, e o nome é o do vídeo que vai sair daqui.
+        set({
+          animations: updateAnimation(animations, target.id, (working) => ({
+            ...working,
+            keyframes: [...working.keyframes, ...withFreeGroupLabels(working.keyframes, keyframes)],
+          })),
+        })
+        return true
+      },
+
       loadFiguresFromKeyframe: (figures) => {
         set((state) => {
           const next = clampFigures([...figures])
@@ -2248,6 +2387,10 @@ export const useFiguresStore = create<FiguresState>()(
       // um snapshot de cena. `jointLocks` fica de fora: travar uma junta não é
       // edição do boneco, é um modo de trabalho — e desfazer uma edição não
       // pode reabrir a proteção que o usuário fechou (DECISOES.md #42).
+      // `sceneCamera` fica de fora (fase 11): mover a câmera de cena é
+      // ENQUADRAR, como a órbita/pan/zoom do viewport — persiste com a cena
+      // (autosave/snapshots/.glb), mas um Ctrl+Z de pose não pode teleportar a
+      // câmera (decidido com o usuário).
       partialize: (state) => ({
         figures: state.figures,
         nextFigureSeq: state.nextFigureSeq,

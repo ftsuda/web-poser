@@ -30,6 +30,8 @@ export type ShortcutAction =
   | { type: 'frameFigure' }
   | { type: 'saveScene' }
   | { type: 'setGizmoMode'; mode: GizmoMode }
+  /** Alterna entre a bancada e a vista pela câmera de cena (fase 11) — `0`, convenção Blender. */
+  | { type: 'toggleCameraView' }
 
 export interface EventTargetLike {
   tagName?: string
@@ -111,6 +113,11 @@ export function matchShortcut(event: ShortcutKeyEvent): ShortcutAction | null {
 
   if (/^[1-5]$/.test(event.key) && !isPlatformModifier(event) && !event.shiftKey) {
     return { type: 'selectFigureByIndex', index: Number(event.key) - 1 }
+  }
+
+  // `0` (comum ou numpad, como no Blender): olhar pela câmera de cena e voltar.
+  if (event.key === '0' && !isPlatformModifier(event) && !event.shiftKey) {
+    return { type: 'toggleCameraView' }
   }
 
   const key = event.key.toLowerCase()
@@ -197,6 +204,7 @@ export const SHORTCUT_CATALOG: readonly ShortcutCatalogEntry[] = [
   { keys: 'Delete', descriptionKey: 'help.deleteFigure' },
   { keys: 'H', descriptionKey: 'help.toggleVisibility' },
   { keys: 'Esc', descriptionKey: 'help.clearSelection' },
+  { keys: '0', descriptionKey: 'help.toggleCameraView' },
   { keys: 'Numpad 1 / 3 / 7', descriptionKey: 'help.orthoPresets' },
   { keys: 'Ctrl+Numpad 1 / 3', descriptionKey: 'help.orthoPresetsBack' },
   { keys: 'Shift+1..5', descriptionKey: 'help.applyCameraBookmark' },

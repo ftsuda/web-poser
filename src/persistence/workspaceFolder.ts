@@ -46,6 +46,7 @@ function sceneToSnapshotData(scene: {
   cameraBookmarks: SceneSnapshotData['cameraBookmarks']
   nextCameraBookmarkSeq: number
   nextSnapshotNumber: number
+  sceneCamera: SceneSnapshotData['sceneCamera']
 }): SceneSnapshotData {
   return {
     figures: scene.figures,
@@ -54,6 +55,7 @@ function sceneToSnapshotData(scene: {
     cameraBookmarks: scene.cameraBookmarks,
     nextCameraBookmarkSeq: scene.nextCameraBookmarkSeq,
     nextSnapshotNumber: scene.nextSnapshotNumber,
+    sceneCamera: scene.sceneCamera,
   }
 }
 

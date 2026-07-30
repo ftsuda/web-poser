@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
@@ -8,10 +8,11 @@ import { ROOT_PIVOT_REF_NAME } from '../figure/Figure'
 import { isDraggableJoint } from '../figure/dragSolver'
 import { ROOT_JOINT_NAME } from '../figure/skeleton'
 import { useFiguresStore } from '../store/figuresStore'
-import { useAnimationStore } from '../store/animationStore'
+import { useCameraStore } from '../store/cameraStore'
 import { useUIStore } from '../store/uiStore'
 import { AnimationPlayer } from './AnimationPlayer'
 import { CameraRig } from './CameraRig'
+import { SceneCameraGizmo } from './SceneCameraGizmo'
 import { FrameMaskCamera } from './FrameMaskCamera'
 import { FrameMaskOverlay } from './FrameMaskOverlay'
 import { BACKGROUND_COLORS, CAMERA_DEFAULTS } from './constants'
@@ -19,6 +20,7 @@ import { GridAlignmentIndicator } from './GridAlignmentIndicator'
 import { JointDragGizmo } from './JointDragGizmo'
 import { SnapshotCapture } from './SnapshotCapture'
 import { SceneContent } from './SceneContent'
+import { getViewportOrthographicCamera, getViewportPerspectiveCamera } from './viewportCameras'
 import { OnionSkin } from './OnionSkin'
 import { SceneFigures } from './SceneFigures'
 import { SelectionGizmo } from './SelectionGizmo'
@@ -33,11 +35,19 @@ export function Viewport() {
   const selectFigure = useFiguresStore((state) => state.selectFigure)
   const gizmoMode = useUIStore((state) => state.gizmoMode)
   const rulerVisible = useUIStore((state) => state.rulerVisible)
-  const animationPlaying = useAnimationStore((state) => state.playing)
+  const viewMode = useCameraStore((state) => state.viewMode)
+  const projection = useCameraStore((state) => state.projection)
+  const setCameraSelected = useCameraStore((state) => state.setCameraSelected)
 
   const orbitControlsRef = useRef<OrbitControlsImpl>(null)
   const [jointObjects, setJointObjects] = useState(() => new Map<string, THREE.Object3D>())
   const [isGizmoDragging, setIsGizmoDragging] = useState(false)
+
+  // Seleção exclusiva (fase 11): escolher um boneco desseleciona a câmera de
+  // cena — o caminho inverso (clicar na câmera) já limpa o boneco no clique.
+  useEffect(() => {
+    if (selectedFigureId) setCameraSelected(false)
+  }, [selectedFigureId, setCameraSelected])
 
   const handleJointRef = (figureId: string, jointName: string, object: THREE.Group | null) => {
     const key = `${figureId}:${jointName}`
@@ -85,7 +95,10 @@ export function Viewport() {
       <Canvas
         shadows
         camera={{ position: CAMERA_DEFAULTS.position, fov: CAMERA_DEFAULTS.fov }}
-        onPointerMissed={() => selectFigure(null)}
+        onPointerMissed={() => {
+          selectFigure(null)
+          setCameraSelected(false)
+        }}
       >
         <color attach="background" args={[BACKGROUND_COLORS[environment.background]]} />
         <SceneContent grid={environment.grid} />
@@ -120,17 +133,39 @@ export function Viewport() {
             onDraggingChange={setIsGizmoDragging}
           />
         )}
+        {/* A câmera de cena como elemento visível da bancada (fase 11):
+            clicável, arrastável e girável como um boneco. */}
+        <SceneCameraGizmo onDraggingChange={setIsGizmoDragging} />
         <CameraRig controlsRef={orbitControlsRef} />
         <FrameMaskCamera controlsRef={orbitControlsRef} />
-        <AnimationPlayer controlsRef={orbitControlsRef} />
+        <AnimationPlayer />
         <SnapshotCapture />
-        {/* Órbita desligada enquanto a animação toca: a câmera é dela, e
-            arrastar no meio disputaria o mesmo objeto. */}
-        <OrbitControls ref={orbitControlsRef} makeDefault enabled={!isGizmoDragging && !animationPlaying} />
+        {/* Órbita só no modo edição: no modo visão-câmera a vista é o quadro
+            da câmera de cena, travado (ajustes pelo painel ou pelo gizmo, de
+            volta na edição). Durante a REPRODUÇÃO a bancada fica livre — a
+            animação move a câmera de cena, não mais a vista de trabalho.
+            A prop `camera` é EXPLÍCITA e sempre aponta para a câmera da
+            bancada: sem ela o drei rebinda os controles na câmera padrão do
+            R3F, e entrar no modo visão-câmera fazia o `update()` da órbita
+            torcer a câmera de cena para o alvo antigo (ver viewportCameras.ts). */}
+        <OrbitControls
+          ref={orbitControlsRef}
+          camera={projection === 'orthographic' ? getViewportOrthographicCamera() : getViewportPerspectiveCamera()}
+          makeDefault
+          enabled={!isGizmoDragging && viewMode === 'edit'}
+        />
       </Canvas>
       {/* Por CIMA da tela de desenho, e nunca dentro dela: o que a máscara
           escurece não entra no PNG nem no MP4. */}
       <FrameMaskOverlay />
+      {/* Aviso de modo (fase 11): destacado no modo visão-câmera, discreto na
+          edição — o usuário sempre sabe por qual olho está olhando. */}
+      <div
+        className={`viewport__mode-badge viewport__mode-badge--${viewMode}`}
+        role="status"
+      >
+        {t(viewMode === 'camera' ? 'viewport.modeCamera' : 'viewport.modeEdit')}
+      </div>
     </div>
   )
 }

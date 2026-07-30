@@ -17,19 +17,28 @@ import { ANIMATION_CLIPS, ANIMATION_CLIP_KEYS, type AnimationClipKey } from '../
 import { clipRoleCount } from '../animation/clipLibrary'
 import { FPS_OPTIONS } from '../animation/frameTimeline'
 import { ONION_SKIN_MODES, type OnionSkinMode } from '../animation/onionSkin'
-import { SNAPSHOT_RESOLUTION_PRESETS } from '../snapshot/constants'
+import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
+import {
+  parseImportedAnimation,
+  serializeAnimationFile,
+  type ImportedAnimation,
+} from '../persistence/animationsFile'
+import { slugifySceneName } from '../snapshot/snapshotNaming'
+import {
+  ASPECT_LABEL_KEYS,
+  OUTPUT_ASPECT_KEYS,
+  OUTPUT_QUALITY_KEYS,
+  QUALITY_LABEL_KEYS,
+  type OutputAspectKey,
+  type OutputQualityKey,
+} from '../snapshot/constants'
 import { useAnimationStore } from '../store/animationStore'
 import { useCameraStore } from '../store/cameraStore'
 import { useFiguresStore } from '../store/figuresStore'
 import { useKeyframeThumbnailStore } from '../store/keyframeThumbnailStore'
+import type { AnimationImportMode } from '../store/figuresStore'
+import { AnimationImportDialog } from './AnimationImportDialog'
 import { CollapsiblePanel } from './CollapsiblePanel'
-
-const PRESET_LABEL_KEYS: Record<string, string> = {
-  hd720: 'panels.snapshots.resolutionHD720',
-  fullHD: 'panels.snapshots.resolutionFullHD',
-  square: 'panels.snapshots.resolutionSquare',
-  fourK: 'panels.snapshots.resolutionFourK',
-}
 
 /** Rótulo de cada modo do papel-cebola — mapa explícito, para o typecheck acusar modo novo sem tradução. */
 const ONION_SKIN_MODE_LABEL_KEYS: Record<OnionSkinMode, string> = {
@@ -261,6 +270,7 @@ export function AnimationPanel() {
   const saveAnimationToLibrary = useFiguresStore((state) => state.saveAnimationToLibrary)
   const openAnimationFromLibrary = useFiguresStore((state) => state.openAnimationFromLibrary)
   const overwriteSavedAnimation = useFiguresStore((state) => state.overwriteSavedAnimation)
+  const importAnimation = useFiguresStore((state) => state.importAnimation)
   const removeAnimationKeyframe = useFiguresStore((state) => state.removeAnimationKeyframe)
   const moveAnimationKeyframe = useFiguresStore((state) => state.moveAnimationKeyframe)
   const setAnimationKeyframeDuration = useFiguresStore((state) => state.setAnimationKeyframeDuration)
@@ -285,7 +295,8 @@ export function AnimationPanel() {
   const onionSkinMode = useAnimationStore((state) => state.onionSkinMode)
   const setOnionSkinMode = useAnimationStore((state) => state.setOnionSkinMode)
   const fps = useAnimationStore((state) => state.fps)
-  const presetKey = useAnimationStore((state) => state.presetKey)
+  const aspectKey = useAnimationStore((state) => state.aspectKey)
+  const qualityKey = useAnimationStore((state) => state.qualityKey)
   const exportPhase = useAnimationStore((state) => state.exportPhase)
   const exportedFrames = useAnimationStore((state) => state.exportedFrames)
   const exportTotalFrames = useAnimationStore((state) => state.exportTotalFrames)
@@ -294,7 +305,8 @@ export function AnimationPanel() {
   const resetTimeline = useAnimationStore((state) => state.resetTimeline)
   const visitedKeyframeId = useAnimationStore((state) => state.visitedKeyframeId)
   const setFps = useAnimationStore((state) => state.setFps)
-  const selectPreset = useAnimationStore((state) => state.selectPreset)
+  const selectAspect = useAnimationStore((state) => state.selectAspect)
+  const selectQuality = useAnimationStore((state) => state.selectQuality)
   const requestCaptureKeyframe = useAnimationStore((state) => state.requestCaptureKeyframe)
   const requestAppendClip = useAnimationStore((state) => state.requestAppendClip)
   const requestAppendSavedClip = useAnimationStore((state) => state.requestAppendSavedClip)
@@ -307,6 +319,11 @@ export function AnimationPanel() {
   // Qual animação da biblioteca está escolhida para abrir/regravar/remover.
   const [savedDraft, setSavedDraft] = useState('')
   const [libraryNameDraft, setLibraryNameDraft] = useState('')
+
+  // Animação lida de um arquivo, esperando o diálogo dizer o que fazer com ela
+  // (fase 12); e a falha da última leitura/gravação de arquivo.
+  const [pendingImport, setPendingImport] = useState<ImportedAnimation | null>(null)
+  const [fileErrorKey, setFileErrorKey] = useState<string | null>(null)
 
   // Trechos prontos: qual trecho e quem faz cada papel. A escolha guarda o ID
   // e cai no padrão (1º boneco como A, o 1º diferente como B) quando o boneco
@@ -442,6 +459,52 @@ export function AnimationPanel() {
     if (!active) return
     removeAnimation(active.id)
     resetTimeline()
+    clearThumbnails()
+  }
+
+  // ------------------------------------------------------------------
+  // Arquivo avulso da animação (fase 12)
+  // ------------------------------------------------------------------
+
+  const handleExportJson = async () => {
+    if (!active) return
+    setFileErrorKey(null)
+    const json = serializeAnimationFile(active)
+    await writeFileToDirectoryOrDownload(
+      null,
+      `${slugifySceneName(active.name)}.json`,
+      new Blob([json], { type: 'application/json' }),
+    )
+  }
+
+  const handleImportJson = async () => {
+    setFileErrorKey(null)
+    const picked = await pickFile('.json,application/json')
+    if (!picked) return
+    try {
+      const imported = parseImportedAnimation(JSON.parse(new TextDecoder().decode(picked.data)))
+      // Arquivo lido, mas sem keyframe nenhum aproveitável: dizer isso é bem
+      // mais útil do que abrir um diálogo para importar coisa nenhuma.
+      if (!imported) {
+        setFileErrorKey('errors.importNoAnimation')
+        return
+      }
+      setPendingImport(imported)
+    } catch {
+      setFileErrorKey('errors.importUnreadable')
+    }
+  }
+
+  const handleConfirmImport = (mode: AnimationImportMode, assignment: readonly string[] | null) => {
+    setPendingImport(null)
+    if (!pendingImport) return
+    if (!importAnimation(pendingImport, { mode, assignment })) {
+      setFileErrorKey('errors.importFailed')
+      return
+    }
+    resetTimeline()
+    // Ids de keyframe são únicos DENTRO de uma animação: sem limpar, o `k1` da
+    // animação importada mostraria a miniatura do `k1` da anterior.
     clearThumbnails()
   }
 
@@ -1059,16 +1122,33 @@ export function AnimationPanel() {
         </select>
       </label>
 
-      <label htmlFor="animation-resolution" className="animation-panel__field">
-        {t('panels.animation.resolution')}
+      {/* Proporção × qualidade (fase 11.4): os mesmos rótulos do instantâneo —
+          o vídeo só não tem a personalizada. */}
+      <label htmlFor="animation-aspect" className="animation-panel__field">
+        {t('panels.snapshots.aspect')}
         <select
-          id="animation-resolution"
-          value={presetKey}
-          onChange={(event) => selectPreset(event.target.value as typeof presetKey)}
+          id="animation-aspect"
+          value={aspectKey}
+          onChange={(event) => selectAspect(event.target.value as OutputAspectKey)}
         >
-          {SNAPSHOT_RESOLUTION_PRESETS.map((preset) => (
-            <option key={preset.key} value={preset.key}>
-              {t(PRESET_LABEL_KEYS[preset.key])}
+          {OUTPUT_ASPECT_KEYS.map((key) => (
+            <option key={key} value={key}>
+              {t(ASPECT_LABEL_KEYS[key])}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label htmlFor="animation-quality" className="animation-panel__field">
+        {t('panels.snapshots.quality')}
+        <select
+          id="animation-quality"
+          value={qualityKey}
+          onChange={(event) => selectQuality(event.target.value as OutputQualityKey)}
+        >
+          {OUTPUT_QUALITY_KEYS.map((key) => (
+            <option key={key} value={key}>
+              {t(QUALITY_LABEL_KEYS[key])}
             </option>
           ))}
         </select>
@@ -1140,6 +1220,34 @@ export function AnimationPanel() {
           </button>
         </div>
 
+        {/* Arquivo avulso da animação de trabalho (fase 12): exportar leva a
+            linha do tempo inteira num JSON; importar traz um de volta, e o
+            diálogo pergunta se ele substitui a bancada ou emenda no fim dela.
+            A biblioteca não entra nessa história. */}
+        <div className="animation-panel__buttons">
+          <button
+            type="button"
+            onClick={() => void handleExportJson()}
+            disabled={!active || active.keyframes.length === 0}
+            title={t('panels.animation.exportJsonHint')}
+          >
+            {t('panels.animation.exportJson')}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleImportJson()}
+            title={t('panels.animation.importJsonHint')}
+          >
+            {t('panels.animation.importJson')}
+          </button>
+        </div>
+
+        {fileErrorKey && (
+          <p role="alert" className="panel__error">
+            {t(fileErrorKey)}
+          </p>
+        )}
+
         {library.length === 0 ? (
           <p className="animation-panel__hint">{t('panels.animation.libraryEmpty')}</p>
         ) : (
@@ -1190,6 +1298,16 @@ export function AnimationPanel() {
           </>
         )}
       </fieldset>
+
+      {pendingImport && (
+        <AnimationImportDialog
+          imported={pendingImport}
+          sceneFigures={figures}
+          hasWorkingKeyframes={active !== null && active.keyframes.length > 0}
+          onConfirm={handleConfirmImport}
+          onCancel={() => setPendingImport(null)}
+        />
+      )}
     </CollapsiblePanel>
   )
 }

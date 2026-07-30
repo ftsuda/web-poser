@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { ANIMATIONS_VERSION, buildAnimationsFile, parseAnimationsFile } from '../animationsFile'
+import {
+  ANIMATIONS_VERSION,
+  buildAnimationsFile,
+  parseAnimationsFile,
+  parseImportedAnimation,
+  serializeAnimationFile,
+} from '../animationsFile'
 import type { Animation } from '../../animation/animation'
 import { resolvePosePreset } from '../../figure/posePresets'
 import type { Figure } from '../../store/figuresStore'
@@ -68,5 +74,48 @@ describe('animationsFile', () => {
     expect(parseAnimationsFile(null)).toEqual([])
     expect(parseAnimationsFile({ animations: 'nada' })).toEqual([])
     expect(parseAnimationsFile('{}')).toEqual([])
+  })
+})
+
+/**
+ * Arquivo AVULSO (fase 12): exportar leva UMA animação, e importar lê tudo o
+ * que o arquivo tiver como UMA linha do tempo — decisão do usuário.
+ */
+describe('arquivo avulso de animação', () => {
+  it('exporta uma animação e a lê de volta inteira', () => {
+    const lida = parseImportedAnimation(JSON.parse(serializeAnimationFile(animation)))
+
+    expect(lida).toEqual({
+      name: animation.name,
+      speed: animation.speed,
+      keyframes: animation.keyframes,
+    })
+  })
+
+  it('o JSON exportado é um `animations.json` legítimo, com uma entrada só', () => {
+    const cru = JSON.parse(serializeAnimationFile(animation))
+
+    expect(cru.version).toBe(ANIMATIONS_VERSION)
+    expect(cru.leiame.length).toBeGreaterThan(0)
+    expect(parseAnimationsFile(cru)).toEqual([animation])
+  })
+
+  it('arquivo com VÁRIAS animações vira uma linha do tempo só, na ordem', () => {
+    const outra: Animation = { ...animation, id: 'animation-2', name: 'Salto', speed: 1 }
+    const lida = parseImportedAnimation(buildAnimationsFile([animation, outra]))
+
+    expect(lida?.keyframes).toHaveLength(4)
+    expect(lida?.keyframes.map((keyframe) => keyframe.id)).toEqual(['k1', 'k2', 'k1', 'k2'])
+    // Nome e velocidade vêm da primeira entrada.
+    expect(lida?.name).toBe('Corrida')
+    expect(lida?.speed).toBe(1.15)
+  })
+
+  it('sem keyframe aproveitável devolve null, em vez de uma animação vazia', () => {
+    expect(parseImportedAnimation(null)).toBeNull()
+    expect(parseImportedAnimation({ animations: [] })).toBeNull()
+    // Keyframe sem câmera é descartado por `sanitizeAnimations`; sobrando zero,
+    // não há animação nenhuma para importar.
+    expect(parseImportedAnimation({ animations: [{ keyframes: [{ figures: [] }] }] })).toBeNull()
   })
 })

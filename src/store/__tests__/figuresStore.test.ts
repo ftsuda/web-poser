@@ -12,6 +12,7 @@ import { resolveHandPreset } from '../../figure/handPresets'
 import { figureBlendState, resolveBlendTarget } from '../../figure/poseBlend'
 import { mirrorRotation } from '../../figure/poseMirror'
 import { resolvePosePreset, resolvePosePresetPlacement } from '../../figure/posePresets'
+import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import { COLOR_PALETTE, MAX_FIGURES, useFiguresStore } from '../figuresStore'
 
 describe('figuresStore', () => {
@@ -772,6 +773,62 @@ describe('figuresStore — workspace: catálogo de snapshots de cena', () => {
   })
 })
 
+/**
+ * A câmera de cena (fase 11): conteúdo persistido da cena, mas FORA do
+ * histórico de undo — mover a câmera é enquadrar, como a navegação, e um
+ * Ctrl+Z de pose não pode teleportá-la (decidido com o usuário).
+ */
+describe('figuresStore — câmera de cena (fase 11)', () => {
+  const VISTA = {
+    position: [5, 3, 1] as [number, number, number],
+    target: [0, 1.2, 0] as [number, number, number],
+    up: [0, 1, 0] as [number, number, number],
+    focalMm: 85,
+  }
+
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  it('nasce com a câmera padrão e setSceneCamera a substitui', () => {
+    expect(useFiguresStore.getState().sceneCamera).toEqual(DEFAULT_SCENE_CAMERA)
+    useFiguresStore.getState().setSceneCamera(VISTA)
+    expect(useFiguresStore.getState().sceneCamera).toEqual(VISTA)
+  })
+
+  it('mover a câmera não empilha histórico de undo', () => {
+    useFiguresStore.getState().setSceneCamera(VISTA)
+    expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
+  })
+
+  it('desfazer uma edição de pose não teleporta a câmera de volta', () => {
+    useFiguresStore.getState().addFigure()
+    useFiguresStore.getState().setSceneCamera(VISTA)
+
+    useFiguresStore.temporal.getState().undo()
+
+    expect(useFiguresStore.getState().figures).toHaveLength(0)
+    expect(useFiguresStore.getState().sceneCamera).toEqual(VISTA)
+  })
+
+  it('cada snapshot de cena guarda o próprio enquadramento e o devolve ao carregar', () => {
+    useFiguresStore.getState().setSceneCamera(VISTA)
+    const id = useFiguresStore.getState().saveSceneSnapshot('Com câmera')
+
+    useFiguresStore.getState().setSceneCamera(DEFAULT_SCENE_CAMERA)
+    expect(useFiguresStore.getState().loadSceneSnapshot(id)).toBe(true)
+
+    expect(useFiguresStore.getState().sceneCamera).toEqual(VISTA)
+  })
+
+  it('resetWorkspace devolve a câmera ao padrão', () => {
+    useFiguresStore.getState().setSceneCamera(VISTA)
+    useFiguresStore.getState().resetWorkspace()
+    expect(useFiguresStore.getState().sceneCamera).toEqual(DEFAULT_SCENE_CAMERA)
+  })
+})
+
 describe('figuresStore — importação de arquivo (.glb)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
@@ -790,6 +847,7 @@ describe('figuresStore — importação de arquivo (.glb)', () => {
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
       nextSnapshotNumber: 9,
+      sceneCamera: { position: [2, 1.6, 3], target: [0, 0.9, 0], up: [0, 1, 0], focalMm: 50 },
     })
 
     const state = useFiguresStore.getState()
@@ -878,6 +936,7 @@ describe('figuresStore — importação de arquivo (.glb)', () => {
           cameraBookmarks: [],
           nextCameraBookmarkSeq: 1,
           nextSnapshotNumber: 1,
+          sceneCamera: DEFAULT_SCENE_CAMERA,
         },
       },
     ]
@@ -1958,6 +2017,7 @@ describe('figuresStore — abrir workspace traz a biblioteca de poses da pasta',
         cameraBookmarks: [],
         nextCameraBookmarkSeq: 1,
         nextSnapshotNumber: 1,
+        sceneCamera: DEFAULT_SCENE_CAMERA,
       } }],
       'scene-1',
       {},

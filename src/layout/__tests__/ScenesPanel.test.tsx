@@ -2,6 +2,7 @@ import '../../i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import { useFiguresStore } from '../../store/figuresStore'
 import { ScenesPanel } from '../ScenesPanel'
 
@@ -118,6 +119,7 @@ describe('ScenesPanel', () => {
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
       nextSnapshotNumber: 1,
+      sceneCamera: DEFAULT_SCENE_CAMERA,
     })
 
     const user = userEvent.setup()
@@ -165,6 +167,7 @@ describe('ScenesPanel', () => {
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
       nextSnapshotNumber: 1,
+      sceneCamera: DEFAULT_SCENE_CAMERA,
     })
 
     const user = userEvent.setup()
@@ -213,6 +216,7 @@ describe('ScenesPanel', () => {
               cameraBookmarks: [],
               nextCameraBookmarkSeq: 1,
               nextSnapshotNumber: 1,
+              sceneCamera: DEFAULT_SCENE_CAMERA,
             },
           },
         ],
@@ -312,6 +316,7 @@ describe('ScenesPanel', () => {
               cameraBookmarks: [],
               nextCameraBookmarkSeq: 1,
               nextSnapshotNumber: 1,
+              sceneCamera: DEFAULT_SCENE_CAMERA,
             },
           },
         ],

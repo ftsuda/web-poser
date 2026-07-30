@@ -76,9 +76,16 @@ describe('matchShortcut — joint cycling and figure selection', () => {
     expect(matchShortcut(key({ key: '5' }))).toEqual({ type: 'selectFigureByIndex', index: 4 })
   })
 
-  it('does not treat digits 6-9 or 0 as figure selection (max 5 figures)', () => {
+  it('does not treat digits 6-9 as figure selection (max 5 figures)', () => {
     expect(matchShortcut(key({ key: '6' }))).toBeNull()
-    expect(matchShortcut(key({ key: '0' }))).toBeNull()
+    expect(matchShortcut(key({ key: '9' }))).toBeNull()
+  })
+
+  // `0` na convenção Blender (fase 11): olhar pela câmera de cena e voltar.
+  it('maps 0 (plain or numpad) to toggling the scene-camera view', () => {
+    expect(matchShortcut(key({ key: '0' }))).toEqual({ type: 'toggleCameraView' })
+    expect(matchShortcut(key({ key: '0', code: 'Numpad0' }))).toEqual({ type: 'toggleCameraView' })
+    expect(matchShortcut(key({ key: '0', shiftKey: true }))).toBeNull()
   })
 })
 

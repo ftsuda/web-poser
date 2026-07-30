@@ -48,6 +48,11 @@ export const OVERLAY_NAMES = {
    * regra só. Um grupo, não um objeto por fantasma — esconder o pai basta.
    */
   onionSkin: 'scene-onion-skin',
+  /**
+   * Gizmo da câmera de cena (fase 11): apoio de tela por definição — a câmera
+   * não pode aparecer na própria foto, e o modo visão-câmera também o esconde.
+   */
+  sceneCamera: 'scene-camera-gizmo',
 } as const
 
 export const OVERLAY_NAME_LIST: readonly string[] = Object.values(OVERLAY_NAMES)

@@ -24,6 +24,7 @@ export function ScenesPanel() {
   const cameraBookmarks = useFiguresStore((state) => state.cameraBookmarks)
   const nextCameraBookmarkSeq = useFiguresStore((state) => state.nextCameraBookmarkSeq)
   const nextSnapshotNumber = useFiguresStore((state) => state.nextSnapshotNumber)
+  const sceneCamera = useFiguresStore((state) => state.sceneCamera)
   const saveSceneSnapshot = useFiguresStore((state) => state.saveSceneSnapshot)
   const loadSceneSnapshot = useFiguresStore((state) => state.loadSceneSnapshot)
   const removeSceneSnapshot = useFiguresStore((state) => state.removeSceneSnapshot)
@@ -71,6 +72,7 @@ export function ScenesPanel() {
       cameraBookmarks,
       nextCameraBookmarkSeq,
       nextSnapshotNumber,
+      sceneCamera,
     })
     const filename = `${slugifySceneName(sceneName)}.glb`
     await writeFileToDirectoryOrDownload(null, filename, new Blob([glb], { type: 'model/gltf-binary' }))

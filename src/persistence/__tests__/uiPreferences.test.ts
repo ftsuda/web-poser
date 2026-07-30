@@ -86,8 +86,8 @@ describe('uiPreferences (fase 9, item 8)', () => {
   it('faz round-trip da máscara de enquadramento, desligada por padrão', () => {
     expect(loadUIPreferences().frameMaskSource).toBe('off')
 
-    saveUIPreferences(prefs({ frameMaskSource: 'animation' }))
-    expect(loadUIPreferences().frameMaskSource).toBe('animation')
+    saveUIPreferences(prefs({ frameMaskSource: 'vertical' }))
+    expect(loadUIPreferences().frameMaskSource).toBe('vertical')
   })
 
   it('recusa uma fonte de máscara desconhecida e volta a desligada', () => {

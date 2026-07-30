@@ -18,29 +18,34 @@ describe('SnapshotPanel', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
   })
 
-  it('shows the panel title and the Full HD resolution selected by default', async () => {
+  it('shows the panel title with 16:9 in 1080p selected by default', async () => {
     await renderSnapshotPanel()
     expect(screen.getByRole('heading', { name: 'Instantâneos' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Resolução')).toHaveValue('fullHD')
+    expect(screen.getByLabelText('Proporção')).toHaveValue('wide')
+    expect(screen.getByLabelText('Qualidade')).toHaveValue('1080p')
   })
 
-  it('changing the resolution preset updates the store', async () => {
+  it('changing aspect and quality updates the store — every ratio in 1080p and 720p', async () => {
     const user = userEvent.setup()
     await renderSnapshotPanel()
 
-    await user.selectOptions(screen.getByLabelText('Resolução'), 'square')
-
+    await user.selectOptions(screen.getByLabelText('Proporção'), 'square')
     expect(useSnapshotCaptureStore.getState().width).toBe(1080)
     expect(useSnapshotCaptureStore.getState().height).toBe(1080)
+
+    await user.selectOptions(screen.getByLabelText('Qualidade'), '720p')
+    expect(useSnapshotCaptureStore.getState().width).toBe(720)
+    expect(useSnapshotCaptureStore.getState().height).toBe(720)
   })
 
-  it('shows custom width/height fields only when the custom preset is selected', async () => {
+  it('shows custom width/height fields only on the custom aspect, disabling the quality select', async () => {
     const user = userEvent.setup()
     await renderSnapshotPanel()
 
     expect(screen.queryByLabelText('Largura (px)')).not.toBeInTheDocument()
 
-    await user.selectOptions(screen.getByLabelText('Resolução'), 'custom')
+    await user.selectOptions(screen.getByLabelText('Proporção'), 'custom')
+    expect(screen.getByLabelText('Qualidade')).toBeDisabled()
     expect(screen.getByLabelText('Largura (px)')).toBeInTheDocument()
     expect(screen.getByLabelText('Altura (px)')).toBeInTheDocument()
 

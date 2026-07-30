@@ -3,6 +3,7 @@ import { sanitizeSavedClips, type SavedClip } from '../animation/clipLibrary'
 import { sanitizeJointLocks, type JointLockMap } from '../figure/jointLocks'
 import { sanitizeSavedPoses, type SavedPose } from '../figure/poseLibrary'
 import { setJointLimitOverrides, type JointLimitOverrides } from '../figure/skeleton'
+import type { CameraViewState } from '../scene/cameraMove'
 import type { CameraBookmark, EnvironmentSettings, Figure, SceneSnapshot, SceneSnapshotData } from '../store/figuresStore'
 import { savedPoseToJson } from './posesFile'
 import { sceneFromExtras, sceneToExtras, type SceneWorkingState } from './sceneSerialization'
@@ -24,6 +25,8 @@ export interface WorkspaceState {
   environment: EnvironmentSettings
   cameraBookmarks: CameraBookmark[]
   nextCameraBookmarkSeq: number
+  /** A câmera de cena (fase 11) — viaja com a cena de trabalho, como o ambiente. */
+  sceneCamera: CameraViewState
   sceneName: string
   nextSnapshotNumber: number
   scenes: SceneSnapshot[]
@@ -78,6 +81,7 @@ function extrasToSnapshotData(extras: unknown): SceneSnapshotData {
     cameraBookmarks: scene.cameraBookmarks,
     nextCameraBookmarkSeq: scene.nextCameraBookmarkSeq,
     nextSnapshotNumber: scene.nextSnapshotNumber,
+    sceneCamera: scene.sceneCamera,
   }
 }
 
@@ -100,6 +104,7 @@ export function saveWorkspaceToLocalStorage(state: WorkspaceState): boolean {
       cameraBookmarks: state.cameraBookmarks,
       nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
       nextSnapshotNumber: state.nextSnapshotNumber,
+      sceneCamera: state.sceneCamera,
     }),
     scenes: state.scenes.map((scene) => ({
       id: scene.id,

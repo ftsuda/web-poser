@@ -952,8 +952,77 @@ h2 {
   outline: 1px solid rgb(255 255 255 / 60%);
 }
 
+/* Aviso de modo do viewport (fase 11): discreto na edição, aceso na visão da
+   câmera — é o alerta de que a vista está travada no quadro dela. */
+.viewport__mode-badge {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  pointer-events: none;
+  background: rgb(0 0 0 / 45%);
+  color: rgb(255 255 255 / 75%);
+}
+
+.viewport__mode-badge--camera {
+  background: rgb(184 119 0 / 90%);
+  color: #fff;
+  font-weight: 600;
+  outline: 1px solid rgb(255 255 255 / 60%);
+}
+
 code {
   font-family: var(--mono);
+}
+
+/* Diálogo de importação de animação (fase 12) — `<dialog>` nativo: a
+   modalidade e o fundo escurecido são do navegador (`::backdrop`), e só a
+   caixa precisa de estilo. */
+.animation-import {
+  background: var(--bg);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  max-width: 26rem;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.animation-import::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+
+.animation-import__title {
+  font-size: 1.05rem;
+  margin-bottom: 0.5rem;
+}
+
+.animation-import__summary {
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.animation-import__cast,
+.animation-import__roles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.animation-import__option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.animation-import__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .shortcuts-help__backdrop {

@@ -13,6 +13,8 @@ import {
 } from '../figure/skeleton'
 import { MAX_HEIGHT_M, MIN_HEIGHT_M, REFERENCE_HEIGHT_M } from '../figure/skeleton'
 import { withLegacyIndexFinger } from '../figure/poseCompat'
+import { DEFAULT_SCENE_CAMERA, type CameraViewState } from '../scene/cameraMove'
+import { clampFocalLength } from '../scene/lens'
 import { DEFAULT_FIGURE_COLOR, normalizeFigureColor } from '../store/figuresStore'
 import type { BackgroundTone, CameraBookmark, CameraProjection, EnvironmentSettings, Figure } from '../store/figuresStore'
 
@@ -43,10 +45,23 @@ export interface CameraBookmarkExtras {
   up?: Vec3Tuple
 }
 
+/** A câmera de cena serializada (fase 11). Mesmo formato do `CameraViewState`. */
+export interface SceneCameraExtras {
+  position: Vec3Tuple
+  target: Vec3Tuple
+  up: Vec3Tuple
+  focalMm: number
+}
+
 export interface SceneExtras {
   version: number
   name: string
   environment: EnvironmentSettings
+  /**
+   * A câmera de cena (fase 11). Adição de campo, sem subir
+   * `SCENE_EXTRAS_VERSION`: arquivo antigo sem ela recebe a câmera padrão.
+   */
+  sceneCamera: SceneCameraExtras
   /**
    * Próximo número da sequência de instantâneos. Era `keyframeCounter` até a
    * fase 10 (DECISOES.md #52); grava-se o nome novo e lê-se os dois, para que
@@ -69,6 +84,7 @@ export interface SceneWorkingState {
   cameraBookmarks: CameraBookmark[]
   nextCameraBookmarkSeq: number
   nextSnapshotNumber: number
+  sceneCamera: CameraViewState
 }
 
 const DEFAULT_BACKGROUND: BackgroundTone = 'medium'
@@ -177,6 +193,46 @@ export function cameraBookmarkFromExtras(extras: unknown, fallbackIndex: number)
   }
 }
 
+export function sceneCameraToExtras(camera: CameraViewState): SceneCameraExtras {
+  return {
+    position: [...camera.position],
+    target: [...camera.target],
+    up: [...camera.up],
+    focalMm: camera.focalMm,
+  }
+}
+
+/**
+ * Reconstrói a câmera de cena de um bloco não confiável. Além dos defaults de
+ * praxe, recusa uma câmera DEGENERADA (posição em cima do alvo, que não define
+ * direção de visão) devolvendo a padrão — um arquivo editado à mão não pode
+ * deixar a cena sem enquadramento válido.
+ */
+export function sceneCameraFromExtras(extras: unknown): CameraViewState {
+  if (typeof extras !== 'object' || extras === null) return DEFAULT_SCENE_CAMERA
+  const source = extras as Record<string, unknown>
+
+  const position = tupleToVec3(source.position, [...DEFAULT_SCENE_CAMERA.position])
+  const target = tupleToVec3(source.target, [...DEFAULT_SCENE_CAMERA.target])
+  const up = tupleToVec3(source.up, [...DEFAULT_SCENE_CAMERA.up])
+
+  const dx = position[0] - target[0]
+  const dy = position[1] - target[1]
+  const dz = position[2] - target[2]
+  if (dx * dx + dy * dy + dz * dz < 1e-8) return DEFAULT_SCENE_CAMERA
+  if (up[0] * up[0] + up[1] * up[1] + up[2] * up[2] < 1e-8) return DEFAULT_SCENE_CAMERA
+
+  return {
+    position,
+    target,
+    up,
+    focalMm:
+      typeof source.focalMm === 'number' && Number.isFinite(source.focalMm)
+        ? clampFocalLength(source.focalMm)
+        : DEFAULT_SCENE_CAMERA.focalMm,
+  }
+}
+
 function environmentFromExtras(extras: unknown): EnvironmentSettings {
   const source = (typeof extras === 'object' && extras !== null ? extras : {}) as Record<string, unknown>
   const background = VALID_BACKGROUNDS.includes(source.background as BackgroundTone)
@@ -192,6 +248,7 @@ export function sceneToExtras(scene: SceneWorkingState): SceneExtras {
     version: SCENE_EXTRAS_VERSION,
     name: scene.name,
     environment: { ...scene.environment },
+    sceneCamera: sceneCameraToExtras(scene.sceneCamera),
     snapshotCounter: scene.nextSnapshotNumber,
     nextFigureSeq: scene.nextFigureSeq,
     nextCameraBookmarkSeq: scene.nextCameraBookmarkSeq,
@@ -222,6 +279,7 @@ export function sceneFromExtras(extras: unknown): SceneWorkingState {
     figures,
     nextFigureSeq: typeof source.nextFigureSeq === 'number' ? source.nextFigureSeq : figures.length + 1,
     environment: environmentFromExtras(source.environment),
+    sceneCamera: sceneCameraFromExtras(source.sceneCamera),
     cameraBookmarks,
     nextCameraBookmarkSeq:
       typeof source.nextCameraBookmarkSeq === 'number'

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { SNAPSHOT_RESOLUTION_PRESETS } from '../../snapshot/constants'
+import { OUTPUT_ASPECT_KEYS, OUTPUT_QUALITY_KEYS, outputResolutionFor } from '../../snapshot/constants'
 import { useSnapshotCaptureStore } from '../snapshotCaptureStore'
 
 describe('snapshotCaptureStore', () => {
@@ -7,9 +7,10 @@ describe('snapshotCaptureStore', () => {
     useSnapshotCaptureStore.setState(useSnapshotCaptureStore.getInitialState())
   })
 
-  it('starts with the Full HD preset, overlays hidden, no directory and no pending capture', () => {
+  it('starts at 16:9 in 1080p, overlays hidden, no directory and no pending capture', () => {
     const state = useSnapshotCaptureStore.getState()
-    expect(state.presetKey).toBe('fullHD')
+    expect(state.aspectKey).toBe('wide')
+    expect(state.qualityKey).toBe('1080p')
     expect(state.width).toBe(1920)
     expect(state.height).toBe(1080)
     expect(state.hideOverlaysOnCapture).toBe(true)
@@ -18,35 +19,59 @@ describe('snapshotCaptureStore', () => {
     expect(state.lastCapturedFilename).toBeNull()
   })
 
-  it('selectPreset switches width/height to the chosen preset', () => {
-    useSnapshotCaptureStore.getState().selectPreset('square')
-    const state = useSnapshotCaptureStore.getState()
-    expect(state.presetKey).toBe('square')
+  it('selectAspect keeps the quality and switches width/height', () => {
+    useSnapshotCaptureStore.getState().selectAspect('vertical')
+    let state = useSnapshotCaptureStore.getState()
+    expect(state.aspectKey).toBe('vertical')
+    expect(state.width).toBe(1080)
+    expect(state.height).toBe(1920)
+
+    useSnapshotCaptureStore.getState().selectAspect('square')
+    state = useSnapshotCaptureStore.getState()
     expect(state.width).toBe(1080)
     expect(state.height).toBe(1080)
   })
 
-  it('selecting "custom" keeps the current width/height, now user-editable', () => {
-    useSnapshotCaptureStore.getState().selectPreset('fourK')
-    useSnapshotCaptureStore.getState().selectPreset('custom')
+  it('selectQuality keeps the aspect: every ratio records in 1080p AND 720p (fase 11.4)', () => {
+    useSnapshotCaptureStore.getState().selectAspect('vertical')
+    useSnapshotCaptureStore.getState().selectQuality('720p')
     const state = useSnapshotCaptureStore.getState()
-    expect(state.presetKey).toBe('custom')
-    expect(state.width).toBe(3840)
-    expect(state.height).toBe(2160)
+    expect(state.aspectKey).toBe('vertical')
+    expect(state.qualityKey).toBe('720p')
+    expect(state.width).toBe(720)
+    expect(state.height).toBe(1280)
   })
 
-  it('setWidth/setHeight only apply while a custom preset is selected, clamped to the documented range', () => {
-    const { selectPreset, setWidth, setHeight } = useSnapshotCaptureStore.getState()
-    selectPreset('custom')
+  it('selecting "custom" keeps the current width/height, now user-editable', () => {
+    useSnapshotCaptureStore.getState().selectAspect('square')
+    useSnapshotCaptureStore.getState().selectAspect('custom')
+    const state = useSnapshotCaptureStore.getState()
+    expect(state.aspectKey).toBe('custom')
+    expect(state.width).toBe(1080)
+    expect(state.height).toBe(1080)
+  })
+
+  it('setWidth/setHeight only apply on the custom aspect, clamped to the documented range', () => {
+    const { selectAspect, setWidth, setHeight } = useSnapshotCaptureStore.getState()
+    selectAspect('custom')
     setWidth(50) // abaixo do mínimo
-    setHeight(5000) // acima do teto de 4K
+    setHeight(5000) // acima do teto
     expect(useSnapshotCaptureStore.getState().width).toBe(64)
     expect(useSnapshotCaptureStore.getState().height).toBe(3840)
   })
 
-  it('setWidth/setHeight are ignored while a fixed preset is selected', () => {
+  it('setWidth/setHeight are ignored while a fixed aspect is selected', () => {
     useSnapshotCaptureStore.getState().setWidth(999)
     expect(useSnapshotCaptureStore.getState().width).toBe(1920)
+  })
+
+  it('leaving custom recomputes the resolution from aspect × quality', () => {
+    const { selectAspect, setWidth } = useSnapshotCaptureStore.getState()
+    selectAspect('custom')
+    setWidth(999)
+    useSnapshotCaptureStore.getState().selectAspect('wide')
+    expect(useSnapshotCaptureStore.getState().width).toBe(1920)
+    expect(useSnapshotCaptureStore.getState().height).toBe(1080)
   })
 
   it('toggleHideOverlays flips the flag', () => {
@@ -72,13 +97,25 @@ describe('snapshotCaptureStore', () => {
     useSnapshotCaptureStore.getState().setLastCapturedFilename('Cena-1_kf001.png')
     expect(useSnapshotCaptureStore.getState().lastCapturedFilename).toBe('Cena-1_kf001.png')
   })
+})
 
-  it('exposes exactly the resolution presets declared in snapshot/constants.ts', () => {
-    expect(SNAPSHOT_RESOLUTION_PRESETS.map((p) => p.key)).toEqual(['hd720', 'fullHD', 'square', 'fourK'])
+/**
+ * A tabela proporção × qualidade (fase 11.4): três proporções — as mesmas da
+ * máscara — e todas gravando em 1080p e 720p. A qualidade nomeia o lado MENOR,
+ * como nos players; o 4K saiu por decisão do usuário.
+ */
+describe('outputResolutionFor', () => {
+  it('cobre as seis combinações, com o lado menor dando o nome à qualidade', () => {
+    expect(outputResolutionFor('wide', '1080p')).toEqual({ width: 1920, height: 1080 })
+    expect(outputResolutionFor('wide', '720p')).toEqual({ width: 1280, height: 720 })
+    expect(outputResolutionFor('vertical', '1080p')).toEqual({ width: 1080, height: 1920 })
+    expect(outputResolutionFor('vertical', '720p')).toEqual({ width: 720, height: 1280 })
+    expect(outputResolutionFor('square', '1080p')).toEqual({ width: 1080, height: 1080 })
+    expect(outputResolutionFor('square', '720p')).toEqual({ width: 720, height: 720 })
   })
 
-  it('o instantâneo continua nascendo em Full HD — quem passou a 720p foi o vídeo', () => {
-    expect(useSnapshotCaptureStore.getState().presetKey).toBe('fullHD')
-    expect(useSnapshotCaptureStore.getState().width).toBe(1920)
+  it('as chaves declaradas são exatamente três proporções e duas qualidades', () => {
+    expect([...OUTPUT_ASPECT_KEYS]).toEqual(['wide', 'vertical', 'square'])
+    expect([...OUTPUT_QUALITY_KEYS]).toEqual(['1080p', '720p'])
   })
 })

@@ -1,27 +1,29 @@
 import { useState, type ChangeEvent, type FocusEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SNAPSHOT_RESOLUTION_PRESETS } from '../snapshot/constants'
+import {
+  ASPECT_LABEL_KEYS,
+  OUTPUT_ASPECT_KEYS,
+  OUTPUT_QUALITY_KEYS,
+  QUALITY_LABEL_KEYS,
+  type OutputAspectChoice,
+  type OutputQualityKey,
+} from '../snapshot/constants'
 import { isFileSystemAccessAvailable } from '../persistence/fileIO'
 import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
 import { CollapsiblePanel } from './CollapsiblePanel'
 
-const PRESET_LABEL_KEYS: Record<string, string> = {
-  hd720: 'panels.snapshots.resolutionHD720',
-  fullHD: 'panels.snapshots.resolutionFullHD',
-  square: 'panels.snapshots.resolutionSquare',
-  fourK: 'panels.snapshots.resolutionFourK',
-}
-
 export function SnapshotPanel() {
   const { t } = useTranslation()
   const fileSystemAccessAvailable = isFileSystemAccessAvailable()
-  const presetKey = useSnapshotCaptureStore((state) => state.presetKey)
+  const aspectKey = useSnapshotCaptureStore((state) => state.aspectKey)
+  const qualityKey = useSnapshotCaptureStore((state) => state.qualityKey)
   const width = useSnapshotCaptureStore((state) => state.width)
   const height = useSnapshotCaptureStore((state) => state.height)
   const hideOverlaysOnCapture = useSnapshotCaptureStore((state) => state.hideOverlaysOnCapture)
   const directoryHandle = useSnapshotCaptureStore((state) => state.directoryHandle)
   const lastCapturedFilename = useSnapshotCaptureStore((state) => state.lastCapturedFilename)
-  const selectPreset = useSnapshotCaptureStore((state) => state.selectPreset)
+  const selectAspect = useSnapshotCaptureStore((state) => state.selectAspect)
+  const selectQuality = useSnapshotCaptureStore((state) => state.selectQuality)
   const setWidth = useSnapshotCaptureStore((state) => state.setWidth)
   const setHeight = useSnapshotCaptureStore((state) => state.setHeight)
   const toggleHideOverlays = useSnapshotCaptureStore((state) => state.toggleHideOverlays)
@@ -42,8 +44,12 @@ export function SnapshotPanel() {
     setHeightDraft(String(height))
   }
 
-  const handleResolutionChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    selectPreset(event.target.value as typeof presetKey)
+  const handleAspectChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    selectAspect(event.target.value as OutputAspectChoice)
+  }
+
+  const handleQualityChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    selectQuality(event.target.value as OutputQualityKey)
   }
 
   const handleWidthInput = (event: ChangeEvent<HTMLInputElement>) => setWidthDraft(event.target.value)
@@ -67,19 +73,37 @@ export function SnapshotPanel() {
   return (
     <CollapsiblePanel panelKey="snapshots" className="panel--snapshots" title={t('panels.snapshots.title')}>
       
-      <label htmlFor="snapshot-resolution" className="snapshot-panel__field">
-        {t('panels.snapshots.resolution')}
-        <select id="snapshot-resolution" value={presetKey} onChange={handleResolutionChange}>
-          {SNAPSHOT_RESOLUTION_PRESETS.map((preset) => (
-            <option key={preset.key} value={preset.key}>
-              {t(PRESET_LABEL_KEYS[preset.key])}
+      {/* Proporção × qualidade (fase 11.4): as mesmas três proporções da
+          máscara de enquadramento, e qualquer uma em 1080p ou 720p. */}
+      <label htmlFor="snapshot-aspect" className="snapshot-panel__field">
+        {t('panels.snapshots.aspect')}
+        <select id="snapshot-aspect" value={aspectKey} onChange={handleAspectChange}>
+          {OUTPUT_ASPECT_KEYS.map((key) => (
+            <option key={key} value={key}>
+              {t(ASPECT_LABEL_KEYS[key])}
             </option>
           ))}
-          <option value="custom">{t('panels.snapshots.resolutionCustom')}</option>
+          <option value="custom">{t('panels.snapshots.aspectCustom')}</option>
         </select>
       </label>
 
-      {presetKey === 'custom' && (
+      <label htmlFor="snapshot-quality" className="snapshot-panel__field">
+        {t('panels.snapshots.quality')}
+        <select
+          id="snapshot-quality"
+          value={qualityKey}
+          disabled={aspectKey === 'custom'}
+          onChange={handleQualityChange}
+        >
+          {OUTPUT_QUALITY_KEYS.map((key) => (
+            <option key={key} value={key}>
+              {t(QUALITY_LABEL_KEYS[key])}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {aspectKey === 'custom' && (
         <div className="snapshot-panel__custom-resolution">
           <label htmlFor="snapshot-width" className="snapshot-panel__field">
             {t('panels.snapshots.width')}

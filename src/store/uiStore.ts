@@ -35,6 +35,15 @@ export interface UIState {
   toggleHelp: () => void
   closeHelp: () => void
 
+  /**
+   * Há um diálogo MODAL aberto (fase 12, a importação de animação)? Enquanto
+   * houver, os atalhos globais ficam suspensos — do contrário um `W` digitado
+   * sobre o diálogo trocaria o gizmo da cena por baixo dele, exatamente como o
+   * painel de ajuda já evita (`useKeyboardShortcuts`).
+   */
+  modalOpen: boolean
+  setModalOpen: (open: boolean) => void
+
   autosaveStatus: AutosaveStatus
   /** Epoch (ms) da última gravação bem-sucedida; `null` enquanto nada foi gravado nesta sessão. */
   lastSavedAt: number | null
@@ -83,6 +92,9 @@ export const useUIStore = create<UIState>()((set) => ({
   helpVisible: false,
   toggleHelp: () => set((state) => ({ helpVisible: !state.helpVisible })),
   closeHelp: () => set({ helpVisible: false }),
+
+  modalOpen: false,
+  setModalOpen: (open) => set({ modalOpen: open }),
 
   autosaveStatus: 'idle',
   lastSavedAt: null,

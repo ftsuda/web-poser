@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import type { SceneSnapshot } from '../../store/figuresStore'
 import { WORKSPACE_MANIFEST_VERSION, buildWorkspaceManifest, parseWorkspaceManifest } from '../workspaceManifest'
 
@@ -9,6 +10,7 @@ const emptyData = {
   cameraBookmarks: [],
   nextCameraBookmarkSeq: 1,
   nextSnapshotNumber: 1,
+  sceneCamera: DEFAULT_SCENE_CAMERA,
 }
 
 const scenes: SceneSnapshot[] = [

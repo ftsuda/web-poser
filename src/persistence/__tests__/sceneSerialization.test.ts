@@ -5,10 +5,13 @@ import {
   cameraBookmarkToExtras,
   figureFromExtras,
   figureToExtras,
+  sceneCameraFromExtras,
   sceneFromExtras,
   sceneToExtras,
   type SceneWorkingState,
 } from '../sceneSerialization'
+import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
+import { MAX_FOCAL_MM } from '../../scene/lens'
 import { DEFAULT_FIGURE_COLOR } from '../../store/figuresStore'
 import type { CameraBookmark, Figure } from '../../store/figuresStore'
 
@@ -44,6 +47,7 @@ const sampleScene: SceneWorkingState = {
   cameraBookmarks: [sampleBookmark],
   nextCameraBookmarkSeq: 2,
   nextSnapshotNumber: 7,
+  sceneCamera: { position: [2, 1.6, 3], target: [0, 0.9, 0], up: [0, 1, 0], focalMm: 50 },
 }
 
 describe('sceneSerialization — figura', () => {
@@ -193,5 +197,52 @@ describe('sceneSerialization — cena completa', () => {
     })
     expect(restored.nextFigureSeq).toBe(3)
     expect(restored.nextCameraBookmarkSeq).toBe(2)
+  })
+})
+
+/**
+ * A câmera de cena viaja com a cena (fase 11) — e um arquivo de antes dela
+ * existir, ou editado à mão, nunca pode deixar a cena sem enquadramento válido.
+ */
+describe('sceneSerialization — câmera de cena (fase 11)', () => {
+  it('faz o round-trip da câmera de cena junto com o resto da cena', () => {
+    const extras = sceneToExtras(sampleScene)
+    expect(extras.sceneCamera).toEqual({
+      position: [2, 1.6, 3],
+      target: [0, 0.9, 0],
+      up: [0, 1, 0],
+      focalMm: 50,
+    })
+    expect(sceneFromExtras(extras).sceneCamera).toEqual(sampleScene.sceneCamera)
+  })
+
+  it('cena gravada antes da câmera de cena existir volta com a câmera padrão', () => {
+    const extras = sceneToExtras(sampleScene) as unknown as Record<string, unknown>
+    delete extras.sceneCamera
+    expect(sceneFromExtras(extras).sceneCamera).toEqual(DEFAULT_SCENE_CAMERA)
+  })
+
+  it('recusa uma câmera degenerada (posição em cima do alvo, up nulo) devolvendo a padrão', () => {
+    expect(
+      sceneCameraFromExtras({ position: [1, 1, 1], target: [1, 1, 1], up: [0, 1, 0], focalMm: 50 }),
+    ).toEqual(DEFAULT_SCENE_CAMERA)
+    expect(
+      sceneCameraFromExtras({ position: [0, 0, 5], target: [0, 0, 0], up: [0, 0, 0], focalMm: 50 }),
+    ).toEqual(DEFAULT_SCENE_CAMERA)
+    expect(sceneCameraFromExtras(null)).toEqual(DEFAULT_SCENE_CAMERA)
+    expect(sceneCameraFromExtras('lixo')).toEqual(DEFAULT_SCENE_CAMERA)
+  })
+
+  it('grampeia a lente e aplica defaults campo a campo', () => {
+    const restored = sceneCameraFromExtras({
+      position: [0, 0, 5],
+      target: [0, 0, 0],
+      up: [0, 1, 0],
+      focalMm: 9999,
+    })
+    expect(restored.focalMm).toBe(MAX_FOCAL_MM)
+
+    const semLente = sceneCameraFromExtras({ position: [0, 0, 5], target: [0, 0, 0], up: [0, 1, 0] })
+    expect(semLente.focalMm).toBe(DEFAULT_SCENE_CAMERA.focalMm)
   })
 })

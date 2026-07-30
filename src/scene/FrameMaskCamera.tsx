@@ -2,10 +2,9 @@ import { useEffect, useMemo, type RefObject } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
-import { useAnimationStore } from '../store/animationStore'
-import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
+import { useCameraStore } from '../store/cameraStore'
 import { useUIStore } from '../store/uiStore'
-import { applyFrameMaskFit, fitFrameRect } from './frameMask'
+import { applyFrameMaskFit, fitFrameRect, frameMaskResolution } from './frameMask'
 
 /**
  * Metade de dentro do `<Canvas>` da máscara de enquadramento: mede a tela de
@@ -27,19 +26,22 @@ export interface FrameMaskCameraProps {
 }
 
 export function FrameMaskCamera({ controlsRef }: FrameMaskCameraProps) {
-  const source = useUIStore((state) => state.frameMaskSource)
+  const rawSource = useUIStore((state) => state.frameMaskSource)
+  const viewMode = useCameraStore((state) => state.viewMode)
   const setFrameMaskRect = useUIStore((state) => state.setFrameMaskRect)
   const camera = useThree((state) => state.camera)
   const size = useThree((state) => state.size)
-  const snapshotWidth = useSnapshotCaptureStore((state) => state.width)
-  const snapshotHeight = useSnapshotCaptureStore((state) => state.height)
-  const animationWidth = useAnimationStore((state) => state.width)
-  const animationHeight = useAnimationStore((state) => state.height)
+
+  // A máscara só existe no modo visão-câmera (fase 11): no modo edição o
+  // viewport é bancada de trabalho, não o quadro da saída — ali um recorte
+  // seria mentira.
+  const source = viewMode === 'camera' ? rawSource : 'off'
 
   // Com a máscara desligada os lados ficam em zero, e `fitFrameRect` devolve
   // `null` — o mesmo caminho de "ainda não há retângulo".
-  const outputWidth = source === 'snapshot' ? snapshotWidth : source === 'animation' ? animationWidth : 0
-  const outputHeight = source === 'snapshot' ? snapshotHeight : source === 'animation' ? animationHeight : 0
+  const resolution = frameMaskResolution(source)
+  const outputWidth = resolution?.width ?? 0
+  const outputHeight = resolution?.height ?? 0
 
   // Memorizado para que os efeitos abaixo só reajam a uma mudança de verdade:
   // um retângulo novo a cada render redesenharia a máscara e mexeria na câmera

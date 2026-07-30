@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { applyFrameMaskFit, fitFrameRect } from '../frameMask'
+import { applyFrameMaskFit, fitFrameRect, frameMaskResolution } from '../frameMask'
 
 /**
  * A afirmação que a máscara faz é geométrica: o retângulo claro mostra
@@ -178,5 +178,21 @@ describe('applyFrameMaskFit', () => {
     restore()
     expect(camera.view?.enabled).toBe(true)
     expect(camera.projectionMatrix.elements).toEqual(antes.elements)
+  })
+})
+
+/**
+ * A máscara mostra PROPORÇÕES puras (fase 11.4) — as mesmas três das
+ * resoluções de exportação; a escala nominal vem da mesma tabela.
+ */
+describe('frameMaskResolution', () => {
+  it('cada proporção aponta para a resolução nominal correspondente', () => {
+    expect(frameMaskResolution('wide')).toEqual({ width: 1920, height: 1080 })
+    expect(frameMaskResolution('vertical')).toEqual({ width: 1080, height: 1920 })
+    expect(frameMaskResolution('square')).toEqual({ width: 1080, height: 1080 })
+  })
+
+  it('desligada não representa resolução nenhuma', () => {
+    expect(frameMaskResolution('off')).toBeNull()
   })
 })

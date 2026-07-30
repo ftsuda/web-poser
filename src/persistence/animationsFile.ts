@@ -26,6 +26,7 @@ const README_LINES: readonly string[] = [
   'A interpolação entre dois keyframes é LINEAR no tempo: a velocidade é constante dentro de cada trecho e muda em cada keyframe.',
   'Membros podem atravessar o corpo, outro boneco ou o chão durante a transição — isso é resolvido com os keyframes certos, não automaticamente.',
   'Juntas fora dos limites em vigor são ajustadas para dentro deles ao carregar; keyframes sem bonecos ou sem câmera são ignorados.',
+  'Exportado pelo painel de animação, o arquivo traz UMA animação — a de trabalho. Na importação, todos os keyframes do arquivo formam uma linha do tempo só, mesmo que venham de várias entradas.',
 ]
 
 export interface AnimationsFile {
@@ -47,4 +48,39 @@ export function parseAnimationsFile(json: unknown): Animation[] {
   if (Array.isArray(json)) return sanitizeAnimations(json)
   const source = (typeof json === 'object' && json !== null ? json : {}) as Record<string, unknown>
   return sanitizeAnimations(source.animations)
+}
+
+// ---------------------------------------------------------------------------
+// Arquivo AVULSO de uma animação (fase 12) — exportar/importar pelo painel
+// ---------------------------------------------------------------------------
+
+/** O JSON de UMA animação, pronto para baixar — mesmo arquivo do workspace, com uma entrada só. */
+export function serializeAnimationFile(animation: Animation): string {
+  return JSON.stringify(buildAnimationsFile([animation]), null, 2)
+}
+
+/** O que a importação lê de um arquivo: uma linha do tempo, sem id (quem importa decide onde ela entra). */
+export interface ImportedAnimation {
+  name: string
+  speed: number
+  keyframes: Animation['keyframes']
+}
+
+/**
+ * Lê um arquivo de animação para importar (decisão do usuário, fase 12):
+ * **todos os keyframes do arquivo formam UMA animação**, na ordem em que
+ * aparecem. Um `animations.json` inteiro de workspace, portanto, entra como uma
+ * linha do tempo só — nome e velocidade vêm da primeira entrada.
+ *
+ * Devolve `null` quando não sobrou keyframe válido: é o caso do arquivo que não
+ * é de animação, do vazio e do que só tinha keyframes quebrados (sem bonecos ou
+ * sem câmera, descartados por `sanitizeAnimations`).
+ */
+export function parseImportedAnimation(json: unknown): ImportedAnimation | null {
+  const animations = parseAnimationsFile(json)
+  const keyframes = animations.flatMap((animation) => animation.keyframes)
+  if (keyframes.length === 0) return null
+
+  const first = animations[0]
+  return { name: first.name, speed: first.speed, keyframes }
 }

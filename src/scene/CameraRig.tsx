@@ -7,6 +7,9 @@ import { useFiguresStore } from '../store/figuresStore'
 import { interpolateCameraView, type CameraViewState } from './cameraMove'
 import { computeFrameDistance, computeOrthographicZoom, computePresetView } from './cameraPresets'
 import { focalLengthToFov, fovToFocalLength } from './lens'
+import { readOutputAspect } from './outputAspect'
+import { applyViewToCamera, getSceneCameraObject } from './sceneCameraObject'
+import { getViewportOrthographicCamera, getViewportPerspectiveCamera } from './viewportCameras'
 import {
   computeGroupShotView,
   computeOverTheShoulderView,
@@ -29,19 +32,22 @@ const DEFAULT_ORBIT_DISTANCE = CAMERA_DEFAULTS.position[2]
 
 /**
  * Componente sem visual (`return null`) que vive dentro do `<Canvas>` e é o
- * único lugar que efetivamente move a câmera ativa — presets ortográficos,
- * bookmarks e a troca perspectiva/ortográfica (ver PLANO.md > "Ambiente e
- * câmera"). Mantém duas instâncias de câmera (perspectiva e ortográfica)
- * vivas o tempo todo, e alterna qual delas é a "câmera padrão" do R3F via
- * `set({ camera })`, copiando posição/orientação de uma para a outra — evita
- * a corrida de timing de desmontar/remontar um componente de câmera do drei
- * a cada troca de projeção (ver DECISOES.md).
+ * único lugar que troca a câmera ATIVA do R3F e move as câmeras do VIEWPORT
+ * (presets ortográficos, enquadrar com F, perspectiva/ortográfica) — ver
+ * PLANO.md > "Ambiente e câmera". Mantém duas instâncias de câmera de
+ * navegação vivas o tempo todo e alterna qual delas é a "câmera padrão" via
+ * `set({ camera })` (ver DECISOES.md); no modo visão-câmera (fase 11), a
+ * ativa passa a ser a CÂMERA DE CENA (`sceneCameraObject.ts`).
  *
- * Assim como o arraste do gizmo em `SelectionGizmo.tsx`, o efeito real de
- * mover a câmera (imperativo, sobre um `THREE.Object3D` vivo) não é coberto
- * por teste automatizado — validado manualmente no navegador. A lógica
- * matemática dos presets (`cameraPresets.ts`) e as transições do store
- * (`cameraStore.ts`) têm cobertura completa.
+ * Desde a fase 11 os comandos CINEMATOGRÁFICOS (planos, POV, movimento A→B,
+ * bookmarks perspectivos…) não movem mais a câmera do viewport: eles calculam
+ * um `CameraViewState` novo — a partir do estado atual da câmera de cena — e
+ * gravam em `figuresStore.sceneCamera`. O viewport de trabalho fica livre.
+ *
+ * Como antes, o efeito imperativo sobre `THREE.Object3D` vivo não é coberto
+ * por teste automatizado — validado no navegador. A matemática dos presets
+ * (`cameraPresets.ts`), do enquadramento (`shotFraming.ts`) e as transições
+ * do store (`cameraStore.ts`) têm cobertura completa.
  */
 export function CameraRig({ controlsRef }: CameraRigProps) {
   const set = useThree((state) => state.set)
@@ -52,49 +58,80 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
   const orthographicCameraRef = useRef<THREE.OrthographicCamera | null>(null)
   const activeProjectionRef = useRef<'perspective' | 'orthographic'>('perspective')
 
+  // As instâncias são singletons de módulo (`viewportCameras.ts`) porque o
+  // `<OrbitControls>` do Viewport precisa apontar para elas EXPLICITAMENTE —
+  // ver o comentário de lá. Aqui só se completa o que depende da janela.
   if (perspectiveCameraRef.current == null) {
-    const camera = new THREE.PerspectiveCamera(
-      CAMERA_DEFAULTS.fov,
-      size.width / size.height,
-      CAMERA_DEFAULTS.near,
-      CAMERA_DEFAULTS.far,
-    )
-    camera.position.set(...CAMERA_DEFAULTS.position)
+    const camera = getViewportPerspectiveCamera()
+    camera.aspect = size.width / size.height
+    camera.updateProjectionMatrix()
     perspectiveCameraRef.current = camera
   }
   if (orthographicCameraRef.current == null) {
-    const camera = new THREE.OrthographicCamera(
-      size.width / -2,
-      size.width / 2,
-      size.height / 2,
-      size.height / -2,
-      CAMERA_DEFAULTS.near,
-      CAMERA_DEFAULTS.far,
-    )
-    camera.position.set(...CAMERA_DEFAULTS.position)
+    const camera = getViewportOrthographicCamera()
+    camera.left = size.width / -2
+    camera.right = size.width / 2
+    camera.top = size.height / 2
+    camera.bottom = size.height / -2
+    camera.updateProjectionMatrix()
     orthographicCameraRef.current = camera
   }
 
   const fov = useCameraStore((state) => state.fov)
   const projection = useCameraStore((state) => state.projection)
+  const viewMode = useCameraStore((state) => state.viewMode)
   const pendingCommand = useCameraStore((state) => state.pendingCommand)
   const clearPendingCommand = useCameraStore((state) => state.clearPendingCommand)
   const addCameraBookmark = useFiguresStore((state) => state.addCameraBookmark)
   const cameraBookmarks = useFiguresStore((state) => state.cameraBookmarks)
+  const sceneCamera = useFiguresStore((state) => state.sceneCamera)
+  const setSceneCamera = useFiguresStore((state) => state.setSceneCamera)
   const rollDeg = useCameraStore((state) => state.rollDeg)
 
-  useEffect(() => {
-    set({ camera: perspectiveCameraRef.current! })
-  }, [set])
+  // ------------------------------------------------------------------
+  // Câmera ativa: viewport (edição) ou câmera de cena (visão-câmera)
+  // ------------------------------------------------------------------
 
+  useEffect(() => {
+    if (viewMode === 'camera') {
+      set({ camera: getSceneCameraObject() })
+      return
+    }
+    const viewportCamera =
+      activeProjectionRef.current === 'orthographic'
+        ? orthographicCameraRef.current
+        : perspectiveCameraRef.current
+    if (viewportCamera) set({ camera: viewportCamera })
+  }, [set, viewMode])
+
+  // ------------------------------------------------------------------
+  // Sincronia estado → objeto vivo da câmera de cena
+  // ------------------------------------------------------------------
+
+  // A fonte da verdade em repouso é o store; o objeto é o espelho vivo que o
+  // gizmo segue e que o modo visão-câmera renderiza.
+  useEffect(() => {
+    applyViewToCamera(getSceneCameraObject(), sceneCamera)
+  }, [sceneCamera])
+
+  // A lente do painel vale para a câmera de cena: trocar os milímetros muda o
+  // `fov` daqui e precisa refletir no estado persistido — sem reenquadrar
+  // (quem reenquadra com plano ativo é o comando `applyShot`, disparado pelo
+  // próprio `setFocalLength`).
   useEffect(() => {
     const camera = perspectiveCameraRef.current
-    if (!camera) return
-    camera.fov = fov
-    camera.updateProjectionMatrix()
+    if (camera) {
+      camera.fov = fov
+      camera.updateProjectionMatrix()
+    }
+    const current = useFiguresStore.getState().sceneCamera
+    const focalMm = fovToFocalLength(fov)
+    if (Math.abs(current.focalMm - focalMm) > 1e-6) {
+      useFiguresStore.getState().setSceneCamera({ ...current, focalMm })
+    }
   }, [fov])
 
-  // Troca o objeto de câmera ativo quando a projeção muda, preservando a pose.
+  // Troca o objeto de câmera do VIEWPORT quando a projeção muda, preservando a pose.
   useEffect(() => {
     const perspectiveCamera = perspectiveCameraRef.current
     const orthographicCamera = orthographicCameraRef.current
@@ -117,58 +154,67 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
     to.updateProjectionMatrix()
 
     activeProjectionRef.current = projection
-    set({ camera: to })
+    // No modo visão-câmera a ativa continua sendo a câmera de cena — a troca
+    // de projeção do viewport fica pronta para quando a edição voltar.
+    if (useCameraStore.getState().viewMode === 'edit') set({ camera: to })
     controlsRef.current?.update()
   }, [projection, set, fov, size.height, controlsRef])
 
-  // Executa o comando pendente (preset, bookmark, salvar posição atual) contra
-  // a câmera atualmente ativa — roda depois do efeito de troca acima, então
-  // `projection` já reflete a câmera correta nesta mesma leva de efeitos.
+  // Executa o comando pendente. Comandos de NAVEGAÇÃO (preset, F, bookmark
+  // ortográfico) agem na câmera do viewport; os CINEMATOGRÁFICOS calculam e
+  // gravam o novo estado da câmera de cena.
   useEffect(() => {
     if (!pendingCommand) return
     const controls = controlsRef.current
     const camera = projection === 'orthographic' ? orthographicCameraRef.current : perspectiveCameraRef.current
     if (!controls || !camera) return
 
-    /** Põe a câmera exatamente onde um preset/movimento resolveu (posição, alvo e topo da tela). */
-    const applyView = (view: ShotView | CameraViewState) => {
-      controls.target.set(...view.target)
-      camera.position.set(...view.position)
-      camera.up.set(...view.up)
-      camera.lookAt(controls.target)
-      if (camera instanceof THREE.OrthographicCamera) {
-        camera.zoom = computeOrthographicZoom(camera.position.distanceTo(controls.target), fov, size.height)
-        camera.updateProjectionMatrix()
-      }
-      controls.update()
+    /** Estado atual da câmera de cena — o ponto de partida dos comandos cinematográficos. */
+    const vistaDeCena = (): CameraViewState => useFiguresStore.getState().sceneCamera
+
+    /** Grava o resultado de um comando na câmera de cena, completando a lente do painel. */
+    const commitSceneView = (view: ShotView | CameraViewState) => {
+      setSceneCamera({
+        position: [...view.position] as [number, number, number],
+        target: [...view.target] as [number, number, number],
+        up: [...view.up] as [number, number, number],
+        focalMm: 'focalMm' in view ? view.focalMm : fovToFocalLength(fov),
+      })
     }
 
-    /** Direção de onde a câmera olha hoje (do alvo para a câmera) — só o azimute é aproveitado. */
-    const currentDirection = (): [number, number, number] => {
-      const direction = camera.position.clone().sub(controls.target)
+    /** Direção de onde a câmera de cena olha hoje (do alvo para a câmera) — só o azimute é aproveitado. */
+    const sceneDirection = (): [number, number, number] => {
+      const state = vistaDeCena()
+      const direction = new THREE.Vector3(...state.position).sub(new THREE.Vector3(...state.target))
       if (direction.lengthSq() < 1e-8) direction.set(...CAMERA_DEFAULTS.position)
       return [direction.x, direction.y, direction.z]
     }
 
-    const cameraState = (): CameraViewState => ({
-      position: [camera.position.x, camera.position.y, camera.position.z],
-      target: [controls.target.x, controls.target.y, controls.target.z],
-      up: [camera.up.x, camera.up.y, camera.up.z],
-      focalMm: fovToFocalLength(fov),
-    })
-
     switch (pendingCommand.type) {
       case 'requestSaveBookmark': {
+        // O bookmark guarda a CÂMERA DE CENA (fase 11) — é ela que o painel
+        // comanda; a navegação do viewport não é conteúdo para salvar.
+        const state = vistaDeCena()
         addCameraBookmark({
           name: pendingCommand.name,
+          position: [...state.position],
+          target: [...state.target],
+          projection: 'perspective',
+          fov: focalLengthToFov(state.focalMm),
+          zoom: 1,
+          up: [...state.up],
+        })
+        break
+      }
+
+      case 'placeCameraAtView': {
+        // A ponte entre a bancada e a câmera: "fotografa" a vista de trabalho
+        // atual e leva a câmera de cena para lá, com a lente do painel.
+        commitSceneView({
           position: [camera.position.x, camera.position.y, camera.position.z],
           target: [controls.target.x, controls.target.y, controls.target.z],
-          projection,
-          fov,
-          zoom: camera instanceof THREE.OrthographicCamera ? camera.zoom : 1,
-          // O topo da tela vai junto: sem ele um bookmark salvo com ângulo
-          // holandês voltaria endireitado (DECISOES.md #46).
           up: [camera.up.x, camera.up.y, camera.up.z],
+          focalMm: fovToFocalLength(fov),
         })
         break
       }
@@ -190,17 +236,27 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
 
       case 'applyBookmark': {
         const bookmark = cameraBookmarks.find((b) => b.id === pendingCommand.id)
-        if (bookmark) {
-          camera.position.set(...bookmark.position)
-          camera.up.set(...(bookmark.up ?? [0, 1, 0]))
-          controls.target.set(...bookmark.target)
-          camera.lookAt(controls.target)
-          if (camera instanceof THREE.OrthographicCamera) {
-            camera.zoom = bookmark.zoom
-            camera.updateProjectionMatrix()
-          }
-          controls.update()
+        if (!bookmark) break
+        // Bookmark perspectivo vale para a câmera de cena; ortográfico é vista
+        // de trabalho e move o viewport (fase 11).
+        if (bookmark.projection === 'perspective') {
+          commitSceneView({
+            position: [...bookmark.position] as [number, number, number],
+            target: [...bookmark.target] as [number, number, number],
+            up: [...(bookmark.up ?? [0, 1, 0])] as [number, number, number],
+            focalMm: fovToFocalLength(bookmark.fov),
+          })
+          break
         }
+        camera.position.set(...bookmark.position)
+        camera.up.set(...(bookmark.up ?? [0, 1, 0]))
+        controls.target.set(...bookmark.target)
+        camera.lookAt(controls.target)
+        if (camera instanceof THREE.OrthographicCamera) {
+          camera.zoom = bookmark.zoom
+          camera.updateProjectionMatrix()
+        }
+        controls.update()
         break
       }
 
@@ -216,7 +272,7 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
 
         const sphere = box.getBoundingSphere(new THREE.Sphere())
         const distance = computeFrameDistance(sphere.radius, fov, size.width / size.height)
-        // Mantém a direção de onde a câmera já olha — enquadrar aproxima, não
+        // Mantém a direção de onde a vista já olha — enquadrar aproxima, não
         // reposiciona o ângulo escolhido pelo usuário.
         const direction = camera.position.clone().sub(controls.target)
         if (direction.lengthSq() < 1e-8) direction.set(...CAMERA_DEFAULTS.position)
@@ -234,7 +290,7 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
       }
 
       // ----------------------------------------------------------------
-      // Enquadramento cinematográfico e movimento entre dois pontos (#46)
+      // Comandos cinematográficos — calculam e gravam a câmera de cena
       // ----------------------------------------------------------------
 
       case 'applyShot':
@@ -247,7 +303,7 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
         const request: ShotRequest = {
           shot,
           fovDeg: fov,
-          fromDirection: currentDirection(),
+          fromDirection: sceneDirection(),
           angle: vista.angle,
           cameraHeight: vista.cameraHeight,
           orientation: vista.orientation,
@@ -255,7 +311,9 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
           rollDeg,
           thirds: vista.thirds,
           leadRoom: vista.leadRoom,
-          aspect: size.width / size.height,
+          // A proporção é a da SAÍDA (o arquivo), não a da janela: é para o
+          // arquivo que a câmera de cena enquadra (fase 11).
+          aspect: readOutputAspect(),
         }
 
         // Two shot: o par formado pelo boneco selecionado e o vizinho mais
@@ -271,20 +329,19 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
               ? request.fromDirection
               : twoShotDirection(par, request.fromDirection),
           })
-          if (view) applyView(view)
+          if (view) commitSceneView(view)
           break
         }
 
         const figure = figures.find((candidate) => candidate.id === selectedFigureId)
         if (figure) {
-          applyView(computeShotView(figure, request))
+          commitSceneView(computeShotView(figure, request))
           break
         }
         // Sem boneco selecionado, os planos abertos enquadram TODOS os bonecos,
-        // mirando no ponto médio do conjunto (DECISOES.md #48). O `aspect` da
-        // tela entra aqui porque é ele que diz quanta largura cabe.
+        // mirando no ponto médio do conjunto (DECISOES.md #48).
         const grupo = computeGroupShotView(figures, request)
-        if (grupo) applyView(grupo)
+        if (grupo) commitSceneView(grupo)
         break
       }
 
@@ -292,21 +349,22 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
         const { figures, selectedFigureId } = useFiguresStore.getState()
         const figure = figures.find((candidate) => candidate.id === selectedFigureId)
         if (!figure) break
-        applyView(computePovView(figure, rollDeg))
+        commitSceneView(computePovView(figure, rollDeg))
         break
       }
 
       case 'applyReverseAngle': {
         // Meia-volta em torno do alvo, mantendo altura e distância: é o
-        // contracampo. Feito na câmera viva, então compõe com qualquer vista.
-        const offset = camera.position.clone().sub(controls.target)
-        camera.position.set(
-          controls.target.x - offset.x,
-          camera.position.y,
-          controls.target.z - offset.z,
-        )
-        camera.lookAt(controls.target)
-        controls.update()
+        // contracampo — agora sobre o estado da câmera de cena.
+        const state = vistaDeCena()
+        commitSceneView({
+          ...state,
+          position: [
+            state.target[0] - (state.position[0] - state.target[0]),
+            state.position[1],
+            state.target[2] - (state.position[2] - state.target[2]),
+          ],
+        })
         break
       }
 
@@ -318,29 +376,33 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
         const far = figures.find((candidate) => candidate.id !== near?.id)
         if (!near || !far) break
         const view = computeOverTheShoulderView(near, far, rollDeg)
-        if (view) applyView(view)
+        if (view) commitSceneView(view)
         break
       }
 
       case 'applyRoll': {
         // Só o topo da tela muda: a câmera não sai do lugar.
-        const direction = controls.target.clone().sub(camera.position)
-        if (direction.lengthSq() < 1e-8) break
-        camera.up.set(...rollUpVector([direction.x, direction.y, direction.z], rollDeg))
-        camera.lookAt(controls.target)
-        controls.update()
+        const state = vistaDeCena()
+        const direction: [number, number, number] = [
+          state.target[0] - state.position[0],
+          state.target[1] - state.position[1],
+          state.target[2] - state.position[2],
+        ]
+        const lengthSq = direction[0] ** 2 + direction[1] ** 2 + direction[2] ** 2
+        if (lengthSq < 1e-8) break
+        commitSceneView({ ...state, up: rollUpVector(direction, rollDeg) })
         break
       }
 
       case 'captureMovePoint':
-        useCameraStore.getState().setMovePoint(pendingCommand.point, cameraState())
+        useCameraStore.getState().setMovePoint(pendingCommand.point, vistaDeCena())
         break
 
       case 'applyMove': {
         const { moveA, moveB, moveT } = useCameraStore.getState()
         if (!moveA || !moveB) break
         const view = interpolateCameraView(moveA, moveB, moveT)
-        applyView(view)
+        commitSceneView(view)
         // A lente faz parte do movimento: as duas pontas podem ter lentes
         // diferentes (é assim que se monta um dolly zoom).
         useCameraStore.getState().setFov(focalLengthToFov(view.focalMm))
@@ -361,6 +423,7 @@ export function CameraRig({ controlsRef }: CameraRigProps) {
     size.height,
     cameraBookmarks,
     addCameraBookmark,
+    setSceneCamera,
     clearPendingCommand,
     rollDeg,
     scene,

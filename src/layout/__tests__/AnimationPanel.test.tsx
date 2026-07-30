@@ -1,7 +1,14 @@
 import '../../i18n'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+
+vi.mock('../../persistence/fileIO', () => ({
+  writeFileToDirectoryOrDownload: vi.fn().mockResolvedValue(undefined),
+  pickFile: vi.fn(),
+}))
+
+import { pickFile, writeFileToDirectoryOrDownload } from '../../persistence/fileIO'
 import { useAnimationStore } from '../../store/animationStore'
 import { useCameraStore } from '../../store/cameraStore'
 import { useFiguresStore } from '../../store/figuresStore'
@@ -1098,5 +1105,179 @@ describe('AnimationPanel — keyframe na bancada', () => {
       useFiguresStore.getState().removeAnimationKeyframe(id, 'k3')
     })
     expect(destacado()).toBe(-1)
+  })
+})
+
+/**
+ * Arquivo avulso da animação (fase 12): exportar leva a de trabalho inteira, e
+ * importar abre o diálogo que decide se ela substitui a bancada ou emenda no
+ * fim dela — e quem executa os keyframes, os bonecos da cena ou os gravados.
+ */
+describe('AnimationPanel — exportar e importar JSON', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useUIStore.setState((state) => ({
+      collapsedPanels: { ...state.collapsedPanels, animation: false },
+      modalOpen: false,
+    }))
+    vi.mocked(pickFile).mockReset()
+    vi.mocked(writeFileToDirectoryOrDownload).mockClear()
+  })
+
+  /** Um arquivo escolhido no seletor, com o conteúdo JSON dado. */
+  function arquivoEscolhido(json: unknown) {
+    const data = new TextEncoder().encode(JSON.stringify(json)).buffer as ArrayBuffer
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'anim.json'), data })
+  }
+
+  /** O JSON de uma animação de um keyframe, gravada por um boneco chamado `figureName`. */
+  function arquivoDeAnimacao(figureName = 'Gravado', figures = 1) {
+    return {
+      version: 1,
+      animations: [
+        {
+          id: 'animation-1',
+          name: 'Importada',
+          speed: 1,
+          keyframes: [
+            {
+              id: 'k1',
+              durationMs: 500,
+              figures: Array.from({ length: figures }, (_, index) => ({
+                id: `figure-${index + 1}`,
+                name: `${figureName} ${index + 1}`,
+                color: '#123456',
+                visible: true,
+                height: 1.7,
+                position: [index, 0, 0],
+                rotation: { x: 0, y: 0, z: 0 },
+                pose: {},
+              })),
+              camera,
+            },
+          ],
+        },
+      ],
+    }
+  }
+
+  it('exportar fica desabilitado sem keyframes e grava o JSON com o nome da animação', async () => {
+    const user = userEvent.setup()
+    await renderAnimationPanel()
+    expect(screen.getByRole('button', { name: 'Exportar JSON' })).toBeDisabled()
+
+    act(() => {
+      comAnimacao(2)
+    })
+    await user.click(screen.getByRole('button', { name: 'Exportar JSON' }))
+
+    const [, filename, blob] = vi.mocked(writeFileToDirectoryOrDownload).mock.calls[0]
+    expect(filename).toBe('Corrida.json')
+    expect((blob as Blob).type).toBe('application/json')
+  })
+
+  it('importar abre o diálogo com o resumo do arquivo, e Substituir traz a animação', async () => {
+    const user = userEvent.setup()
+    useFiguresStore.getState().addFigure()
+    arquivoEscolhido(arquivoDeAnimacao())
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Importar JSON' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Importar animação' })
+    expect(dialog).toBeInTheDocument()
+    expect(screen.getByText(/Importada — 1 keyframes/)).toBeInTheDocument()
+    // Enquanto o diálogo está aberto, os atalhos globais ficam suspensos.
+    expect(useUIStore.getState().modalOpen).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Substituir' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(useUIStore.getState().modalOpen).toBe(false)
+    const working = useFiguresStore.getState().animations.find((a) => a.id === WORKING_ANIMATION_ID)!
+    expect(working.name).toBe('Importada')
+    expect(working.keyframes).toHaveLength(1)
+  })
+
+  it('remapeia por padrão: o boneco da cena executa a animação importada', async () => {
+    const user = userEvent.setup()
+    const figureId = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().renameFigure(figureId, 'Ana')
+    arquivoEscolhido(arquivoDeAnimacao())
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Importar JSON' }))
+    await screen.findByRole('dialog', { name: 'Importar animação' })
+    expect(screen.getByLabelText('Papel 1 (Gravado 1)')).toHaveValue(figureId)
+
+    await user.click(screen.getByRole('button', { name: 'Substituir' }))
+
+    const working = useFiguresStore.getState().animations.find((a) => a.id === WORKING_ANIMATION_ID)!
+    expect(working.keyframes[0].figures[0].name).toBe('Ana')
+  })
+
+  it('cena com menos bonecos do que a animação: só resta recriar os gravados', async () => {
+    const user = userEvent.setup()
+    useFiguresStore.getState().addFigure()
+    arquivoEscolhido(arquivoDeAnimacao('Gravado', 2))
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Importar JSON' }))
+    await screen.findByRole('dialog', { name: 'Importar animação' })
+
+    expect(
+      screen.getByText('A animação usa 2 boneco(s) e a cena tem 1 — só dá para recriar os bonecos gravados.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Remapear para os bonecos da cena' })).toBeDisabled()
+    expect(screen.getByRole('radio', { name: 'Recriar os bonecos gravados' })).toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Substituir' }))
+
+    const working = useFiguresStore.getState().animations.find((a) => a.id === WORKING_ANIMATION_ID)!
+    expect(working.keyframes[0].figures.map((figure) => figure.name)).toEqual(['Gravado 1', 'Gravado 2'])
+  })
+
+  it('anexar fica indisponível com a bancada vazia', async () => {
+    const user = userEvent.setup()
+    useFiguresStore.getState().addFigure()
+    arquivoEscolhido(arquivoDeAnimacao())
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Importar JSON' }))
+    await screen.findByRole('dialog', { name: 'Importar animação' })
+
+    expect(screen.getByRole('button', { name: 'Anexar ao final' })).toBeDisabled()
+    expect(
+      screen.getByText('A animação de trabalho está vazia — não há onde anexar.'),
+    ).toBeInTheDocument()
+  })
+
+  it('cancelar fecha o diálogo sem importar nada', async () => {
+    const user = userEvent.setup()
+    useFiguresStore.getState().addFigure()
+    arquivoEscolhido(arquivoDeAnimacao())
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Importar JSON' }))
+    await screen.findByRole('dialog', { name: 'Importar animação' })
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(useFiguresStore.getState().animations).toEqual([])
+    expect(useUIStore.getState().modalOpen).toBe(false)
+  })
+
+  it('arquivo sem animação nenhuma vira mensagem, e nenhum diálogo', async () => {
+    const user = userEvent.setup()
+    arquivoEscolhido({ version: 1, animations: [] })
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Importar JSON' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'O arquivo foi lido, mas não tem nenhuma animação aproveitável',
+    )
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

@@ -4,13 +4,12 @@ import type { AnimationSample } from '../animation/animationSampler'
 import type { OnionSkinMode } from '../animation/onionSkin'
 import { DEFAULT_FPS, clampFps, type Fps } from '../animation/frameTimeline'
 import {
-  DEFAULT_VIDEO_RESOLUTION_PRESET,
-  MAX_SNAPSHOT_DIMENSION,
-  MIN_SNAPSHOT_DIMENSION,
-  SNAPSHOT_RESOLUTION_PRESETS,
-  type ResolutionPresetKey,
+  DEFAULT_OUTPUT_ASPECT,
+  DEFAULT_VIDEO_QUALITY,
+  outputResolutionFor,
+  type OutputAspectKey,
+  type OutputQualityKey,
 } from '../snapshot/constants'
-import { toEvenDimension } from '../animation/videoExport'
 
 /**
  * Estado de FERRAMENTA do animador: qual animação está aberta, onde a linha do
@@ -57,15 +56,6 @@ export type AnimationCommand =
 
 export type ExportPhase = 'idle' | 'running' | 'done' | 'error' | 'cancelled'
 
-function resolutionFor(key: ResolutionPresetKey, fallback: { width: number; height: number }) {
-  const preset = SNAPSHOT_RESOLUTION_PRESETS.find((p) => p.key === key)
-  return preset ? { width: preset.width, height: preset.height } : fallback
-}
-
-function clampDimension(value: number): number {
-  return toEvenDimension(Math.min(MAX_SNAPSHOT_DIMENSION, Math.max(MIN_SNAPSHOT_DIMENSION, Math.round(value))))
-}
-
 export interface AnimationUIState {
   /** Onde a linha do tempo está, em ms. */
   timeMs: number
@@ -111,7 +101,9 @@ export interface AnimationUIState {
    */
   visitedKeyframeId: string | null
   fps: Fps
-  presetKey: ResolutionPresetKey
+  /** Proporção do MP4 (fase 11.4) — as mesmas três da máscara; o vídeo não tem personalizada. */
+  aspectKey: OutputAspectKey
+  qualityKey: OutputQualityKey
   width: number
   height: number
   /**
@@ -143,9 +135,8 @@ export interface AnimationUIState {
   setOnionSkin: (onionSkin: boolean) => void
   setOnionSkinMode: (mode: OnionSkinMode) => void
   setFps: (fps: number) => void
-  selectPreset: (key: ResolutionPresetKey) => void
-  setWidth: (width: number) => void
-  setHeight: (height: number) => void
+  selectAspect: (key: OutputAspectKey) => void
+  selectQuality: (key: OutputQualityKey) => void
   setPreview: (preview: AnimationSample | null) => void
   requestCaptureKeyframe: () => void
   requestAppendClip: (
@@ -172,7 +163,7 @@ export interface AnimationUIState {
   cancelExport: () => void
 }
 
-const initialResolution = resolutionFor(DEFAULT_VIDEO_RESOLUTION_PRESET, { width: 1280, height: 720 })
+const initialResolution = outputResolutionFor(DEFAULT_OUTPUT_ASPECT, DEFAULT_VIDEO_QUALITY)
 
 export const useAnimationStore = create<AnimationUIState>((set, get) => ({
   timeMs: 0,
@@ -182,7 +173,8 @@ export const useAnimationStore = create<AnimationUIState>((set, get) => ({
   onionSkinMode: 'both',
   visitedKeyframeId: null,
   fps: DEFAULT_FPS,
-  presetKey: DEFAULT_VIDEO_RESOLUTION_PRESET,
+  aspectKey: DEFAULT_OUTPUT_ASPECT,
+  qualityKey: DEFAULT_VIDEO_QUALITY,
   width: initialResolution.width,
   height: initialResolution.height,
   preview: null,
@@ -216,20 +208,9 @@ export const useAnimationStore = create<AnimationUIState>((set, get) => ({
 
   setFps: (fps) => set({ fps: clampFps(fps) }),
 
-  selectPreset: (key) => {
-    const { width, height } = get()
-    set({ presetKey: key, ...resolutionFor(key, { width, height }) })
-  },
+  selectAspect: (key) => set({ aspectKey: key, ...outputResolutionFor(key, get().qualityKey) }),
 
-  setWidth: (width) => {
-    if (get().presetKey !== 'custom') return
-    set({ width: clampDimension(width) })
-  },
-
-  setHeight: (height) => {
-    if (get().presetKey !== 'custom') return
-    set({ height: clampDimension(height) })
-  },
+  selectQuality: (key) => set({ qualityKey: key, ...outputResolutionFor(get().aspectKey, key) }),
 
   setPreview: (preview) => set({ preview }),
 

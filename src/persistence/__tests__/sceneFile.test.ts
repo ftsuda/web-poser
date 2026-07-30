@@ -11,6 +11,7 @@ import {
   importSceneFromGlb,
 } from '../sceneFile'
 import type { SceneWorkingState } from '../sceneSerialization'
+import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 
 const figureA: Figure = {
   id: 'figure-1',
@@ -41,6 +42,7 @@ const scene: SceneWorkingState = {
   cameraBookmarks: [bookmark],
   nextCameraBookmarkSeq: 2,
   nextSnapshotNumber: 3,
+  sceneCamera: { position: [2, 1.6, 3], target: [0, 0.9, 0], up: [0, 1, 0], focalMm: 50 },
 }
 
 describe('sceneFile — cena completa', () => {
@@ -61,6 +63,7 @@ describe('sceneFile — cena completa', () => {
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
       nextSnapshotNumber: 1,
+      sceneCamera: DEFAULT_SCENE_CAMERA,
     }
     const glb = await exportSceneToGlb(empty)
     const restored = await importSceneFromGlb(glb)

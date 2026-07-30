@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useCameraStore } from '../../store/cameraStore'
 import { useFiguresStore } from '../../store/figuresStore'
+import { useUIStore } from '../../store/uiStore'
 import { CameraPanel } from '../CameraPanel'
 import { focalLengthToFov } from '../../scene/lens'
 
@@ -525,5 +526,108 @@ describe('CameraPanel — lente, enquadramento e movimento', () => {
     expect(animacao.keyframes).toHaveLength(2)
     expect(animacao.keyframes[0].camera).toEqual(A)
     expect(animacao.keyframes[1].camera).toEqual(B)
+  })
+})
+
+/**
+ * Controles numéricos da câmera de cena (fase 11.1) — mão dupla com o gizmo:
+ * os campos leem o `sceneCamera` do store (arrastar o gizmo os atualiza) e
+ * editá-los grava de volta pelo mesmo `setSceneCamera`.
+ */
+describe('CameraPanel — posição e rotação da câmera de cena', () => {
+  beforeEach(() => {
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  it('os botões Mover/Girar trocam o gizmo global e selecionam a câmera', async () => {
+    const figureId = useFiguresStore.getState().addFigure() as string
+    act(() => {
+      useFiguresStore.getState().selectFigure(figureId)
+    })
+    const user = userEvent.setup()
+    await renderCameraPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Girar' }))
+
+    expect(useUIStore.getState().gizmoMode).toBe('rotate')
+    // Seleção exclusiva: apertar daqui é "quero girar a CÂMERA".
+    expect(useCameraStore.getState().cameraSelected).toBe(true)
+    expect(useFiguresStore.getState().selectedFigureId).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Mover' }))
+    expect(useUIStore.getState().gizmoMode).toBe('translate')
+    expect(useCameraStore.getState().cameraSelected).toBe(true)
+  })
+
+  it('Mover/Girar ficam desabilitados no modo visão-câmera (o gizmo não está na tela)', async () => {
+    act(() => {
+      useCameraStore.getState().setViewMode('camera')
+    })
+    await renderCameraPanel()
+
+    expect(screen.getByRole('button', { name: 'Mover' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Girar' })).toBeDisabled()
+  })
+
+  it('mostra a posição atual da câmera e editá-la translada posição e alvo juntos', async () => {
+    act(() => {
+      useFiguresStore.getState().setSceneCamera({
+        position: [1, 2, 3],
+        target: [0, 1, 0],
+        up: [0, 1, 0],
+        focalMm: 35,
+      })
+    })
+    await renderCameraPanel()
+
+    const campoX = screen.getByLabelText('X', { selector: '#camera-position-x' })
+    expect(campoX).toHaveValue(1)
+
+    fireEvent.change(campoX, { target: { value: '4' } })
+
+    const { sceneCamera } = useFiguresStore.getState()
+    expect(sceneCamera.position).toEqual([4, 2, 3])
+    // O alvo anda junto: a direção de visão não muda (modo W do gizmo).
+    expect(sceneCamera.target).toEqual([3, 1, 0])
+  })
+
+  it('os sliders de rotação refletem a orientação vinda do store (o gizmo mexe neles)', async () => {
+    act(() => {
+      // Olhando de +X para a origem: guinada de +90°.
+      useFiguresStore.getState().setSceneCamera({
+        position: [5, 1.5, 0],
+        target: [0, 1.5, 0],
+        up: [0, 1, 0],
+        focalMm: 35,
+      })
+    })
+    await renderCameraPanel()
+
+    expect(screen.getByRole('slider', { name: /Rotação Y/ })).toHaveValue('90')
+    expect(screen.getByRole('slider', { name: /Rotação X/ })).toHaveValue('0')
+  })
+
+  it('girar pelo slider preserva a posição e a distância ao alvo', async () => {
+    act(() => {
+      useFiguresStore.getState().setSceneCamera({
+        position: [0, 1.5, 5],
+        target: [0, 1.5, 0],
+        up: [0, 1, 0],
+        focalMm: 35,
+      })
+    })
+    await renderCameraPanel()
+
+    fireEvent.change(screen.getByRole('slider', { name: /Rotação Y/ }), { target: { value: '90' } })
+
+    const { sceneCamera } = useFiguresStore.getState()
+    expect(sceneCamera.position).toEqual([0, 1.5, 5])
+    expect(sceneCamera.target[0]).toBeCloseTo(-5, 4)
+    expect(sceneCamera.target[2]).toBeCloseTo(5, 4)
+    // Girar pelo painel não empilha undo: câmera fica fora do histórico.
+    expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
   })
 })

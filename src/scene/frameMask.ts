@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { outputResolutionFor } from '../snapshot/constants'
 
 /**
  * Máscara de enquadramento: a geometria que faz o viewport mostrar a proporção
@@ -32,14 +33,27 @@ import * as THREE from 'three'
 export type FramableCamera = THREE.PerspectiveCamera | THREE.OrthographicCamera
 
 /**
- * De qual saída a máscara mostra a proporção. As duas resoluções são
- * independentes (o instantâneo pode ser 4K quadrado e o vídeo Full HD), então
- * o usuário escolhe qual está compondo — um controle só, em vez de uma caixa
- * por painel, para nunca haver duas máscaras disputando a tela.
+ * Qual proporção a máscara mostra (fase 11.4, pedido do usuário): 16:9
+ * (`wide`), 9:16 (`vertical`) ou 1:1 (`square`) — as MESMAS três proporções
+ * das resoluções de exportação. A máscara deixou de apontar para "a saída do
+ * instantâneo" ou "da animação": as duas saídas veem a MESMA câmera de cena,
+ * então o que interessa ao compor é só a proporção do quadro, escolhida
+ * direto. A escala vem de `outputResolutionFor` — para a máscara só a razão
+ * importa, e usar a mesma tabela mantém uma fonte só para os números.
  */
-export const FRAME_MASK_SOURCES = ['off', 'snapshot', 'animation'] as const
+export const FRAME_MASK_SOURCES = ['off', 'wide', 'vertical', 'square'] as const
 
 export type FrameMaskSource = (typeof FRAME_MASK_SOURCES)[number]
+
+export interface OutputResolution {
+  width: number
+  height: number
+}
+
+/** A resolução (nominal) que uma fonte de máscara representa; `null` com a máscara desligada. */
+export function frameMaskResolution(source: FrameMaskSource): OutputResolution | null {
+  return source === 'off' ? null : outputResolutionFor(source, '1080p')
+}
 
 export interface FrameRect {
   /** Largura do quadro de saída, em pixels de tela. */

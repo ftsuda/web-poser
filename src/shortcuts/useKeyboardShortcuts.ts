@@ -135,6 +135,10 @@ function applyShortcut(action: ShortcutAction): boolean {
       useUIStore.getState().setGizmoMode(action.mode)
       return true
 
+    case 'toggleCameraView':
+      useCameraStore.getState().toggleViewMode()
+      return true
+
     default:
       return false
   }
@@ -158,6 +162,11 @@ export function useKeyboardShortcuts(): void {
         }
         return
       }
+
+      // Diálogo modal aberto (fase 12): mesma suspensão, sem tratar tecla
+      // nenhuma — quem cuida do Escape ali é o próprio diálogo, que sabe o que
+      // significa cancelar naquele contexto.
+      if (useUIStore.getState().modalOpen) return
 
       const action = matchShortcut({
         key: event.key,

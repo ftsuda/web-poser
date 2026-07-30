@@ -2165,3 +2165,108 @@ A fiação vive em `SceneFigures.tsx`: a condição de "gizmo de mover ativo" é
 ### Verificação
 
 **+4 testes** no `Figure.test.tsx` (emissivo vermelho só nas juntas listadas; seleção vencendo a trava; sem lista, nenhum tom; fantasma imune), suíte de 2.016 para **2.020**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. **Conferência visual feita pelo usuário no navegador em 2026-07-30, junto com a validação do arrasto do #76: funcionamento OK.**
+
+## 78. Câmera de cena separada do viewport de trabalho (fase 11)
+
+Pedido do usuário em 2026-07-30: a câmera deixar de ser o viewport — mover-se pela bancada livremente sem afetar o enquadramento —, com um elemento visual mostrando onde a câmera está e uma máscara vertical estilo TikTok/Instagram. Avaliação de viabilidade feita antes de qualquer código, e **cinco decisões respondidas pelo usuário**:
+
+1. **Modo alternável** edição ↔ visão da câmera, com aviso destacado no viewport indicando o modo; botão no painel de Câmera. Todas as configurações existentes do painel passam a valer para a câmera de cena, **exceto as vistas ortográficas**.
+2. **Máscara vertical = só um preset 9:16** (1080×1920) na lista de resoluções existente — a máscara de enquadramento (#53) já faz o resto.
+3. **O painel de Câmera comanda a câmera de cena** (planos, POV, movimento A→B, lente, bookmarks…), com exceção das ortográficas.
+4. **Gizmo arrastável e girável**, representação estilo Blender no modo edição.
+5. **Posição persistida** com a cena; mover a câmera **não entra** no histórico de undo.
+
+Mais duas propostas de borda aprovadas: viewport **travado** no modo visão-câmera (como o Blender por padrão; "lock camera to view" fica como ideia futura), e ortográficas/bookmarks ortográficos **voltam ao modo edição** automaticamente.
+
+### Onde a câmera vive — e por que fora do undo
+
+`figuresStore.sceneCamera`, no formato `CameraViewState` que os keyframes já usavam — **nenhuma migração de animação**. É conteúdo persistido (autosave, snapshots do catálogo — cada cena guarda o próprio enquadramento —, `.glb` por campo aditivo sem subir `SCENE_EXTRAS_VERSION`, mesmo precedente do `snapshotCounter`), mas fica fora do `partialize` do zundo: mover a câmera é ENQUADRAR, como a órbita, e um Ctrl+Z de pose não pode teleportá-la. A leitura (`sceneCameraFromExtras`) recusa câmera degenerada (posição no alvo, up nulo) devolvendo a padrão.
+
+### Estado × objeto vivo
+
+A fonte da verdade em repouso é o store; o `THREE.PerspectiveCamera` real é um singleton de módulo (`sceneCameraObject.ts`) que o `CameraRig` espelha do estado. A reprodução de animação escreve **direto no objeto** (a regra de desempenho de sempre: nada de um `set` de store por quadro) e comita o último enquadramento ao parar; o gizmo segue o objeto por `useFrame`, então acompanha os dois caminhos. Navegar pela linha do tempo e "ir para" escrevem no store de verdade — capturar logo depois grava o enquadramento daquele instante, o mesmo modelo mental de antes.
+
+### O executor continua no `CameraRig`
+
+Os comandos cinematográficos continuam passando por `pendingCommand` (as transições do `cameraStore` e seus testes ficaram praticamente intactos); o que mudou é o alvo: em vez de mover a câmera viva do viewport, o executor calcula com a MESMA matemática pura (`shotFraming.ts`, `cameraMove.ts`) partindo do estado da câmera de cena e grava o resultado (`commitSceneView`). A proporção dos planos passou a ser a da **saída** (`outputAspect.ts`: a resolução do vídeo ou do instantâneo, conforme a máscara) — é para o arquivo que a câmera enquadra, não para a janela. Exportação de MP4, miniaturas e PNG renderizam por câmeras montadas na hora (o PNG pela câmera de cena; o vídeo por uma descartável por quadro) — o viewport não é mais sequestrado, e a trava de órbita durante a reprodução **deixou de existir**: é justamente o que o pedido queria.
+
+### Verificação
+
+**17 testes novos/ajustados** (serialização com round-trip/defaults/degenerada; câmera fora do undo e por snapshot no `figuresStore`; modo de visão no `cameraStore` — ortográficas/F voltam à edição sem apagar o plano, bookmark perspectivo × ortográfico; atalho `0`; preset 9:16), suíte de 2.020 para **2.037**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. **Validação no navegador pendente** (arrasto/giro do gizmo, troca de câmera ativa e exportações — os imperativos de sempre).
+
+## 78.1. Correção do "ver pela câmera" torcendo a câmera, e controles numéricos de posição/rotação
+
+Dois pedidos do usuário em 2026-07-30, na sequência da fase 11 (#78): o botão "Ver pela câmera" estava **girando a câmera para baixo**, e o painel de Câmera deveria ganhar controles de rotação e translação **iguais aos existentes para as poses**, integrados ao gizmo.
+
+### O bug: o OrbitControls seguia a câmera padrão
+
+O `<OrbitControls>` do drei, sem a prop `camera`, se liga à câmera PADRÃO do R3F (`explCamera = camera || defaultCamera`) e recria os controles quando ela muda. Entrar no modo visão-câmera troca a padrão para a câmera de cena — os controles rebindavam nela e o `update()` deles a torcia para o alvo antigo da órbita (tipicamente mais baixo que o alvo dela: a câmera "olhava para baixo"). `enabled={false}` não protege: o snap acontece no rebind, não no arrasto.
+
+**Correção:** as câmeras de navegação viraram singletons de módulo (`viewportCameras.ts`, o mesmo padrão do `sceneCameraObject.ts`), e o `Viewport` passa a instância EXPLICITAMENTE na prop `camera` do `<OrbitControls>` (perspectiva ou ortográfica, conforme a projeção). Os controles nunca mais enxergam a câmera de cena, em nenhum modo. O `CameraRig` usa as mesmas instâncias (só completa aspecto/frustum com o tamanho da janela no primeiro uso).
+
+### Controles numéricos, mão dupla com o gizmo
+
+Dois fieldsets novos no painel de Câmera, no MESMO desenho da colocação do boneco no painel de Propriedades: **Posição (m)** em campos numéricos e **Rotação (°)** em sliders com a cor de cada eixo. Os valores são LIDOS de `figuresStore.sceneCamera` — arrastar/girar o gizmo (ou aplicar um plano, ou tocar a animação) os atualiza ao vivo — e editá-los grava pelo mesmo `setSceneCamera`, então gizmo, painel, modo visão e keyframes nunca divergem.
+
+A conversão vive em `sceneCameraTransform.ts` (pura, testada): rotação em Euler **YXZ** (guinada → inclinação → rolagem, a ordem natural de câmera; X limitado a ±90° para a extração bater sempre com o slider), extraída de posição/alvo/topo e reconstruída preservando a distância ao alvo — girar pelo número é exatamente o modo E do gizmo, e transladar leva o alvo junto como o modo W. O slider Z é a inclinação lateral (o ângulo holandês visto pelo outro vocabulário; o slider Dutch Angle continua existindo como gesto rápido com faixa própria).
+
+### Verificação
+
+**10 testes novos** (`sceneCameraTransform.test.ts`: zero/guinada/inclinação, round-trip estável, giro sem mover posição/distância, rolagem do topo, degenerada; `CameraPanel.test.tsx`: posição translada o alvo junto, sliders refletem o store, girar preserva posição/distância e não empilha undo), suíte de 2.037 para **2.047**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. A conferência visual do modo visão-câmera (agora sem a torção) segue com o usuário.
+
+## 78.2. Botões Mover/Girar da câmera no painel
+
+Pedido do usuário em 2026-07-30, fechando a leva do #78.1: um botão no painel de Câmera para alternar o gizmo dela entre translação e rotação.
+
+**Como:** o par Mover/Girar entrou no fieldset "Câmera de cena", com os MESMOS rótulos do alternador de gizmo do painel de Propriedades (`panels.properties.gizmoTranslate/gizmoRotate` — nenhum termo novo para aprender) e agindo no MESMO `uiStore.gizmoMode` global dos atalhos W/E: é um gizmo só, compartilhado com as juntas, então painel, teclado e viewport nunca discordam. Apertado daqui, o botão também **seleciona a câmera** (desselecionando o boneco): o gesto é "quero mover/girar a câmera", e sem a seleção ele trocaria o modo de um gizmo que não está na tela. Desabilitado no modo visão-câmera, onde o gizmo não existe (mesma regra do "Posicionar na vista atual"); `aria-pressed` acende só com a câmera selecionada, para não parecer que o painel dela comanda o gizmo da junta.
+
+**Verificação:** +2 testes no `CameraPanel.test.tsx` (troca de modo + seleção exclusiva; desabilitado no modo visão), suíte de 2.047 para **2.049**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+## 78.3. "Vertical 9:16" direto no seletor da máscara de enquadramento
+
+Pedido do usuário em 2026-07-30: incluir o preset vertical como opção da máscara de enquadramento.
+
+**Como:** uma quarta fonte no seletor da Toolbar — `vertical` — que, diferente das outras duas, não aponta para a resolução configurada de painel nenhum: é o 9:16 de TikTok/Instagram fixo (o MESMO preset `vertical` da lista de resoluções, fonte única do número), para compor no formato sem antes trocar a resolução do instantâneo ou do vídeo. A resolução que cada fonte representa foi extraída para uma função pura (`frameMaskResolution`, em `frameMask.ts`), consumida pelos dois lugares que decidiam isso separadamente: o `FrameMaskCamera` (o retângulo da máscara) e o `outputAspect.ts` (a proporção que os planos cinematográficos e o frustum do gizmo usam) — escolher "Vertical 9:16" muda a máscara, o enquadramento dos planos e o desenho do gizmo de uma vez, como as outras fontes. A validação de `localStorage` (`uiPreferences.ts`) já lia de `FRAME_MASK_SOURCES`, então a persistência veio de graça.
+
+**Verificação:** +3 testes de `frameMaskResolution` e +1 na Toolbar (seleção e persistência do `vertical`), suíte de 2.049 para **2.052**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+## 78.4. Máscara por proporção e resoluções como proporção × qualidade
+
+Pedido do usuário em 2026-07-30: deixar a máscara de enquadramento e as opções de gravação independentes.
+
+1. **Máscara: sem máscara / 16:9 / 9:16 / 1:1.** As fontes "do instantâneo" e "da animação" saíram — como o usuário apontou, desde a fase 11 as duas saídas veem a MESMA câmera de cena, então "de qual painel vem a proporção" deixou de ser uma pergunta com sentido; o que interessa ao compor é a proporção do quadro, escolhida direto. `frameMaskResolution` ficou sem parâmetros de resolução (a escala nominal vem da tabela de resoluções, só a razão importa), e `FrameMaskCamera`/`outputAspect.ts` deixaram de assinar os stores de instantâneo/animação. Valor antigo persistido no `localStorage` (`snapshot`/`animation`) cai no default `off` pela validação que já existia.
+2. **Resoluções de exportação = proporção × qualidade.** A lista única de presets (720p só no 16:9, 4K, quadrada e vertical só em 1080) virou duas escolhas independentes nos painéis de Instantâneos e de Animação: **proporção** (16:9, 9:16, 1:1 — os mesmos rótulos da máscara) e **qualidade** (1080p, 720p — o nome é o lado MENOR, como nos players, então 9:16 em 1080p é 1080×1920). Toda proporção grava nas duas qualidades; o 4K saiu ("não precisa", decisão do usuário — a personalizada do instantâneo continua aceitando até 3840 para quem quiser). O vídeo segue sem personalizada, como sempre foi; a personalizada do instantâneo desabilita o seletor de qualidade e preserva a resolução em vigor como ponto de partida. `outputResolutionFor(aspect, quality)` em `snapshot/constants.ts` é a única tabela — máscara, painéis e stores derivam dela.
+
+Padrões: instantâneo nasce 16:9 em 1080p (era Full HD — o mesmo quadro), vídeo 16:9 em 720p (era 720p — idem): ninguém muda de resolução ao atualizar.
+
+**Verificação:** testes reescritos onde o modelo mudou (`snapshotCaptureStore` com a tabela das seis combinações, `SnapshotPanel` com os dois seletores e a qualidade desabilitada na personalizada, `Toolbar` com as proporções, `frameMask`/`uiPreferences` com as fontes novas), suíte em **2.053**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+## 79. Exportar e importar uma animação em JSON, com remapeamento para os bonecos da cena
+
+Pedido do usuário em 2026-07-30: exportar e importar um JSON com todos os dados de uma animação. Depois de uma primeira avaliação, o usuário fechou o desenho em três respostas (exportar só a de trabalho; a importação **não** entra na biblioteca e um `<dialog>` pergunta se substitui ou anexa; todos os keyframes de um arquivo são uma animação só) e pediu a avaliação de um segundo ponto — **remapear as posições para os bonecos que já estão em cena, em vez de recriar os gravados** —, fechado com mais três (absoluto ao substituir e reancorado ao anexar; preservar a visibilidade gravada; oferecer "recriar" como saída quando faltam bonecos).
+
+### O arquivo é o `animations.json` de sempre
+
+Nada de formato novo: exportar grava o mesmo schema do workspace (`version`, `leiame`, `animations[]`) com **uma** entrada, e importar passa pelo mesmo `sanitizeAnimations` (juntas grampeadas aos limites em vigor, keyframe sem bonecos ou sem câmera descartado). Consequências de graça: o arquivo exportado pode ser largado na pasta do workspace, e um `animations.json` inteiro pode ser importado sem pasta nenhuma — nesse caso **todos os keyframes viram uma linha do tempo só** (decisão do usuário), com nome e velocidade da primeira entrada. `parseImportedAnimation` devolve `null` quando não sobra keyframe aproveitável: o painel diz isso em vez de abrir um diálogo para importar coisa nenhuma.
+
+### A biblioteca não entra na história
+
+Importar mexe **só na animação de trabalho**: ou a substitui (nome, velocidade e keyframes vêm do arquivo) ou é anexado ao fim dela (nome e velocidade continuam sendo os da bancada — a velocidade é da linha do tempo inteira, e o nome é o do MP4 que vai sair dali). Um `set` só nos dois casos, portanto **um passo de undo**, como abrir uma animação salva. Os rótulos de grupo que chegam são desconflitados bloco a bloco (`freeKeyframeLabel`): dois trechos "Andando" viram dois grupos, não um bloco emendado.
+
+### Remapear é o padrão; recriar é a saída
+
+Uma animação gravada em outra cena é uma **coreografia** — quem a executa são os bonecos que já estão ali. No remapeamento, o boneco da cena mantém id, nome, cor e altura, e recebe pose, giro, colocação e **visibilidade** de cada keyframe (aparecer e sumir fazem parte da coreografia). Papel sem boneco não é executado; boneco sem papel fica parado em todos os keyframes. Quando a cena tem menos bonecos do que a animação usa, o remapeamento é desabilitado com o motivo à vista e sobra **recriar os bonecos gravados** — que é também o único modo fiel a nomes, cores e alturas de origem.
+
+**Ancoragem, e a câmera junto.** Substituir usa as colocações **absolutas** gravadas, e a câmera do arquivo continua enquadrando exatamente o que enquadrava. Anexar **reancora** a ação no boneco do papel 0 (posição e heading, com o deslocamento no chão reescalado pela razão de altura, a mesma regra dos trechos) — e aplica à câmera de cada keyframe o **mesmo transporte rígido** (giro em Y em torno da âncora + translação; `up` gira, não translada). Sem isso, a emenda ficaria contínua para os bonecos e mostraria chão vazio: a câmera apontaria para onde a animação foi gravada. Em qualquer modo, a altura vertical gravada é corrigida pela escala do boneco que executa — sem isso um boneco de 1,55 m herdando a altura de quadril de um de 1,90 m flutuaria.
+
+### Por que `animationRemap.ts` não reusa `resolveSavedClip`
+
+O plano previa passar a importação pela máquina de papéis dos trechos salvos. Ao escrever, apareceu um impedimento: `resolveSavedClip` escala a altura de **todos** os papéis pela altura do boneco ÂNCORA — aproximação que serve a um trecho de dupla e erra numa animação de elenco misto —, e `buildKeyframesFromClip` congela **uma** câmera em todos os passos (a regra dos trechos, #60). Adaptar os dois teria mudado o comportamento de um recurso já entregue e testado, para servir a outro. O remapeamento ficou num módulo próprio, com a altura corrigida por papel e a câmera transportada por keyframe — e o `clipLibrary`, o formato `clips.json` e os trechos salvos **não foram tocados**. Efeito colateral bem-vindo: a visibilidade gravada é preservada sem estender o modelo de papéis (o remapeamento a lê direto do keyframe), então o campo novo em `SavedClipFigureState` que o plano previa deixou de ser necessário.
+
+### O `<dialog>` e o jsdom
+
+O diálogo é o elemento nativo (modalidade e `::backdrop` do navegador), mas o **jsdom 29 não implementa `showModal()`** — verificado antes de escrever. O componente renderiza `<dialog open>` controlado pelo React e chama `showModal()` só quando a função existe: um caminho de código, os dois ambientes atendidos, e o diálogo continua sendo encontrável por `getByRole('dialog')` nos testes. Enquanto ele está aberto, `uiStore.modalOpen` suspende os atalhos globais (mesma proteção que o painel de ajuda já tinha) — do contrário um `W` digitado sobre o diálogo trocaria o gizmo da cena por baixo dele.
+
+### Verificação
+
+**37 testes novos** (`animationRemap.test.ts`: identidade do boneco preservada, colocações absolutas, escala da altura, visibilidade, transporte da ação e a invariante da câmera relativa à âncora, papéis ausentes, ids/durações/rótulos; `animationsFile.test.ts`: round-trip do arquivo avulso, várias entradas viram uma linha do tempo, arquivo sem animação; `animationImport.test.ts`: as quatro combinações, um passo de undo, rótulos desconflitados, biblioteca intocada; `AnimationPanel.test.tsx`: exportar desabilitado/nome do arquivo, diálogo com o resumo, remapeamento padrão, aviso de bonecos insuficientes, anexar indisponível na bancada vazia, cancelar e arquivo inválido). Suíte de 2.053 para **2.090**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos.
