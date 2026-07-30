@@ -288,6 +288,60 @@ describe('Figure — seleção de junta', () => {
   })
 })
 
+describe('Figure — destaque de juntas travadas (gizmo de mover ativo, DECISOES.md #77)', () => {
+  const materialOf = (
+    renderer: Awaited<ReturnType<typeof ReactThreeTestRenderer.create>>,
+    segment: string,
+  ) =>
+    renderer.scene
+      .findByProps({ name: `segment-${segment}` })
+      .allChildren.find((child) => child.type === 'MeshStandardMaterial')
+      ?.instance as unknown as THREE.MeshStandardMaterial
+
+  it('pinta o emissivo avermelhado só nas juntas listadas como travadas', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure figure={makeFigure()} lockedJointNames={['shoulder.L', 'knee.R']} />,
+    )
+
+    expect(materialOf(renderer, 'shoulder.L').emissive.getHexString()).toBe('ef4444')
+    expect(materialOf(renderer, 'knee.R').emissive.getHexString()).toBe('ef4444')
+    expect(materialOf(renderer, 'elbow.L').emissive.getHex()).toBe(0)
+  })
+
+  it('a seleção vence quando a junta selecionada também está travada', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure figure={makeFigure()} selectedJointName="shoulder.L" lockedJointNames={['shoulder.L']} />,
+    )
+    expect(materialOf(renderer, 'shoulder.L').emissive.getHexString()).toBe('ffe066')
+  })
+
+  it('sem a lista (gizmo de mover inativo) nenhuma junta ganha o tom de trava', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure()} />)
+    expect(materialOf(renderer, 'shoulder.L').emissive.getHex()).toBe(0)
+  })
+
+  it('fantasma ignora o destaque de trava, como ignora a seleção', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure
+        figure={makeFigure()}
+        lockedJointNames={['shoulder.L']}
+        ghost={{ color: '#88aaff', opacity: 0.3 }}
+      />,
+    )
+    // Fantasma não carrega nomes de cena — inspeciona os materiais direto.
+    const materials = renderer.scene
+      .findAllByType('Mesh')
+      .map(
+        (mesh) =>
+          mesh.allChildren.find((child) => child.type === 'MeshStandardMaterial')
+            ?.instance as unknown as THREE.MeshStandardMaterial,
+      )
+      .filter(Boolean)
+    expect(materials.length).toBeGreaterThan(0)
+    for (const material of materials) expect(material.emissive.getHex()).toBe(0)
+  })
+})
+
 describe('Figure — boneco oculto é inerte ao mouse (fase 9, item 14)', () => {
   /**
    * O `Raycaster` do three ignora `visible=false`, e o R3F só testa objetos

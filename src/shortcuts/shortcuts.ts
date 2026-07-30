@@ -8,7 +8,7 @@
  */
 
 import type { OrthoPresetName } from '../scene/cameraPresets'
-import type { RootGizmoMode } from '../store/uiStore'
+import type { GizmoMode } from '../store/uiStore'
 
 export type Step = 'normal' | 'large' | 'fine'
 export type ArrowDirection = 'up' | 'down' | 'left' | 'right'
@@ -26,11 +26,10 @@ export type ShortcutAction =
   | { type: 'cameraPreset'; preset: OrthoPresetName }
   | { type: 'applyCameraBookmarkByIndex'; index: number }
   | { type: 'captureSnapshot' }
-  | { type: 'toggleIK' }
   | { type: 'toggleHelp' }
   | { type: 'frameFigure' }
   | { type: 'saveScene' }
-  | { type: 'setRootGizmoMode'; mode: RootGizmoMode }
+  | { type: 'setGizmoMode'; mode: GizmoMode }
 
 export interface EventTargetLike {
   tagName?: string
@@ -146,24 +145,22 @@ export function matchShortcut(event: ShortcutKeyEvent): ShortcutAction | null {
     return { type: 'toggleVisibility' }
   }
 
-  if (key === 'r' && !isPlatformModifier(event) && !event.shiftKey) {
-    return { type: 'toggleIK' }
-  }
-
   if (key === 'f' && !isPlatformModifier(event) && !event.shiftKey) {
     return { type: 'frameFigure' }
   }
 
-  // W/E na convenção dos softwares 3D (mover/girar), aplicados ao único gizmo
-  // do app que tem os dois modos: o da raiz. O "Q" (selecionar) do mapa
-  // original não foi construído — o app não tem um modo de seleção separado, e
-  // Esc já limpa a seleção.
+  // W/E na convenção dos softwares 3D (mover/girar), valendo para a junta
+  // selecionada: na raiz, colocação (mover/girar o boneco); nas demais,
+  // arrasto de cadeia / rotação FK. O "R" (alternar FK/IK) saiu junto com o
+  // IK de 2 ossos, substituído pelo arrasto de junta; o "Q" (selecionar) do
+  // mapa original não foi construído — o app não tem um modo de seleção
+  // separado, e Esc já limpa a seleção.
   if (key === 'w' && !isPlatformModifier(event) && !event.shiftKey) {
-    return { type: 'setRootGizmoMode', mode: 'translate' }
+    return { type: 'setGizmoMode', mode: 'translate' }
   }
 
   if (key === 'e' && !isPlatformModifier(event) && !event.shiftKey) {
-    return { type: 'setRootGizmoMode', mode: 'rotate' }
+    return { type: 'setGizmoMode', mode: 'rotate' }
   }
 
   if (event.key === '?' && !isPlatformModifier(event)) {
@@ -191,8 +188,7 @@ export const SHORTCUT_CATALOG: readonly ShortcutCatalogEntry[] = [
   { keys: 'Ctrl + ↑ ↓ ← →', descriptionKey: 'help.arrowsFine' },
   { keys: 'Tab / Shift+Tab', descriptionKey: 'help.cycleJoint' },
   { keys: '1–5', descriptionKey: 'help.selectFigure' },
-  { keys: 'R', descriptionKey: 'help.toggleIK' },
-  { keys: 'W / E', descriptionKey: 'help.rootGizmoMode' },
+  { keys: 'W / E', descriptionKey: 'help.gizmoMode' },
   { keys: 'F', descriptionKey: 'help.frameFigure' },
   { keys: 'Espaço', descriptionKey: 'help.captureSnapshot' },
   { keys: 'Ctrl+Z / Ctrl+Shift+Z', descriptionKey: 'help.undoRedo' },

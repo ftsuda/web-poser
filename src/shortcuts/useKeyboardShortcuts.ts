@@ -1,10 +1,7 @@
 import { useEffect } from 'react'
-import { toggleLimbIK } from '../figure/ikActions'
-import { getLimbEndEffector } from '../figure/ikSolver'
 import { JOINT_NAMES, ROOT_JOINT_NAME, getJointAxes } from '../figure/skeleton'
 import { useCameraStore } from '../store/cameraStore'
 import { useFiguresStore, type FiguresState } from '../store/figuresStore'
-import { useIKStore } from '../store/ikStore'
 import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
 import { useUIStore } from '../store/uiStore'
 import { matchShortcut, type EventTargetLike, type ShortcutAction, type Step } from './shortcuts'
@@ -55,7 +52,7 @@ function applyArrow(action: Extract<ShortcutAction, { type: 'arrow' }>, state: F
 
 function applyShortcut(action: ShortcutAction): boolean {
   const state = useFiguresStore.getState()
-  const { figures, selectedFigureId, selectedJointName } = state
+  const { figures, selectedFigureId } = state
 
   switch (action.type) {
     case 'undo':
@@ -81,7 +78,6 @@ function applyShortcut(action: ShortcutAction): boolean {
     case 'deleteFigure':
       if (!selectedFigureId) return false
       state.removeFigure(selectedFigureId)
-      useIKStore.getState().removeFigure(selectedFigureId)
       return true
 
     case 'toggleVisibility':
@@ -120,14 +116,6 @@ function applyShortcut(action: ShortcutAction): boolean {
       useSnapshotCaptureStore.getState().requestCapture()
       return true
 
-    case 'toggleIK': {
-      if (!selectedFigureId || !selectedJointName) return false
-      const endEffector = getLimbEndEffector(selectedJointName)
-      if (!endEffector) return false
-      toggleLimbIK(selectedFigureId, endEffector)
-      return true
-    }
-
     case 'toggleHelp':
       useUIStore.getState().toggleHelp()
       return true
@@ -143,8 +131,8 @@ function applyShortcut(action: ShortcutAction): boolean {
       // que impede o diálogo "salvar página" do navegador de abrir por cima.
       return true
 
-    case 'setRootGizmoMode':
-      useUIStore.getState().setRootGizmoMode(action.mode)
+    case 'setGizmoMode':
+      useUIStore.getState().setGizmoMode(action.mode)
       return true
 
     default:

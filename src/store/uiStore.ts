@@ -18,15 +18,18 @@ import type { FrameMaskSource, FrameRect } from '../scene/frameMask'
 export type AutosaveStatus = 'idle' | 'pending' | 'saved' | 'error'
 
 /**
- * Qual gizmo o `root` do boneco mostra: a translação de colocação (padrão,
- * comportamento das fases 3-8) ou a rotação de colocação, que gira em torno
- * do próprio pivô do quadril — fase 9, item 13, com o ponto de pivô
- * confirmado com o usuário. É modo de ferramenta, não conteúdo: fica fora do
- * histórico de undo, como o modo de IK (`ikStore`).
+ * Qual gizmo a junta selecionada mostra — modo único, global, na convenção
+ * W/E dos softwares 3D. Nasceu na fase 9 (item 13) valendo só para o `root`
+ * (mover/girar a colocação); com o gizmo de translação de junta o mesmo modo
+ * passou a valer para TODAS as juntas: `translate` numa junta arrastável é o
+ * arrasto de cadeia (`dragSolver.ts`), `rotate` é o gizmo de rotação FK de
+ * sempre. Juntas sem arrasto (mão/dedos, `spine`/`hip.*`) mostram rotação nos
+ * dois modos. É modo de ferramenta, não conteúdo: fica fora do histórico de
+ * undo, como a câmera.
  */
-export type RootGizmoMode = 'translate' | 'rotate'
+export type GizmoMode = 'translate' | 'rotate'
 
-/** Estado de UI global sem relação com conteúdo da cena — visibilidade do painel de ajuda (`?`) e situação do autosave. Fora do histórico de undo, como `cameraStore`/`ikStore`. */
+/** Estado de UI global sem relação com conteúdo da cena — visibilidade do painel de ajuda (`?`) e situação do autosave. Fora do histórico de undo, como `cameraStore`. */
 export interface UIState {
   helpVisible: boolean
   toggleHelp: () => void
@@ -39,8 +42,8 @@ export interface UIState {
   markAutosaveSaved: (at: number) => void
   markAutosaveFailed: () => void
 
-  rootGizmoMode: RootGizmoMode
-  setRootGizmoMode: (mode: RootGizmoMode) => void
+  gizmoMode: GizmoMode
+  setGizmoMode: (mode: GizmoMode) => void
 
   /** Painéis laterais recolhidos (fase 9, item 8) — gravado em `localStorage` a cada troca. */
   collapsedPanels: CollapsedPanels
@@ -89,8 +92,8 @@ export const useUIStore = create<UIState>()((set) => ({
   // é justamente o que interessa quando a atual falha.
   markAutosaveFailed: () => set({ autosaveStatus: 'error' }),
 
-  rootGizmoMode: 'translate',
-  setRootGizmoMode: (mode) => set({ rootGizmoMode: mode }),
+  gizmoMode: 'translate',
+  setGizmoMode: (mode) => set({ gizmoMode: mode }),
 
   collapsedPanels: INITIAL_UI_PREFERENCES.collapsedPanels,
   // Gravam direto, sem o debounce do autosave do workspace: recolher um painel

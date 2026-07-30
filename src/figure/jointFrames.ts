@@ -8,7 +8,8 @@ import type { Figure } from '../store/figuresStore'
  * `Figure.tsx` usa para renderizar, mas puramente como grafo de transformos,
  * reaproveitável por qualquer código que precise da posição/orientação de
  * uma junta no mundo sem montar o `<Canvas>`: exportação glTF
- * (`figureObject3D.ts`) e o solver de IK (`ikSolver.ts`, fase 7).
+ * (`figureObject3D.ts`) e o solver de arrasto de junta (`dragSolver.ts`, que
+ * substituiu o IK de 2 ossos da fase 7).
  */
 
 const ZERO_ROTATION: JointRotation = { x: 0, y: 0, z: 0 }

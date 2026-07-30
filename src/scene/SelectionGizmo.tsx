@@ -2,7 +2,7 @@ import { TransformControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { ROOT_JOINT_NAME, getJointAxes } from '../figure/skeleton'
 import { useFiguresStore } from '../store/figuresStore'
-import type { RootGizmoMode } from '../store/uiStore'
+import type { GizmoMode } from '../store/uiStore'
 
 export interface SelectionGizmoProps {
   figureId: string
@@ -14,8 +14,10 @@ export interface SelectionGizmoProps {
    * boneco em torno do próprio pivô do quadril) — fase 9, item 13. No modo
    * `rotate`, o `target` precisa ser o grupo interno da raiz (o que carrega
    * `figure.rotation`), não o grupo externo da colocação (ver DECISOES.md #7).
+   * Nas demais juntas este componente é sempre rotação — o modo `translate`
+   * delas é outro componente (`JointDragGizmo`, arrasto de cadeia).
    */
-  rootMode?: RootGizmoMode
+  rootMode?: GizmoMode
 }
 
 /**

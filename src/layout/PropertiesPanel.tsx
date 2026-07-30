@@ -1,11 +1,10 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { HAND_PRESET_KEYS, type HandPresetKey } from '../figure/handPresets'
-import { applyIKSwivel, applyIKTarget, readIKSwivel, toggleLimbIK } from '../figure/ikActions'
+import { isDraggableJoint } from '../figure/dragSolver'
 import { JOINT_GROUPS, getArmSide, type JointGroupKey } from '../figure/jointGroups'
 import { getLockedJoints } from '../figure/jointLocks'
 import { figureBlendState, resolveBlendTarget, type BlendablePose, type BlendSource } from '../figure/poseBlend'
-import { IK_CHAINS, getLimbEndEffector } from '../figure/ikSolver'
 import { getMirrorScope, type Side } from '../figure/poseMirror'
 import { getPosePairing } from '../figure/posePairs'
 import {
@@ -18,8 +17,7 @@ import {
 import { ROOT_JOINT_NAME, getJoint, getJointAxes, type Axis } from '../figure/skeleton'
 import { AXIS_COLORS } from '../scene/axisColors'
 import { useFiguresStore } from '../store/figuresStore'
-import { useIKStore } from '../store/ikStore'
-import { useUIStore } from '../store/uiStore'
+import { useUIStore, type GizmoMode } from '../store/uiStore'
 import { CollapsiblePanel } from './CollapsiblePanel'
 
 const POSITION_AXES: readonly Axis[] = ['x', 'y', 'z']
@@ -287,6 +285,30 @@ const HAND_PRESETS_LEGEND_KEYS: Record<Side, string> = {
 }
 
 /**
+ * Seletor mover/girar do gizmo (W/E) — o mesmo modo global do `uiStore`,
+ * mostrado tanto na seção da raiz (mover/girar a colocação, fase 9, item 13)
+ * quanto nas juntas arrastáveis (arrasto de cadeia / rotação FK). Juntas sem
+ * arrasto não o mostram: nelas só existe rotação.
+ */
+function GizmoModeFieldset({ mode, onSelect }: { mode: GizmoMode; onSelect: (mode: GizmoMode) => void }) {
+  const { t } = useTranslation()
+
+  return (
+    <fieldset aria-label={t('panels.properties.gizmoMode')}>
+      <legend>{t('panels.properties.gizmoMode')}</legend>
+      <div className="properties-panel__pose-presets">
+        <button type="button" aria-pressed={mode === 'translate'} onClick={() => onSelect('translate')}>
+          {t('panels.properties.gizmoTranslate')}
+        </button>
+        <button type="button" aria-pressed={mode === 'rotate'} onClick={() => onSelect('rotate')}>
+          {t('panels.properties.gizmoRotate')}
+        </button>
+      </div>
+    </fieldset>
+  )
+}
+
+/**
  * Assentar o boneco no chão. Aparece nas DUAS seções do painel — com a raiz
  * selecionada e com uma junta selecionada — porque o momento em que ele faz
  * falta é logo depois de dobrar um joelho ou girar o quadril, e aí quem está
@@ -513,8 +535,8 @@ export function PropertiesPanel() {
   const jointLocks = useFiguresStore((state) => state.jointLocks)
   const toggleJointLock = useFiguresStore((state) => state.toggleJointLock)
   const clearJointLocks = useFiguresStore((state) => state.clearJointLocks)
-  const rootGizmoMode = useUIStore((state) => state.rootGizmoMode)
-  const setRootGizmoMode = useUIStore((state) => state.setRootGizmoMode)
+  const gizmoMode = useUIStore((state) => state.gizmoMode)
+  const setGizmoMode = useUIStore((state) => state.setGizmoMode)
   const pairPoseEnabled = useUIStore((state) => state.pairPoseEnabled)
   const togglePairPose = useUIStore((state) => state.togglePairPose)
   // Não é usado diretamente: assina a customização de limites do workspace só
@@ -523,16 +545,6 @@ export function PropertiesPanel() {
   useFiguresStore((state) => state.jointLimits)
 
   const figure = figures.find((f) => f.id === selectedFigureId)
-  const limbEndEffector = selectedJointName ? getLimbEndEffector(selectedJointName) : null
-  const ikEnabled = useIKStore((state) =>
-    figure && limbEndEffector ? state.isLimbEnabled(figure.id, limbEndEffector) : false,
-  )
-  const ikTarget = useIKStore((state) =>
-    figure && limbEndEffector ? state.getTarget(figure.id, limbEndEffector) : undefined,
-  )
-  const ikReached = useIKStore((state) =>
-    figure && limbEndEffector ? state.getReached(figure.id, limbEndEffector) : true,
-  )
 
   if (!figure || !selectedJointName) {
     return (
@@ -570,11 +582,6 @@ export function PropertiesPanel() {
   // Travamento de juntas (DECISOES.md #42).
   const lockedJoints = getLockedJoints(jointLocks, figure.id)
   const isSelectedJointLocked = lockedJoints.includes(selectedJointName)
-  const ikChainLocked =
-    limbEndEffector !== null && (IK_CHAINS[limbEndEffector]?.joints ?? []).some((joint) => lockedJoints.includes(joint))
-  // Giro do cotovelo/joelho (DECISOES.md #44): medido da pose a cada render,
-  // não guardado — é o que mantém o controle e a pose sempre coerentes.
-  const ikSwivel = ikEnabled && limbEndEffector ? Math.round(readIKSwivel(figure.id, limbEndEffector)) : 0
 
   /** A pose escolhida no combo, no formato comum a presets e biblioteca. */
   const selectedPoseSource: BlendSource | null = savedPose
@@ -623,22 +630,10 @@ export function PropertiesPanel() {
   // ponta dos dedos) revela as poses DAQUELA mão, sem um seletor de lado à
   // parte (ver DECISOES.md #30).
   const armSide = getArmSide(selectedJointName)
-  // Ombro/cotovelo (ou quadril/joelho) somem dos controles de FK enquanto o
-  // membro estiver em IK — só a própria junta-efetuador (pulso/tornozelo)
-  // continua com seus eixos de FK próprios (torção, sem efeito na posição do
-  // alvo), já que o IK não controla essa junta — ver PLANO.md > "Interação
-  // de pose", passo 3, e a decisão de UI em DECISOES.md.
-  const isIKControlledJoint = ikEnabled && limbEndEffector !== null && selectedJointName !== limbEndEffector
-
-  const handleIKTargetChange =
-    (index: number) =>
-    (event: ChangeEvent<HTMLInputElement>): void => {
-      const value = Number(event.target.value)
-      if (Number.isNaN(value) || !limbEndEffector || !ikTarget) return
-      const next = [...ikTarget] as [number, number, number]
-      next[index] = value
-      applyIKTarget(figure.id, limbEndEffector, next)
-    }
+  // A junta tem os dois modos de gizmo (W/E)? Fora da raiz, só as juntas
+  // arrastáveis — mão/dedos e spine/hip.* ficam sempre em rotação, e o
+  // seletor de modo não aparece para elas.
+  const selectedJointDraggable = !isRoot && isDraggableJoint(selectedJointName)
 
   const handlePositionChange =
     (index: number) =>
@@ -907,28 +902,10 @@ export function PropertiesPanel() {
 
           <SymmetryFieldset figureId={figure.id} scopeJoint={null} />
 
-          {/* Alternância translação/rotação do gizmo da raiz (fase 9, item
-              13) — a rotação gira em torno do próprio pivô do quadril, ponto
-              confirmado com o usuário. */}
-          <fieldset aria-label={t('panels.properties.rootGizmoMode')}>
-            <legend>{t('panels.properties.rootGizmoMode')}</legend>
-            <div className="properties-panel__pose-presets">
-              <button
-                type="button"
-                aria-pressed={rootGizmoMode === 'translate'}
-                onClick={() => setRootGizmoMode('translate')}
-              >
-                {t('panels.properties.rootGizmoTranslate')}
-              </button>
-              <button
-                type="button"
-                aria-pressed={rootGizmoMode === 'rotate'}
-                onClick={() => setRootGizmoMode('rotate')}
-              >
-                {t('panels.properties.rootGizmoRotate')}
-              </button>
-            </div>
-          </fieldset>
+          {/* Alternância translação/rotação do gizmo (W/E). Na raiz (fase 9,
+              item 13): mover a colocação ou girar em torno do próprio pivô do
+              quadril, ponto confirmado com o usuário. */}
+          <GizmoModeFieldset mode={gizmoMode} onSelect={setGizmoMode} />
 
           <fieldset aria-label={t('panels.properties.position')}>
             <legend>{t('panels.properties.position')}</legend>
@@ -1021,119 +998,57 @@ export function PropertiesPanel() {
             </fieldset>
           )}
 
-          {limbEndEffector && (
-            <label className="properties-panel__field properties-panel__field--checkbox">
-              <input
-                type="checkbox"
-                checked={ikEnabled}
-                onChange={() => toggleLimbIK(figure.id, limbEndEffector)}
-              />
-              {t('panels.properties.ikEnabled')}
-            </label>
-          )}
-
-          {/* O solver é analítico de dois ossos: com um deles travado ele não
-              resolve, e o membro inteiro para (DECISOES.md #42). Avisar aqui
-              evita a leitura de "o IK está quebrado". */}
-          {ikEnabled && ikChainLocked && (
-            <p className="properties-panel__hint properties-panel__hint--warning">
-              {t('panels.properties.ikLockedHint')}
-            </p>
-          )}
-
-          {ikEnabled && limbEndEffector && (
-            <fieldset aria-label={t('panels.properties.ikTarget')}>
-              <legend>{t('panels.properties.ikTarget')}</legend>
-              {/* "Alvo fora de alcance — aproximação mais próxima aplicada"
-                  seria mentira com a cadeia travada: nada foi aplicado. Ali o
-                  aviso da trava, logo acima, é que explica. */}
-              {!ikReached && !ikChainLocked && (
-                <p className="properties-panel__hint properties-panel__hint--warning">
-                  {t('panels.properties.ikUnreachable')}
-                </p>
+          {/* O mesmo seletor W/E da raiz, nas juntas que têm os dois modos:
+              mover (arrasto de cadeia — puxa os ancestrais até os limites,
+              com a raiz fixa) ou girar (FK de sempre). */}
+          {selectedJointDraggable && (
+            <>
+              <GizmoModeFieldset mode={gizmoMode} onSelect={setGizmoMode} />
+              {gizmoMode === 'translate' && (
+                <p className="properties-panel__hint">{t('panels.properties.gizmoDragHint')}</p>
               )}
-              {POSITION_AXES.map((axis, index) => (
-                <label key={axis} htmlFor={`ik-target-${axis}`} className="properties-panel__field">
-                  <span style={{ color: AXIS_COLORS[axis] }}>{axis.toUpperCase()}</span>
-                  <input
-                    id={`ik-target-${axis}`}
-                    type="number"
-                    step={0.01}
-                    style={{ accentColor: AXIS_COLORS[axis] }}
-                    value={ikTarget?.[index] ?? 0}
-                    onChange={handleIKTargetChange(index)}
-                  />
-                </label>
-              ))}
+            </>
+          )}
 
-              {/* Giro do cotovelo/joelho (DECISOES.md #44): com o ombro e a
-                  mão parados, é o único grau de liberdade que sobra. O valor
-                  é LIDO da pose — nunca guardado —, então ele nunca mente: um
-                  ângulo que os limites não alcançam simplesmente não aparece,
-                  e o controle para na borda da faixa. */}
-              <label htmlFor="ik-swivel" className="properties-panel__mix-label">
-                {t(limbEndEffector.startsWith('wrist')
-                  ? 'panels.properties.ikSwivelElbow'
-                  : 'panels.properties.ikSwivelKnee')}
-              </label>
-              <div className="properties-panel__axis-row">
-                <input
-                  id="ik-swivel"
-                  type="range"
-                  min={-180}
-                  max={180}
-                  step={1}
-                  value={ikSwivel}
-                  disabled={ikChainLocked}
-                  onChange={(event) => applyIKSwivel(figure.id, limbEndEffector, Number(event.target.value))}
+          <fieldset aria-label={t('panels.properties.rotation')}>
+            <legend>{t('panels.properties.rotation')}</legend>
+            <p className="properties-panel__hint">{t('panels.properties.activeAxisHint')}</p>
+
+            {getJointAxes(selectedJointName).map((axis) => {
+              const limit = getJoint(selectedJointName).limits[axis]
+              if (!limit) return null
+
+              return (
+                <AxisSlider
+                  key={axis}
+                  axis={axis}
+                  value={figure.pose[selectedJointName]?.[axis] ?? 0}
+                  min={limit.min}
+                  max={limit.max}
+                  onChange={handleJointRotationChange(axis)}
+                  activeAxis={activeAxis}
+                  onSelectAxis={setActiveAxis}
+                  activeAxisTitle={t('panels.properties.makeActiveAxis', { axis: axis.toUpperCase() })}
+                  // Travada: o store recusaria a escrita de qualquer jeito —
+                  // desabilitar é dizer isso ANTES do usuário arrastar e
+                  // ver o slider voltar sozinho.
+                  disabled={isSelectedJointLocked}
                 />
-                <span className="properties-panel__value">{ikSwivel}°</span>
-              </div>
-              <p className="properties-panel__hint">{t('panels.properties.ikSwivelHint')}</p>
-            </fieldset>
-          )}
+              )
+            })}
 
-          {!isIKControlledJoint && (
-            <fieldset aria-label={t('panels.properties.rotation')}>
-              <legend>{t('panels.properties.rotation')}</legend>
-              <p className="properties-panel__hint">{t('panels.properties.activeAxisHint')}</p>
-
-              {getJointAxes(selectedJointName).map((axis) => {
-                const limit = getJoint(selectedJointName).limits[axis]
-                if (!limit) return null
-
-                return (
-                  <AxisSlider
-                    key={axis}
-                    axis={axis}
-                    value={figure.pose[selectedJointName]?.[axis] ?? 0}
-                    min={limit.min}
-                    max={limit.max}
-                    onChange={handleJointRotationChange(axis)}
-                    activeAxis={activeAxis}
-                    onSelectAxis={setActiveAxis}
-                    activeAxisTitle={t('panels.properties.makeActiveAxis', { axis: axis.toUpperCase() })}
-                    // Travada: o store recusaria a escrita de qualquer jeito —
-                    // desabilitar é dizer isso ANTES do usuário arrastar e
-                    // ver o slider voltar sozinho.
-                    disabled={isSelectedJointLocked}
-                  />
-                )
-              })}
-
-              {/* Reset por junta (fase 9, item 6): sem isto, voltar uma junta
-                  ao neutro exigia acertar cada eixo na mão. */}
-              <button
-                type="button"
-                className="properties-panel__reset"
-                title={t('panels.properties.resetJointHint')}
-                disabled={isSelectedJointLocked}
-                onClick={() => resetJointRotation(figure.id, selectedJointName)}
-              >
-                {t('panels.properties.resetJoint')}
-              </button>
-            </fieldset>
-          )}
+            {/* Reset por junta (fase 9, item 6): sem isto, voltar uma junta
+                ao neutro exigia acertar cada eixo na mão. */}
+            <button
+              type="button"
+              className="properties-panel__reset"
+              title={t('panels.properties.resetJointHint')}
+              disabled={isSelectedJointLocked}
+              onClick={() => resetJointRotation(figure.id, selectedJointName)}
+            >
+              {t('panels.properties.resetJoint')}
+            </button>
+          </fieldset>
 
           {/* O mesmo botão da seção da raiz: dobrar um joelho é o que costuma
               deixar o boneco flutuando, e obrigar a voltar para a raiz só para

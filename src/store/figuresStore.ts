@@ -275,6 +275,14 @@ export interface FiguresState {
   setPosition: (id: string, position: readonly [number, number, number]) => void
   setRootRotation: (id: string, rotation: Partial<JointRotation>) => void
   setJointRotation: (id: string, jointName: string, rotation: Partial<JointRotation>) => void
+  /**
+   * Versão em lote de `setJointRotation` — mesmas regras (clamp, trava,
+   * espelho ao vivo) num único `set`, e portanto num único passo de undo.
+   * Existe para o arrasto de junta (`dragSolver.ts`), que escreve a cadeia
+   * inteira de ancestrais a cada evento de mouse — uma chamada por junta
+   * empilharia até 5 passos de undo por pixel arrastado.
+   */
+  setJointRotations: (id: string, rotations: Record<string, Partial<JointRotation>>) => void
   /** Liga/desliga o espelho ao vivo (ver `liveMirrorEnabled`). */
   toggleLiveMirror: () => void
   /**
@@ -1052,6 +1060,29 @@ export const useFiguresStore = create<FiguresState>()(
             }),
           }
         })
+      },
+
+      setJointRotations: (id, rotations) => {
+        set((state) => ({
+          figures: updateFigure(state.figures, id, (figure) => {
+            const pose = { ...figure.pose }
+            for (const [jointName, rotation] of Object.entries(rotations)) {
+              // Mesmas regras da escrita unitária: junta travada não muda
+              // (DECISOES.md #42) e o espelho ao vivo recebe a reflexão
+              // sagital, nunca uma cópia crua (#14/#30).
+              if (isJointLocked(state.jointLocks, id, jointName)) continue
+
+              const updated = clampJointRotation(jointName, { ...pose[jointName], ...rotation })
+              pose[jointName] = updated
+
+              const mirroredName = state.liveMirrorEnabled ? getMirroredJointName(jointName) : null
+              if (mirroredName && !isJointLocked(state.jointLocks, id, mirroredName)) {
+                pose[mirroredName] = clampJointRotation(mirroredName, mirrorRotation(updated))
+              }
+            }
+            return { ...figure, pose }
+          }),
+        }))
       },
 
       toggleLiveMirror: () => set((state) => ({ liveMirrorEnabled: !state.liveMirrorEnabled })),

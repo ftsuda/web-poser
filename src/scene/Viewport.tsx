@@ -5,10 +5,9 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type * as THREE from 'three'
 import { useTranslation } from 'react-i18next'
 import { ROOT_PIVOT_REF_NAME } from '../figure/Figure'
-import { getLimbEndEffector } from '../figure/ikSolver'
+import { isDraggableJoint } from '../figure/dragSolver'
 import { ROOT_JOINT_NAME } from '../figure/skeleton'
 import { useFiguresStore } from '../store/figuresStore'
-import { useIKStore } from '../store/ikStore'
 import { useAnimationStore } from '../store/animationStore'
 import { useUIStore } from '../store/uiStore'
 import { AnimationPlayer } from './AnimationPlayer'
@@ -17,7 +16,7 @@ import { FrameMaskCamera } from './FrameMaskCamera'
 import { FrameMaskOverlay } from './FrameMaskOverlay'
 import { BACKGROUND_COLORS, CAMERA_DEFAULTS } from './constants'
 import { GridAlignmentIndicator } from './GridAlignmentIndicator'
-import { IKTargetGizmo } from './IKTargetGizmo'
+import { JointDragGizmo } from './JointDragGizmo'
 import { SnapshotCapture } from './SnapshotCapture'
 import { SceneContent } from './SceneContent'
 import { OnionSkin } from './OnionSkin'
@@ -32,20 +31,7 @@ export function Viewport() {
   const selectedFigureId = useFiguresStore((state) => state.selectedFigureId)
   const selectedJointName = useFiguresStore((state) => state.selectedJointName)
   const selectFigure = useFiguresStore((state) => state.selectFigure)
-  const rootGizmoMode = useUIStore((state) => state.rootGizmoMode)
-
-  const limbEndEffector = selectedJointName ? getLimbEndEffector(selectedJointName) : null
-  const limbIKEnabled = useIKStore((state) =>
-    selectedFigureId && limbEndEffector ? state.isLimbEnabled(selectedFigureId, limbEndEffector) : false,
-  )
-  // Ombro/cotovelo (ou quadril/joelho) perdem o gizmo de rotação FK enquanto
-  // o membro está em IK — só o pulso/tornozelo (junta-efetuador) continua
-  // com seu próprio gizmo, já que tem grau de liberdade que o IK não cobre
-  // (torção) — mesma regra da fase 3 do painel de Propriedades.
-  const isIKControlledJoint = limbIKEnabled && limbEndEffector !== null && selectedJointName !== limbEndEffector
-  const ikTarget = useIKStore((state) =>
-    selectedFigureId && limbEndEffector ? state.getTarget(selectedFigureId, limbEndEffector) : undefined,
-  )
+  const gizmoMode = useUIStore((state) => state.gizmoMode)
   const rulerVisible = useUIStore((state) => state.rulerVisible)
   const animationPlaying = useAnimationStore((state) => state.playing)
 
@@ -67,7 +53,7 @@ export function Viewport() {
   // mover precisa do externo (que carrega `figure.position`) — ver
   // `ROOT_PIVOT_REF_NAME` e DECISOES.md #7.
   const gizmoJointKey =
-    selectedJointName === ROOT_JOINT_NAME && rootGizmoMode === 'rotate'
+    selectedJointName === ROOT_JOINT_NAME && gizmoMode === 'rotate'
       ? ROOT_PIVOT_REF_NAME
       : selectedJointName
 
@@ -76,17 +62,23 @@ export function Viewport() {
       ? (jointObjects.get(`${selectedFigureId}:${gizmoJointKey}`) ?? null)
       : null
 
-  // Qual posição o indicador de alinhamento acompanha (fase 9, item 10): a
-  // colocação do boneco, ou o alvo de IK quando é ele que está sendo
-  // arrastado. Rotação da raiz e rotação de junta não mexem em X/Z, então não
-  // acendem nada.
+  // Modo W/E numa junta arrastável mostra o gizmo de translação de junta
+  // (arrasto de cadeia, `dragSolver.ts`) em vez do de rotação; juntas sem
+  // arrasto (mão/dedos, spine/hip.*) mostram rotação nos dois modos.
+  const useJointDrag =
+    selectedJointName !== null &&
+    selectedJointName !== ROOT_JOINT_NAME &&
+    gizmoMode === 'translate' &&
+    isDraggableJoint(selectedJointName)
+
+  // Qual posição o indicador de alinhamento acompanha (fase 9, item 10): só a
+  // colocação do boneco no chão — rotações e arrasto de junta não mexem na
+  // colocação em X/Z, então não acendem nada.
   const selectedFigure = figures.find((figure) => figure.id === selectedFigureId)
   const draggedPosition: readonly [number, number, number] | null =
-    limbIKEnabled && limbEndEffector
-      ? (ikTarget ?? null)
-      : selectedJointName === ROOT_JOINT_NAME && rootGizmoMode === 'translate' && selectedFigure
-        ? selectedFigure.position
-        : null
+    selectedJointName === ROOT_JOINT_NAME && gizmoMode === 'translate' && selectedFigure
+      ? selectedFigure.position
+      : null
 
   return (
     <div className="viewport" role="img" aria-label={t('viewport.label')}>
@@ -111,19 +103,20 @@ export function Viewport() {
             translúcidos e sem escrita de profundidade, e desenhar por último é
             o que os deixa somar por cima em vez de recortar a cena. */}
         <OnionSkin />
-        {gizmoTarget && selectedFigureId && selectedJointName && !isIKControlledJoint && (
+        {gizmoTarget && selectedFigureId && selectedJointName && !useJointDrag && (
           <SelectionGizmo
             figureId={selectedFigureId}
             jointName={selectedJointName}
             target={gizmoTarget}
-            rootMode={rootGizmoMode}
+            rootMode={gizmoMode}
             onDraggingChange={setIsGizmoDragging}
           />
         )}
-        {selectedFigureId && limbEndEffector && limbIKEnabled && (
-          <IKTargetGizmo
+        {gizmoTarget && selectedFigureId && selectedJointName && useJointDrag && (
+          <JointDragGizmo
             figureId={selectedFigureId}
-            endEffector={limbEndEffector}
+            jointName={selectedJointName}
+            jointObject={gizmoTarget}
             onDraggingChange={setIsGizmoDragging}
           />
         )}

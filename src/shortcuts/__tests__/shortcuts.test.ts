@@ -172,10 +172,6 @@ describe('matchShortcut — undo/redo/duplicate/delete/visibility/escape', () =>
     expect(matchShortcut(key({ key: 'h' }))).toEqual({ type: 'toggleVisibility' })
   })
 
-  it('maps R to toggleIK', () => {
-    expect(matchShortcut(key({ key: 'r' }))).toEqual({ type: 'toggleIK' })
-  })
-
   it('maps ? to toggleHelp', () => {
     expect(matchShortcut(key({ key: '?', shiftKey: true }))).toEqual({ type: 'toggleHelp' })
   })
@@ -183,7 +179,7 @@ describe('matchShortcut — undo/redo/duplicate/delete/visibility/escape', () =>
   it('is case-insensitive for letter shortcuts', () => {
     expect(matchShortcut(key({ key: 'H' }))).toEqual({ type: 'toggleVisibility' })
     expect(matchShortcut(key({ key: 'D', ctrlKey: true }))).toEqual({ type: 'duplicateFigure' })
-    expect(matchShortcut(key({ key: 'R' }))).toEqual({ type: 'toggleIK' })
+    expect(matchShortcut(key({ key: 'W' }))).toEqual({ type: 'setGizmoMode', mode: 'translate' })
   })
 })
 
@@ -236,19 +232,19 @@ describe('atalhos construídos ao fechar o mapa do plano (2026-07-25)', () => {
     expect(matchShortcut(key({ key: 's' }))).toBeNull()
   })
 
-  it('W e E alternam o gizmo da raiz entre mover e girar', () => {
+  it('W e E alternam o gizmo da junta selecionada entre mover e girar', () => {
     expect(matchShortcut(key({ key: 'w' }))).toEqual({
-      type: 'setRootGizmoMode',
+      type: 'setGizmoMode',
       mode: 'translate',
     })
     expect(matchShortcut(key({ key: 'e' }))).toEqual({
-      type: 'setRootGizmoMode',
+      type: 'setGizmoMode',
       mode: 'rotate',
     })
   })
 
-  it('R continua sendo o IK, não um modo de ferramenta', () => {
-    expect(matchShortcut(key({ key: 'r' }))).toEqual({ type: 'toggleIK' })
+  it('R não é mais um atalho — o IK de 2 ossos saiu junto com ele (substituído pelo arrasto de junta)', () => {
+    expect(matchShortcut(key({ key: 'r' }))).toBeNull()
   })
 
   it('as teclas novas continuam ignoradas em campo de texto', () => {

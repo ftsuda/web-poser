@@ -190,6 +190,26 @@ describe('figuresStore', () => {
     expect(figure?.pose['elbow.L']).toEqual({ x: -150, y: 90, z: 0 })
   })
 
+  it('setJointRotations grava várias juntas num único set (um passo de undo), com clamp e trava', () => {
+    const { addFigure, setJointRotations, toggleJointLock } = useFiguresStore.getState()
+    const id = addFigure() as string
+    toggleJointLock(id, 'shoulder.L')
+    const lockedBefore = useFiguresStore.getState().figures.find((f) => f.id === id)!.pose['shoulder.L']
+    useFiguresStore.temporal.getState().clear()
+
+    setJointRotations(id, {
+      'elbow.L': { x: -999 },
+      'shoulder.L': { x: -45 },
+      spine: { z: 10 },
+    })
+
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    expect(figure.pose['elbow.L'].x).toBe(-150) // clamp igual ao da escrita unitária
+    expect(figure.pose['shoulder.L']).toEqual(lockedBefore) // travada não muda
+    expect(figure.pose.spine.z).toBe(10)
+    expect(useFiguresStore.temporal.getState().pastStates.length).toBe(1)
+  })
+
   it('changes a figure color to another palette color', () => {
     const { addFigure, setColor } = useFiguresStore.getState()
     const id = addFigure() as string

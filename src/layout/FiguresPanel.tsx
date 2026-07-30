@@ -1,12 +1,10 @@
 import { useState, type ChangeEvent, type FocusEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MAX_FIGURES, useFiguresStore, type Figure } from '../store/figuresStore'
-import { IK_CHAINS } from '../figure/ikSolver'
 import { MAX_HEIGHT_M, MIN_HEIGHT_M } from '../figure/skeleton'
 import { slugifySceneName } from '../snapshot/snapshotNaming'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { exportFigureToGlb, importFigureFromGlb } from '../persistence/sceneFile'
-import { useIKStore } from '../store/ikStore'
 import { usePoseClipboardStore } from '../store/poseClipboardStore'
 import { importErrorKey } from './fileFeedback'
 import { CollapsiblePanel } from './CollapsiblePanel'
@@ -17,26 +15,8 @@ interface FigureRowProps {
   atLimit: boolean
 }
 
-/**
- * Rótulo curto de cada membro com IK disponível, indexado pela junta-efetuador
- * da cadeia (`IK_CHAINS` de `ikSolver.ts`) — fase 9, item 5.
- */
-const LIMB_LABEL_KEYS: Record<string, string> = {
-  'wrist.L': 'panels.figures.limbArmLeft',
-  'wrist.R': 'panels.figures.limbArmRight',
-  'ankle.L': 'panels.figures.limbLegLeft',
-  'ankle.R': 'panels.figures.limbLegRight',
-}
-
 function FigureRow({ figure, selected, atLimit }: FigureRowProps) {
   const { t } = useTranslation()
-  // `enabledLimbs` é substituído por inteiro a cada mudança do `ikStore`, então
-  // assinar o objeto e derivar aqui é estável (sem seletor que crie array novo
-  // a cada render).
-  const enabledLimbs = useIKStore((state) => state.enabledLimbs)
-  const ikLimbs = Object.keys(IK_CHAINS).filter(
-    (endEffector) => enabledLimbs[`${figure.id}:${endEffector}`] === true,
-  )
   const selectFigure = useFiguresStore((state) => state.selectFigure)
   const renameFigure = useFiguresStore((state) => state.renameFigure)
   const removeFigure = useFiguresStore((state) => state.removeFigure)
@@ -117,20 +97,6 @@ function FigureRow({ figure, selected, atLimit }: FigureRowProps) {
         />
       </label>
 
-      {/* Indicador de IK ativo (fase 9, item 5): sem isto, só dava para
-          descobrir que um membro ficou em IK selecionando uma junta dele. */}
-      {ikLimbs.length > 0 && (
-        <span
-          className="figures-panel__ik-badge"
-          title={t('panels.figures.ikActiveLimbs', {
-            limbs: ikLimbs.map((limb) => t(LIMB_LABEL_KEYS[limb])).join(', '),
-          })}
-        >
-          {t('panels.figures.ikBadge')}
-          <span className="figures-panel__ik-count">{ikLimbs.length}</span>
-        </span>
-      )}
-
       <label
         className="figures-panel__visibility"
         onClick={(event) => event.stopPropagation()}
@@ -164,7 +130,6 @@ function FigureRow({ figure, selected, atLimit }: FigureRowProps) {
         onClick={(event) => {
           event.stopPropagation()
           removeFigure(figure.id)
-          useIKStore.getState().removeFigure(figure.id)
         }}
       >
         &times;

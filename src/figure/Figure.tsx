@@ -41,6 +41,13 @@ export interface FigureProps {
   figure: FigureData
   /** Nome da junta selecionada (ganha destaque emissivo). */
   selectedJointName?: string | null
+  /**
+   * Juntas travadas a DESTACAR (tom avermelhado) — passado só enquanto o gizmo
+   * de translação de junta está ativo neste boneco, para dizer de antemão o
+   * que vai ficar rígido no arrasto (elo rígido, ver `dragSolver.ts`). Fora
+   * desse modo vem vazio/ausente: o cadeado em si já é mostrado pelo painel.
+   */
+  lockedJointNames?: readonly string[] | null
   /** Chamado com o nome da junta quando o usuário clica no seu corpo/pivô. */
   onSelectJoint?: (jointName: string) => void
   /** Registra/desregistra (null) o `Group` ao vivo de cada junta — usado para anexar o gizmo. */
@@ -63,6 +70,15 @@ export const ROOT_PIVOT_REF_NAME = 'root:pivot'
 /** Cor emissiva usada para destacar a junta selecionada. */
 const SELECTED_EMISSIVE = '#ffe066'
 const SELECTED_EMISSIVE_INTENSITY = 0.6
+
+/**
+ * Cor emissiva das juntas TRAVADAS enquanto o gizmo de translação de junta
+ * está ativo (ver `lockedJointNames`): vermelho = "isto não vai se mexer".
+ * Um pouco mais fraca que a da seleção, que continua sendo o destaque
+ * principal — e vence quando a junta selecionada também está travada.
+ */
+const LOCKED_EMISSIVE = '#ef4444'
+const LOCKED_EMISSIVE_INTENSITY = 0.5
 
 /** Cor fixa dos olhos — sempre preta, independente da cor do boneco. */
 const EYE_COLOR = '#0a0a0a'
@@ -157,15 +173,23 @@ interface PartMeshProps {
   name?: string
   color: string
   selected: boolean
+  /** Junta travada com o gizmo de translação ativo — destaque avermelhado (a seleção vence). */
+  locked?: boolean
   ghost?: GhostStyle | null
   onClick?: (event: ThreeEvent<MouseEvent>) => void
 }
 
 /** Uma peça visual de junta (`SegmentPart` do `skeleton.ts`), no espaço local da junta. */
-function PartMesh({ part, name, color, selected, ghost, onClick }: PartMeshProps) {
+function PartMesh({ part, name, color, selected, locked, ghost, onClick }: PartMeshProps) {
   const isEye = part.tint === 'eye'
   const isMarker = part.tint === 'marker'
   const fixedColor = isEye ? EYE_COLOR : isMarker ? MARKER_COLOR : null
+
+  // Mesmas exclusões do destaque de seleção: fantasma é silhueta de
+  // referência e os olhos ficam sempre pretos. Seleção > trava quando os dois
+  // valem para a mesma peça.
+  const highlight: 'selected' | 'locked' | null =
+    isEye || ghost ? null : selected ? 'selected' : locked ? 'locked' : null
 
   const latheProfile = useMemo(() => {
     if (part.kind !== 'lathe') return null
@@ -200,8 +224,16 @@ function PartMesh({ part, name, color, selected, ghost, onClick }: PartMeshProps
           sem um recortar o outro em pedaços — o mesmo truque da sombra. */}
       <meshStandardMaterial
         color={ghost ? ghost.color : (fixedColor ?? color)}
-        emissive={selected && !isEye && !ghost ? SELECTED_EMISSIVE : '#000000'}
-        emissiveIntensity={selected && !isEye && !ghost ? SELECTED_EMISSIVE_INTENSITY : 0}
+        emissive={
+          highlight === 'selected' ? SELECTED_EMISSIVE : highlight === 'locked' ? LOCKED_EMISSIVE : '#000000'
+        }
+        emissiveIntensity={
+          highlight === 'selected'
+            ? SELECTED_EMISSIVE_INTENSITY
+            : highlight === 'locked'
+              ? LOCKED_EMISSIVE_INTENSITY
+              : 0
+        }
         transparent={Boolean(ghost)}
         opacity={ghost ? ghost.opacity : 1}
         depthWrite={!ghost}
@@ -285,12 +317,13 @@ interface JointBodyProps {
   name: string
   color: string
   selected: boolean
+  locked?: boolean
   ghost?: GhostStyle | null
   onSelect?: () => void
 }
 
 /** Todas as peças da junta. O destaque emissivo cobre a peça inteira (ovo+nariz/orelhas na cabeça); os olhos ficam sempre pretos e sem destaque. */
-function JointBody({ name, color, selected, ghost, onSelect }: JointBodyProps) {
+function JointBody({ name, color, selected, locked, ghost, onSelect }: JointBodyProps) {
   const parts = getJointParts(name)
   const handleClick = createSelectHandler(onSelect)
 
@@ -303,6 +336,7 @@ function JointBody({ name, color, selected, ghost, onSelect }: JointBodyProps) {
           name={index === 0 && !ghost ? `segment-${name}` : undefined}
           color={color}
           selected={selected}
+          locked={locked}
           ghost={ghost}
           onClick={handleClick}
         />
@@ -315,6 +349,7 @@ interface JointNodeProps {
   name: string
   figure: FigureData
   selectedJointName?: string | null
+  lockedJointNames?: readonly string[] | null
   ghost?: GhostStyle | null
   onSelectJoint?: (jointName: string) => void
   onJointRef?: (jointName: string, object: THREE.Group | null) => void
@@ -324,6 +359,7 @@ function JointNode({
   name,
   figure,
   selectedJointName,
+  lockedJointNames,
   ghost,
   onSelectJoint,
   onJointRef,
@@ -360,6 +396,7 @@ function JointNode({
         name={name}
         color={figure.color}
         selected={name === selectedJointName}
+        locked={lockedJointNames?.includes(name) ?? false}
         ghost={ghost}
         onSelect={onSelectJoint && interactive ? () => onSelectJoint(name) : undefined}
       />
@@ -382,6 +419,7 @@ function JointNode({
           name={child.name}
           figure={figure}
           selectedJointName={selectedJointName}
+          lockedJointNames={lockedJointNames}
           ghost={ghost}
           onSelectJoint={onSelectJoint}
           onJointRef={onJointRef}
@@ -414,14 +452,22 @@ function FigureShadow({ figureId, color }: FigureShadowProps) {
   )
 }
 
-export function Figure({ figure, selectedJointName, onSelectJoint, onJointRef, ghost }: FigureProps) {
+export function Figure({
+  figure,
+  selectedJointName,
+  lockedJointNames,
+  onSelectJoint,
+  onJointRef,
+  ghost,
+}: FigureProps) {
   const scale = getHeightScale(figure.height)
   const [x, , z] = figure.position
 
   // Fantasma não é um boneco da cena: não recebe clique, não registra junta
-  // para gizmo e não tem junta selecionada. Cortar aqui, num lugar só, é o que
-  // evita ter de lembrar disso em cada ponto de chamada.
+  // para gizmo, não tem junta selecionada nem destaque de trava. Cortar aqui,
+  // num lugar só, é o que evita ter de lembrar disso em cada ponto de chamada.
   const selected = ghost ? null : selectedJointName
+  const locked = ghost ? null : lockedJointNames
   const handleSelectJoint = ghost ? undefined : onSelectJoint
   const handleJointRef = ghost ? undefined : onJointRef
 
@@ -443,6 +489,7 @@ export function Figure({ figure, selectedJointName, onSelectJoint, onJointRef, g
           name={ROOT_JOINT_NAME}
           figure={figure}
           selectedJointName={selected}
+          lockedJointNames={locked}
           ghost={ghost}
           onSelectJoint={handleSelectJoint}
           onJointRef={handleJointRef}

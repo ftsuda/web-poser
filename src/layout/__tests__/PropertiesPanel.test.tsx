@@ -2,13 +2,9 @@ import '../../i18n'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import * as THREE from 'three'
-import { applyIKTarget, toggleLimbIK } from '../../figure/ikActions'
-import { buildJointFrames } from '../../figure/jointFrames'
 import { resolvePosePreset } from '../../figure/posePresets'
 import { AXIS_COLORS } from '../../scene/axisColors'
 import { useFiguresStore } from '../../store/figuresStore'
-import { useIKStore } from '../../store/ikStore'
 import { useUIStore } from '../../store/uiStore'
 import { PropertiesPanel } from '../PropertiesPanel'
 
@@ -21,7 +17,6 @@ async function renderPropertiesPanel() {
 describe('PropertiesPanel', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
-    useIKStore.setState(useIKStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
   })
 
@@ -96,7 +91,7 @@ describe('PropertiesPanel', () => {
       expect(screen.getByRole('button', { name: 'Mover' })).toHaveAttribute('aria-pressed', 'true')
 
       await user.click(screen.getByRole('button', { name: 'Girar' }))
-      expect(useUIStore.getState().rootGizmoMode).toBe('rotate')
+      expect(useUIStore.getState().gizmoMode).toBe('rotate')
       expect(screen.getByRole('button', { name: 'Girar' })).toHaveAttribute('aria-pressed', 'true')
     })
 
@@ -318,84 +313,48 @@ describe('PropertiesPanel', () => {
       expect(useFiguresStore.getState().activeAxis).toBe('y')
     })
 
-    it('shows an IK toggle only for joints belonging to a limb chain, not for e.g. the spine', async () => {
+    /**
+     * Seletor de modo do gizmo (W/E) na junta: só aparece nas juntas
+     * arrastáveis — mão/dedos e spine/hip.* ficam sempre em rotação.
+     */
+    it('shows the gizmo mode selector on draggable joints, with the drag hint in translate mode', async () => {
       const id = useFiguresStore.getState().addFigure('Herói') as string
       useFiguresStore.getState().selectFigure(id)
-
       useFiguresStore.getState().selectJoint('elbow.L')
-      const { unmount } = await renderPropertiesPanel()
-      expect(screen.getByText('IK ativo neste membro')).toBeInTheDocument()
-      unmount()
+      await renderPropertiesPanel()
+
+      expect(screen.getByRole('group', { name: 'Gizmo' })).toBeInTheDocument()
+      // Modo padrão é mover — a dica do arrasto de cadeia aparece.
+      expect(screen.getByText(/as juntas acima dela são puxadas até os limites/)).toBeInTheDocument()
+      // E os sliders de rotação continuam disponíveis nos dois modos.
+      expect(screen.getByRole('slider', { name: 'X' })).toBeInTheDocument()
+    })
+
+    it('hides the gizmo mode selector on joints without drag (hand and spine/hip)', async () => {
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
 
       useFiguresStore.getState().selectJoint('spine')
+      const { unmount } = await renderPropertiesPanel()
+      expect(screen.queryByRole('group', { name: 'Gizmo' })).not.toBeInTheDocument()
+      unmount()
+
+      useFiguresStore.getState().selectJoint('fingersTip.L')
       await renderPropertiesPanel()
-      expect(screen.queryByText('IK ativo neste membro')).not.toBeInTheDocument()
+      expect(screen.queryByRole('group', { name: 'Gizmo' })).not.toBeInTheDocument()
     })
 
-    it('enabling IK hides the shoulder/elbow FK sliders and shows editable target fields', async () => {
+    it('switching the joint gizmo to rotate hides the drag hint and updates the shared mode', async () => {
       const user = userEvent.setup()
       const id = useFiguresStore.getState().addFigure('Herói') as string
       useFiguresStore.getState().selectFigure(id)
       useFiguresStore.getState().selectJoint('elbow.L')
       await renderPropertiesPanel()
 
-      expect(screen.getByRole('slider', { name: 'X' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Girar' }))
 
-      await user.click(screen.getByLabelText('IK ativo neste membro'))
-
-      expect(useIKStore.getState().isLimbEnabled(id, 'wrist.L')).toBe(true)
-      expect(screen.queryByRole('slider', { name: 'X' })).not.toBeInTheDocument()
-      expect(screen.getByRole('group', { name: 'Alvo do IK (m)' })).toBeInTheDocument()
-    })
-
-    it('editing the IK target fields moves the target and re-solves the pose', async () => {
-      const user = userEvent.setup()
-      const id = useFiguresStore.getState().addFigure('Herói') as string
-      useFiguresStore.getState().selectFigure(id)
-      useFiguresStore.getState().selectJoint('elbow.L')
-      await renderPropertiesPanel()
-
-      await user.click(screen.getByLabelText('IK ativo neste membro'))
-
-      const targetX = screen.getByLabelText('X', { selector: '#ik-target-x' })
-      await user.clear(targetX)
-      await user.type(targetX, '0.5')
-
-      const target = useIKStore.getState().getTarget(id, 'wrist.L')!
-      expect(target[0]).toBeCloseTo(0.5, 1)
-      expect(useFiguresStore.getState().figures[0].pose['shoulder.L']).toBeDefined()
-    })
-
-    it('shows a warning when the IK target is out of reach', async () => {
-      const user = userEvent.setup()
-      const id = useFiguresStore.getState().addFigure('Herói') as string
-      useFiguresStore.getState().selectFigure(id)
-      useFiguresStore.getState().selectJoint('elbow.L')
-      await renderPropertiesPanel()
-
-      await user.click(screen.getByLabelText('IK ativo neste membro'))
-      const targetX = screen.getByLabelText('X', { selector: '#ik-target-x' })
-      await user.clear(targetX)
-      await user.type(targetX, '100')
-
-      expect(useIKStore.getState().getReached(id, 'wrist.L')).toBe(false)
-      expect(
-        screen.getByText('Alvo fora de alcance — aproximação mais próxima aplicada.'),
-      ).toBeInTheDocument()
-    })
-
-    it("the wrist's own rotation sliders remain visible even when the arm is in IK mode", async () => {
-      const user = userEvent.setup()
-      const id = useFiguresStore.getState().addFigure('Herói') as string
-      useFiguresStore.getState().selectFigure(id)
-      useFiguresStore.getState().selectJoint('elbow.L')
-      await renderPropertiesPanel()
-      await user.click(screen.getByLabelText('IK ativo neste membro'))
-
-      await act(async () => {
-        useFiguresStore.getState().selectJoint('wrist.L')
-      })
-      expect(screen.getByRole('slider', { name: 'X' })).toBeInTheDocument()
+      expect(useUIStore.getState().gizmoMode).toBe('rotate')
+      expect(screen.queryByText(/as juntas acima dela são puxadas/)).not.toBeInTheDocument()
     })
   })
 
@@ -586,7 +545,6 @@ describe('PropertiesPanel', () => {
 describe('PropertiesPanel — resetar junta e cores de eixo (fase 9, itens 6 e 9)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
-    useIKStore.setState(useIKStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
   })
 
@@ -634,7 +592,6 @@ describe('PropertiesPanel — resetar junta e cores de eixo (fase 9, itens 6 e 9
 describe('PropertiesPanel — biblioteca de poses e travamento (DECISOES.md #42)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
-    useIKStore.setState(useIKStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
   })
 
@@ -711,7 +668,7 @@ describe('PropertiesPanel — biblioteca de poses e travamento (DECISOES.md #42)
 
     expect(useFiguresStore.getState().jointLocks[id]).toEqual(['elbow.L'])
     expect(screen.getByRole('button', { name: 'Destravar junta' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('Junta travada — nada a altera até você destravá-la.')).toBeInTheDocument()
+    expect(screen.getByText(/Junta travada — nada a altera até você destravá-la\./)).toBeInTheDocument()
 
     const rotacao = screen.getByRole('group', { name: 'Rotação (°)' })
     expect(within(rotacao).getByRole('slider', { name: 'X' })).toBeDisabled()
@@ -734,16 +691,6 @@ describe('PropertiesPanel — biblioteca de poses e travamento (DECISOES.md #42)
     expect(screen.queryByText(/juntas travadas neste boneco/)).not.toBeInTheDocument()
   })
 
-  it('avisa que o IK não vai mover um membro com junta travada', async () => {
-    const { id } = await comBonecoSelecionado()
-    act(() => {
-      useFiguresStore.getState().toggleJointLock(id, 'shoulder.L')
-      useFiguresStore.getState().selectJoint('wrist.L')
-      toggleLimbIK(id, 'wrist.L')
-    })
-
-    expect(await screen.findByText('Uma junta deste membro está travada: o IK não vai movê-lo.')).toBeInTheDocument()
-  })
 })
 
 /**
@@ -754,7 +701,6 @@ describe('PropertiesPanel — biblioteca de poses e travamento (DECISOES.md #42)
 describe('PropertiesPanel — mistura entre poses (DECISOES.md #43)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
-    useIKStore.setState(useIKStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
   })
 
@@ -856,108 +802,9 @@ describe('PropertiesPanel — mistura entre poses (DECISOES.md #43)', () => {
   })
 })
 
-/**
- * Giro do cotovelo/joelho no painel (DECISOES.md #44) e a correção do aviso de
- * alcance com a cadeia travada.
- */
-describe('PropertiesPanel — giro do cotovelo e avisos do IK', () => {
-  beforeEach(() => {
-    useFiguresStore.setState(useFiguresStore.getInitialState())
-    useIKStore.setState(useIKStore.getInitialState())
-    useUIStore.setState(useUIStore.getInitialState())
-  })
-
-  async function comIKNoBraco() {
-    const id = useFiguresStore.getState().addFigure('Herói') as string
-    useFiguresStore.getState().applyPosePreset(id, 'handsOnHips')
-    useFiguresStore.getState().selectFigure(id)
-    useFiguresStore.getState().selectJoint('wrist.L')
-    toggleLimbIK(id, 'wrist.L')
-    await renderPropertiesPanel()
-    return id
-  }
-
-  const giro = () => screen.getByRole('slider', { name: 'Giro do cotovelo (°)' })
-  const cotovelo = (id: string) => {
-    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
-    const { joints } = buildJointFrames(figure)
-    const v = new THREE.Vector3()
-    joints.get('elbow.L')!.getWorldPosition(v)
-    return v
-  }
-
-  it('mostra o giro atual lido da pose e move o cotovelo ao arrastar', async () => {
-    const id = await comIKNoBraco()
-    const antes = cotovelo(id)
-    const valorInicial = Number((giro() as HTMLInputElement).value)
-
-    fireEvent.change(giro(), { target: { value: String(valorInicial + 25) } })
-
-    expect(cotovelo(id).distanceTo(antes)).toBeGreaterThan(0.03)
-    // O valor exibido vem da pose, não do que foi digitado: eles coincidem
-    // porque o giro foi aceito.
-    expect(Number((giro() as HTMLInputElement).value)).toBeCloseTo(valorInicial + 25, 0)
-  })
-
-  it('para na borda da faixa em vez de arrancar a mão do alvo', async () => {
-    const id = await comIKNoBraco()
-    const antes = cotovelo(id)
-    const valorInicial = Number((giro() as HTMLInputElement).value)
-
-    fireEvent.change(giro(), { target: { value: String(valorInicial + 180) } })
-
-    // Nada mudou: o ângulo pedido não existe para este alvo.
-    expect(cotovelo(id).distanceTo(antes)).toBeLessThan(0.001)
-    expect(Number((giro() as HTMLInputElement).value)).toBeCloseTo(valorInicial, 0)
-  })
-
-  it('fica desabilitado com uma junta da cadeia travada', async () => {
-    const id = await comIKNoBraco()
-
-    act(() => {
-      useFiguresStore.getState().toggleJointLock(id, 'shoulder.L')
-    })
-
-    expect(giro()).toBeDisabled()
-  })
-
-  /**
-   * "Alvo fora de alcance — aproximação mais próxima aplicada" seria mentira
-   * com a cadeia travada: nada foi aplicado. Nesse caso quem explica é o aviso
-   * da trava.
-   */
-  it('não diz que aplicou uma aproximação quando a cadeia está travada', async () => {
-    const id = useFiguresStore.getState().addFigure('Herói') as string
-    useFiguresStore.getState().selectFigure(id)
-    useFiguresStore.getState().selectJoint('wrist.L')
-    toggleLimbIK(id, 'wrist.L')
-    await renderPropertiesPanel()
-
-    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)!
-    const { joints } = buildJointFrames(figure)
-    const ombro = new THREE.Vector3()
-    joints.get('shoulder.L')!.getWorldPosition(ombro)
-
-    // Sem trava, um alvo longe demais produz o aviso de alcance.
-    act(() => {
-      applyIKTarget(id, 'wrist.L', [ombro.x + 100, ombro.y, ombro.z])
-    })
-    expect(screen.getByText(/Alvo fora de alcance/)).toBeInTheDocument()
-
-    // Com a cadeia travada, some — e entra o aviso que diz a verdade.
-    act(() => {
-      useFiguresStore.getState().toggleJointLock(id, 'shoulder.L')
-      applyIKTarget(id, 'wrist.L', [ombro.x + 100, ombro.y, ombro.z])
-    })
-    expect(screen.queryByText(/Alvo fora de alcance/)).not.toBeInTheDocument()
-    expect(screen.getByText('Uma junta deste membro está travada: o IK não vai movê-lo.')).toBeInTheDocument()
-  })
-})
-
 describe('PropertiesPanel — apoiar no chão e espelho ao vivo (DECISOES.md #58)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
-    useIKStore.setState(useIKStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
   })
 
@@ -1015,7 +862,6 @@ describe('PropertiesPanel — apoiar no chão e espelho ao vivo (DECISOES.md #58
 describe('PropertiesPanel — zerar por grupo e copiar um membro (DECISOES.md #59)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
-    useIKStore.setState(useIKStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
   })
 

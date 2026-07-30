@@ -3,7 +3,6 @@ import { render, renderHook } from '@testing-library/react'
 import { JOINT_NAMES } from '../../figure/skeleton'
 import { useCameraStore } from '../../store/cameraStore'
 import { useFiguresStore } from '../../store/figuresStore'
-import { useIKStore } from '../../store/ikStore'
 import { useSnapshotCaptureStore } from '../../store/snapshotCaptureStore'
 import { useUIStore } from '../../store/uiStore'
 import { useKeyboardShortcuts } from '../useKeyboardShortcuts'
@@ -19,7 +18,6 @@ describe('useKeyboardShortcuts', () => {
     useFiguresStore.temporal.getState().clear()
     useCameraStore.setState(useCameraStore.getInitialState())
     useSnapshotCaptureStore.setState(useSnapshotCaptureStore.getInitialState())
-    useIKStore.setState(useIKStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
     renderHook(() => useKeyboardShortcuts())
   })
@@ -85,29 +83,6 @@ describe('useKeyboardShortcuts', () => {
 
     press({ key: 'h' })
     expect(useFiguresStore.getState().figures[0].visible).toBe(false)
-  })
-
-  it('toggles IK mode for the selected limb with R', () => {
-    const { addFigure, selectFigure, selectJoint } = useFiguresStore.getState()
-    const id = addFigure() as string
-    selectFigure(id)
-    selectJoint('elbow.L')
-
-    press({ key: 'r' })
-    expect(useIKStore.getState().isLimbEnabled(id, 'wrist.L')).toBe(true)
-
-    press({ key: 'r' })
-    expect(useIKStore.getState().isLimbEnabled(id, 'wrist.L')).toBe(false)
-  })
-
-  it('does nothing with R when the selected joint is not part of a limb', () => {
-    const { addFigure, selectFigure, selectJoint } = useFiguresStore.getState()
-    const id = addFigure() as string
-    selectFigure(id)
-    selectJoint('spine')
-
-    press({ key: 'r' })
-    expect(useIKStore.getState().isLimbEnabled(id, 'wrist.L')).toBe(false)
   })
 
   it('toggles the shortcuts help panel with ?', () => {
@@ -311,11 +286,11 @@ describe('useKeyboardShortcuts — atalhos novos (F, Ctrl+S, W/E)', () => {
     expect(event.defaultPrevented).toBe(true)
   })
 
-  it('W e E trocam o modo do gizmo da raiz', () => {
+  it('W e E trocam o modo do gizmo (raiz e juntas)', () => {
     press({ key: 'e' })
-    expect(useUIStore.getState().rootGizmoMode).toBe('rotate')
+    expect(useUIStore.getState().gizmoMode).toBe('rotate')
 
     press({ key: 'w' })
-    expect(useUIStore.getState().rootGizmoMode).toBe('translate')
+    expect(useUIStore.getState().gizmoMode).toBe('translate')
   })
 })

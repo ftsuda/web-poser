@@ -1,7 +1,11 @@
 import * as THREE from 'three'
 import { Figure } from '../figure/Figure'
+import { isDraggableJoint } from '../figure/dragSolver'
+import { getLockedJoints } from '../figure/jointLocks'
+import { ROOT_JOINT_NAME } from '../figure/skeleton'
 import { useAnimationStore } from '../store/animationStore'
 import { useFiguresStore } from '../store/figuresStore'
+import { useUIStore } from '../store/uiStore'
 
 export interface SceneFiguresProps {
   onJointRef: (figureId: string, jointName: string, object: THREE.Group | null) => void
@@ -33,9 +37,21 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
   const selectedJointName = useFiguresStore((state) => state.selectedJointName)
   const selectFigure = useFiguresStore((state) => state.selectFigure)
   const selectJoint = useFiguresStore((state) => state.selectJoint)
+  const jointLocks = useFiguresStore((state) => state.jointLocks)
+  const gizmoMode = useUIStore((state) => state.gizmoMode)
   const previewFigures = useAnimationStore((state) => state.preview?.figures ?? null)
 
   const rendered = previewFigures ?? figures
+
+  // Destaque de juntas travadas (decisão com o usuário, DECISOES.md #77): só
+  // enquanto o gizmo de translação de junta está ativo — a mesma condição que
+  // o `Viewport` usa para mostrar o `JointDragGizmo` — e só no boneco
+  // selecionado, avisando ANTES do arrasto o que vai ficar rígido.
+  const dragGizmoActive =
+    selectedJointName !== null &&
+    selectedJointName !== ROOT_JOINT_NAME &&
+    gizmoMode === 'translate' &&
+    isDraggableJoint(selectedJointName)
 
   const handleSelectJoint = (figureId: string, jointName: string) => {
     if (selectedFigureId !== figureId) selectFigure(figureId)
@@ -49,6 +65,11 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
           key={figure.id}
           figure={figure}
           selectedJointName={figure.id === selectedFigureId ? selectedJointName : null}
+          lockedJointNames={
+            dragGizmoActive && figure.id === selectedFigureId
+              ? getLockedJoints(jointLocks, figure.id)
+              : null
+          }
           onSelectJoint={(jointName) => handleSelectJoint(figure.id, jointName)}
           onJointRef={(jointName, object) => onJointRef(figure.id, jointName, object)}
         />

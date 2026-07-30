@@ -2115,3 +2115,53 @@ A comparação é **arredondada ao milissegundo**, que é como os instantes cheg
 **+7 testes** (4 na função pura, 3 no painel), suíte de 2.044 para **2.051**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Um dos testes trava justamente a independência das duas marcas: depois de "Ir para" no keyframe 2 as duas apontam para ele; andando com a régua, só a do playhead se move.
 
 No Chrome real (`npm run preview`), com quatro keyframes e sem erro de console: três cliques em ⏭ levaram a marca de 0 → 1 → 2 → 3 acompanhando o relógio da barra (1.0s, 2.0s, 3.0s), um clique em ⏮ voltou para 2, no meio do trecho (1,5s) **nenhum** card ficou marcado e o `▶` sumiu da tela, e depois de "Ir para" no keyframe 2 um ⏭ deixou a bancada no 2 e o playhead no 3 — as duas marcas visíveis ao mesmo tempo, em cards diferentes.
+
+## 76. Gizmo de translação de junta (arrasto de cadeia) — e a aposentadoria do IK de 2 ossos
+
+Pedido do usuário em 2026-07-30: um gizmo de translação em TODAS as juntas do boneco, de forma que arrastar uma junta puxe/empurre automaticamente as juntas ACIMA dela até que ela chegue ao ponto arrastado, sem ultrapassar os limites articulares já existentes. A raiz é a única junta totalmente fixa. No limite de todas, o movimento trava. Ao final, tudo é convertido para o padrão usual de pose — nenhum formato novo de persistência. (Interpretação confirmada com o usuário: arrastar o cotovelo nunca rotaciona o próprio cotovelo — a cadeia que o posiciona é ombro → clavícula → tronco; o antebraço e a mão seguem RÍGIDOS, como num manequim físico.)
+
+Quatro decisões tomadas com o usuário antes de escrever código:
+
+1. **W/E alterna mover/girar na junta selecionada** — o `rootGizmoMode` virou `gizmoMode`, um modo único global (convenção dos softwares 3D): na raiz, mover/girar a colocação como antes; nas demais juntas, arrasto de cadeia / rotação FK. O seletor Mover/Girar do painel de Propriedades aparece agora também nas juntas arrastáveis.
+2. **Todas as juntas, EXCETO mão/dedos** — arrastar a ponta de um dedo recrutando o tronco seria mais surpresa que utilidade; dedos continuam com sliders e presets de mão. Também ficam de fora `spine` e `hip.*`: o único ancestral delas é a raiz, que é fixa, então o gizmo nasceria morto — elas caem no gizmo de rotação em qualquer modo.
+3. **Substitui o IK de 2 ossos da fase 7** — o arrasto cobre o caso de uso do alvo de IK (e mais). Saíram: `ikSolver.ts`, `ikActions.ts`, `ikStore.ts`, `IKTargetGizmo.tsx`, o atalho **R**, o badge "IK" do painel de Bonecos e o toggle/alvo/giro do painel de Propriedades. **Perda aceita:** o controle numérico de giro do cotovelo (#44) — o gesto equivalente é arrastar o próprio cotovelo com o punho onde está.
+4. **Junta travada = elo rígido, sem interromper a cadeia** — ela não rotaciona, mas o recrutamento continua nas juntas acima (o alcance total encolhe; com TODOS os ancestrais travados o gizmo não sai do lugar). Diverge de propósito do IK antigo, que recusava a cadeia inteira com junta travada: aquele solver era analítico e não sabia trabalhar com um elo preso; este é iterativo e simplesmente pula o elo.
+
+### O solver: CCD com recrutamento progressivo — e por que isso não contradiz o #12
+
+O #12 aboliu CCD depois que ele travou em mínimo local contra a borda de um limite. Aquele regime era outro: um alvo DISTANTE resolvido numa chamada única. Aqui o solver (`dragSolver.ts`) roda a cada evento de mouse, sempre da pose atual para um alvo a milímetros dela — cada chamada só precisa dar um passo pequeno, e "parar na borda" quando o alvo é inalcançável não é defeito: é exatamente o travamento que o pedido descreve.
+
+O CCD ingênuo sobre a cadeia inteira, porém, tinha um vício medido nos testes: o resíduo de cada varredura vazava para o tronco mesmo em alvos que o braço alcançava sozinho (spine girava ~2,6° num arrasto de 3 cm do punho). Daí o **recrutamento progressivo**: resolve com a junta mais próxima apenas; só expande uma junta em direção à raiz quando o resíduo passa de `RECRUIT_THRESHOLD_M` (5 mm). O limiar é maior que a tolerância de alcance (1 mm) de propósito — o CCD não explora perfeitamente a torção da junta próxima e pode estacionar a 2-3 mm do alvo mesmo quando o membro sozinho alcançaria; expandir por causa DESSE resíduo balançaria o tronco a cada evento. Abaixo de 5 mm o gizmo só fica esse tanto atrás do mouse (imperceptível); acima é saturação de verdade, e a junta seguinte entra — que é a prioridade do pedido de forma literal.
+
+O clamp continua sendo por eixo em Euler depois de uma rotação 3D — não é a rotação válida "mais próxima", mesma limitação já aceita pelo solver da fase 7 (`quaternionToClampedDegrees`); as varreduras seguintes compensam o que o clamp comeu.
+
+### Conversão exata para o padrão usual
+
+O solver opera sobre `buildJointFrames` (o mesmo grafo de transformos do FK) e devolve rotações Euler XYZ em graus por junta, já grampeadas. Um teste trava o invariante central: reconstruir o boneco com as rotações devolvidas coloca a junta arrastada exatamente em `achievedWorldPosition` (erro < 1e-6 m) — ou seja, a "conversão para o sistema atual" não é um passo separado que possa divergir; é o próprio formato de saída.
+
+A escrita no store ganhou uma ação em lote, `setJointRotations`: mesmas regras da unitária (clamp, trava, espelho ao vivo — reflexão sagital, #14/#30) num único `set`, e portanto **um passo de undo por evento de arrasto** — uma chamada por junta empilharia até 5 passos por pixel arrastado.
+
+### O gizmo: proxy efêmero com snap-back
+
+O `TransformControls` não pode ser anexado ao `Group` real da junta — o `position` dele é o offset fixo do esqueleto, e arrastá-lo corromperia a hierarquia. `JointDragGizmo.tsx` usa um PROXY (grupo sem geometria, filho da cena): fora do arrasto ele segue a junta a cada quadro (`useFrame` — sliders, presets e undo movem a junta por fora); durante o arrasto, cada `onObjectChange` resolve a cadeia, grava a pose e reposiciona o proxy na posição efetivamente ALCANÇADA. Esse snap-back é o que implementa o "movimento trava": quando tudo satura, o gizmo para de seguir o mouse.
+
+### Verificação
+
+Saldo de **−35 testes** (todos os do IK antigo saíram; 22 novos entraram: convergência e prioridade do solver, invariante de reprodução por FK, travas rígidas sem quebra de cadeia, undo em passo único, fiação do gizmo, lote do store, seletor de modo no painel), suíte de 2.051 para **2.016**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. A interação de arrastar em si não é testável por automação (mesma ressalva dos demais gizmos) — **validada manualmente pelo usuário no navegador em 2026-07-30: funcionamento OK**.
+
+## 77. Juntas travadas em vermelho enquanto o gizmo de mover está ativo
+
+Pedido do usuário em 2026-07-30, na sequência do #76: uma identificação no boneco selecionado destacando as juntas travadas "durante o movimento de translação" — cor diferenciada. Duas decisões tomadas com o usuário:
+
+1. **Quando:** sempre que o gizmo de translação de junta estiver visível (modo Mover numa junta arrastável), e não só com o botão do mouse pressionado. O valor do aviso está justamente em ANTES: quem vê o ombro vermelho antes de puxar o punho já sabe que ele vai ficar rígido — descobrir só no meio do arrasto seria tarde.
+2. **Escopo:** todas as juntas travadas do boneco selecionado, e não só as da cadeia da junta arrastada. Regra simples, com a mesma semântica do cadeado em todo lugar; uma trava fora da cadeia continua visível (e trocar a junta selecionada não faz destaques aparecerem/sumirem de forma aparentemente aleatória).
+
+### Como
+
+Mesmo mecanismo do destaque de seleção que o `Figure.tsx` já tinha, um degrau mais fraco: emissivo `#ef4444` a 0,5 de intensidade (a seleção usa `#ffe066` a 0,6). Precedência explícita: **seleção > trava** quando a junta selecionada também está travada — a trava dela, aliás, nem afeta o próprio arrasto (a junta arrastada não rotaciona; quem importa são os ancestrais). Olhos continuam pretos e fantasmas continuam sem destaque nenhum, pelas mesmas razões da seleção (o corte do fantasma acontece no mesmo lugar único que já cortava clique/refs/seleção).
+
+A fiação vive em `SceneFigures.tsx`: a condição de "gizmo de mover ativo" é a MESMA do `Viewport` para montar o `JointDragGizmo` (junta arrastável selecionada + `gizmoMode === 'translate'`), e só o boneco selecionado recebe `lockedJointNames` (via `getLockedJoints`). Nenhum estado novo, nenhum i18n — é leitura de `jointLocks` e `gizmoMode` que já existiam.
+
+### Verificação
+
+**+4 testes** no `Figure.test.tsx` (emissivo vermelho só nas juntas listadas; seleção vencendo a trava; sem lista, nenhum tom; fantasma imune), suíte de 2.016 para **2.020**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. **Conferência visual feita pelo usuário no navegador em 2026-07-30, junto com a validação do arrasto do #76: funcionamento OK.**

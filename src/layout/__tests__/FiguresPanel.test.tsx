@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { COLOR_PALETTE, MAX_FIGURES, useFiguresStore } from '../../store/figuresStore'
-import { useIKStore } from '../../store/ikStore'
 import { usePoseClipboardStore } from '../../store/poseClipboardStore'
 import { FiguresPanel } from '../FiguresPanel'
 
@@ -245,46 +244,6 @@ describe('FiguresPanel — erro de importação (fase 9, item 4)', () => {
       'Arquivo não pôde ser lido — o .glb parece corrompido ou não é um glTF válido.',
     )
     expect(useFiguresStore.getState().figures).toHaveLength(0)
-  })
-})
-
-describe('FiguresPanel — indicador de IK ativo (fase 9, item 5)', () => {
-  beforeEach(() => {
-    useFiguresStore.setState(useFiguresStore.getInitialState())
-    useIKStore.setState(useIKStore.getInitialState())
-  })
-
-  it('não mostra badge de IK quando nenhum membro está em IK', async () => {
-    useFiguresStore.getState().addFigure('Herói')
-    await renderFiguresPanel()
-    expect(screen.queryByTitle(/IK ativo em/)).not.toBeInTheDocument()
-  })
-
-  it('mostra os membros com IK ativo do boneco, e só dele', async () => {
-    const id = useFiguresStore.getState().addFigure('Herói') as string
-    const other = useFiguresStore.getState().addFigure('Vilão') as string
-    useIKStore.getState().enableLimb(id, 'wrist.L', [0, 1, 0])
-    useIKStore.getState().enableLimb(id, 'ankle.R', [0, 0, 0])
-
-    await renderFiguresPanel()
-
-    const badge = screen.getByTitle('IK ativo em: braço esquerdo, perna direita')
-    expect(badge).toHaveTextContent('IK')
-    expect(badge).toHaveTextContent('2')
-    expect(screen.getAllByTitle(/IK ativo em/)).toHaveLength(1)
-    expect(other).not.toBe(id)
-  })
-
-  it('some quando o IK do membro é desligado', async () => {
-    const id = useFiguresStore.getState().addFigure('Herói') as string
-    useIKStore.getState().enableLimb(id, 'wrist.L', [0, 1, 0])
-    await renderFiguresPanel()
-    expect(screen.getByTitle(/IK ativo em/)).toBeInTheDocument()
-
-    act(() => {
-      useIKStore.getState().disableLimb(id, 'wrist.L')
-    })
-    expect(screen.queryByTitle(/IK ativo em/)).not.toBeInTheDocument()
   })
 })
 
