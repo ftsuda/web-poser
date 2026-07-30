@@ -110,6 +110,8 @@ export type PosePresetKey =
   | 'carryingBox'
   | 'climbing'
   | 'stepUp'
+  | 'balletPreparation'
+  | 'balletPirouette'
   | 'handshake'
   | 'hug'
   | 'danceLead'
@@ -211,6 +213,8 @@ export const POSE_PRESET_GROUPS: readonly PosePresetGroup[] = [
       'carryingBox',
       'climbing',
       'stepUp',
+      'balletPreparation',
+      'balletPirouette',
     ],
   },
   {
@@ -1527,6 +1531,63 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
       'elbow.L': { x: -64 },
     },
     hipHeightM: 0.86,
+    hands: 'relaxed',
+  },
+
+  // Balé — as duas metades de uma pirueta (pedido do usuário). Os ângulos das
+  // pernas e dos braços saíram de VARREDURA NUMÉRICA sobre a cinemática
+  // direta, não de estimativa: ver `__tests__/posePresets.test.ts`, que trava
+  // as duas medidas que definem a pose.
+  //
+  // Preparação: demi-plié com os pés virados para fora (en dehors) e os braços
+  // na segunda posição. É o impulso de onde a pirueta sai — e é ela que dá ao
+  // giro um começo e um fim, em vez de o boneco surgir já rodando.
+  balletPreparation: {
+    pose: {
+      spine: { x: -4 },
+      neck: { x: 4 },
+      ...symmetric({
+        hip: { x: -30, y: 30, z: 10 },
+        knee: { x: 60 },
+        ankle: { x: -28 },
+        clavicle: { z: 10 },
+        shoulder: { x: -8, y: -20, z: 68 },
+        elbow: { x: -22 },
+      }),
+    },
+    hipHeightM: 0.811,
+    hands: 'relaxed',
+  },
+
+  // Pirueta (passé/retiré): gira sobre a perna ESQUERDA, esticada e na
+  // meia-ponta, com a direita levantada — joelho aberto de lado (en dehors) e
+  // o pé encostado no joelho de apoio. Braços em coroa à frente (primeira
+  // posição). O leve giro de tronco e cabeça é o "spot" do bailarino.
+  //
+  // Assimétrica de propósito: é uma perna que apoia e outra que sobe, então
+  // aqui as pernas são declaradas lado a lado, e só os braços passam pelo
+  // `symmetric` (a clavícula é o caso onde errar o sinal do lado direito o
+  // grampeia em zero e deixa os punhos tortos — foi o que aconteceu na
+  // primeira medição).
+  balletPirouette: {
+    pose: {
+      spine: { y: 4 },
+      chest: { y: 3 },
+      neck: { y: 4 },
+      head: { y: 6 },
+      ...symmetric({
+        clavicle: { z: 6 },
+        shoulder: { x: -13, y: -56, z: 30 },
+        elbow: { x: -88 },
+      }),
+      'hip.L': { x: 0, y: 20, z: 0 },
+      'knee.L': { x: 0 },
+      'ankle.L': { x: 45 },
+      'hip.R': { x: -72, y: -40, z: -45 },
+      'knee.R': { x: 121 },
+      'ankle.R': { x: 45 },
+    },
+    hipHeightM: 0.967,
     hands: 'relaxed',
   },
 

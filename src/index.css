@@ -1288,6 +1288,35 @@ code {
   font-size: 0.75rem;
 }
 
+/* O keyframe que está na bancada (item 40). A borda muda de COR e o realce vem
+   de um `box-shadow` interno, e não de uma borda mais grossa: engrossar mexeria
+   na caixa e faria a lista inteira dar um pulo a cada "Ir para". `--text-h`
+   acompanha o tema, então não entra variável nova. */
+.animation-panel__keyframe--visited {
+  border-color: var(--text-h);
+  box-shadow: inset 0 0 0 1px var(--text-h);
+}
+
+/* E o card em que a LINHA DO TEMPO parou (pedido do usuário). Marca de
+   propósito mais fraca que a da bancada: uma tarja na borda esquerda e o ▶ no
+   título, sem contornar o card. As duas coisas convivem — depois de um "Ir
+   para" elas caem no mesmo card — e precisam continuar distinguíveis, porque só
+   a da bancada diz o que "Regravar" vai reescrever. */
+.animation-panel__keyframe--playhead {
+  box-shadow: inset 3px 0 0 var(--text-h);
+}
+
+.animation-panel__keyframe--visited.animation-panel__keyframe--playhead {
+  box-shadow:
+    inset 0 0 0 1px var(--text-h),
+    inset 3px 0 0 var(--text-h);
+}
+
+.animation-panel__playhead {
+  margin-right: 0.25rem;
+  font-size: 0.7rem;
+}
+
 .animation-panel__keyframe-index {
   display: block;
   margin-bottom: 0.25rem;
@@ -1397,6 +1426,27 @@ code {
 }
 
 /* Faixas dos grupos rotulados sob a régua (item 38). */
+/* Faixa fina logo abaixo da régua, só para a marca do item 41: fora do
+   `<input type=range>`, que não deixa estilizar as próprias marcas, e fora do
+   caminho do polegar, que é o que a mão arrasta. */
+.timeline-bar__marks {
+  position: relative;
+  height: 0.45rem;
+}
+
+.timeline-bar__visited {
+  position: absolute;
+  top: 0;
+  /* `left` é a porcentagem do instante; o traço se centra sobre ela. Três
+     pixels, e não um: um traço de um pixel se confunde com as marcas que o
+     próprio navegador desenha para o `<datalist>`. */
+  width: 3px;
+  height: 100%;
+  margin-left: -1.5px;
+  background: var(--text-h);
+  border-radius: 1px;
+}
+
 .timeline-bar__groups {
   position: relative;
   height: 1.05rem;

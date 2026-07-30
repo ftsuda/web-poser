@@ -61,7 +61,7 @@ describe('resolvePosePreset', () => {
     const fromGroups = POSE_PRESET_GROUPS.flatMap((group) => group.poses)
     expect(POSE_PRESET_KEYS).toEqual(fromGroups)
     expect(new Set(fromGroups).size).toBe(fromGroups.length)
-    expect(POSE_PRESET_KEYS).toHaveLength(81)
+    expect(POSE_PRESET_KEYS).toHaveLength(83)
   })
 
   it('groups the poses in the order shown in the panel', () => {
@@ -236,6 +236,64 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
     }
     return out
   }
+
+  /**
+   * Pirueta de balé (pedido do usuário): as duas medidas que DEFINEM a pose,
+   * e que a varredura numérica resolveu — o pé levantado encosta no joelho de
+   * apoio e o joelho levantado aponta para FORA. Sem a segunda, o resultado é
+   * um "coupé" de rua com o joelho à frente, não um passé.
+   */
+  it('balletPirouette: o pé levantado fica no joelho de apoio, com o joelho aberto de lado', () => {
+    const mundo = worldPositions(placedFigure('balletPirouette'))
+
+    const peLevantado = mundo.get('ankle.R')!
+    const joelhoApoio = mundo.get('knee.L')!
+    expect(peLevantado.distanceTo(joelhoApoio)).toBeLessThan(0.09)
+
+    // Joelho aberto para o lado do próprio boneco (x negativo é a direita
+    // dele) e à frente do quadril — a abertura do en dehors.
+    const joelhoLevantado = mundo.get('knee.R')!
+    expect(joelhoLevantado.x).toBeLessThan(-0.25)
+    expect(joelhoLevantado.z).toBeGreaterThan(0.15)
+  })
+
+  it('balletPirouette: apoia numa perna só, esticada e na meia-ponta', () => {
+    const pose = resolvePosePreset('balletPirouette')
+    const mundo = worldPositions(placedFigure('balletPirouette'))
+
+    expect(pose['knee.L'].x).toBe(0)
+    // Meia-ponta: o calcanhar sobe e quem fica por baixo é a ponta do pé.
+    expect(mundo.get('ball.L')!.y).toBeLessThan(mundo.get('ankle.L')!.y)
+    // A perna levantada não toca o chão.
+    expect(mundo.get('ball.R')!.y).toBeGreaterThan(0.3)
+  })
+
+  it('balletPirouette: braços em coroa, mãos próximas à frente do corpo', () => {
+    const mundo = worldPositions(placedFigure('balletPirouette'))
+    const punhoL = mundo.get('wrist.L')!
+    const punhoR = mundo.get('wrist.R')!
+
+    expect(punhoL.distanceTo(punhoR)).toBeLessThan(0.25)
+    expect(punhoL.z).toBeGreaterThan(0.2)
+    expect(punhoR.z).toBeGreaterThan(0.2)
+  })
+
+  it('balletPreparation: plié com os dois pés no chão e os braços abertos', () => {
+    const pose = resolvePosePreset('balletPreparation')
+    const mundo = worldPositions(placedFigure('balletPreparation'))
+
+    // Os dois joelhos dobrados, e o quadril mais baixo que em pé.
+    expect(pose['knee.L'].x).toBeGreaterThan(30)
+    expect(pose['knee.R'].x).toBeGreaterThan(30)
+    expect(mundo.get('root')!.y).toBeLessThan(0.87)
+
+    // Simétrica: espelho exato entre os dois lados, sem o desvio que um sinal
+    // errado de clavícula produz (o limite do lado direito grampeia em zero).
+    expect(mundo.get('wrist.L')!.x).toBeCloseTo(-mundo.get('wrist.R')!.x, 6)
+    expect(mundo.get('wrist.L')!.y).toBeCloseTo(mundo.get('wrist.R')!.y, 6)
+    // Braços abertos de lado, e não caídos ao longo do corpo.
+    expect(mundo.get('wrist.L')!.x).toBeGreaterThan(0.45)
+  })
 
   it.each(POSE_PRESET_KEYS)('%s: nenhuma junta atravessa o chão', (key) => {
     for (const [name, position] of worldPositions(placedFigure(key))) {
@@ -756,6 +814,8 @@ describe('poses e colocação no chão (DECISOES.md #30)', () => {
       carryingBox: null,
       climbing: 'fist',
       stepUp: 'relaxed',
+      balletPreparation: 'relaxed',
+      balletPirouette: 'relaxed',
       // Pares: aberta em quem empurra (a palma é a superfície de contato) e
       // em quem carrega no colo (a palma sustenta o corpo do outro).
       handshake: 'relaxed',

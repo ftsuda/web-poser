@@ -173,6 +173,45 @@ describe('OnionSkin', () => {
     expect(opacities).toEqual(new Set([ONION_SKIN_OPACITY]))
   })
 
+  /** Escolher o lado (pedido do usuário): a cor diz qual dos dois ficou. */
+  it('no modo "só o anterior", desenha um fantasma só, na cor quente', async () => {
+    seedWorkingAnimation(3)
+    useAnimationStore.setState({ onionSkin: true, onionSkinMode: 'previous', timeMs: 1000 })
+
+    const renderer = await ReactThreeTestRenderer.create(<OnionSkin />)
+
+    const colors = new Set(
+      renderer.scene
+        .findAllByType('MeshStandardMaterial')
+        .map((node) => `#${(node.instance as unknown as THREE.MeshStandardMaterial).color.getHexString()}`),
+    )
+    expect(colors).toEqual(new Set([ONION_SKIN_COLORS.previous]))
+  })
+
+  it('no modo "só o seguinte", desenha um fantasma só, na cor fria', async () => {
+    seedWorkingAnimation(3)
+    useAnimationStore.setState({ onionSkin: true, onionSkinMode: 'next', timeMs: 1000 })
+
+    const renderer = await ReactThreeTestRenderer.create(<OnionSkin />)
+
+    const colors = new Set(
+      renderer.scene
+        .findAllByType('MeshStandardMaterial')
+        .map((node) => `#${(node.instance as unknown as THREE.MeshStandardMaterial).color.getHexString()}`),
+    )
+    expect(colors).toEqual(new Set([ONION_SKIN_COLORS.next]))
+  })
+
+  /** Na ponta do lado escolhido não há vizinho — e não se cai no outro. */
+  it('no primeiro keyframe, o modo "só o anterior" não desenha nada', async () => {
+    seedWorkingAnimation(3)
+    useAnimationStore.setState({ onionSkin: true, onionSkinMode: 'previous', timeMs: 0 })
+
+    const renderer = await ReactThreeTestRenderer.create(<OnionSkin />)
+
+    expect(() => renderer.scene.findByProps({ name: OVERLAY_NAMES.onionSkin })).toThrow()
+  })
+
   it('some enquanto a animação toca', async () => {
     seedWorkingAnimation(3)
     useAnimationStore.setState({ onionSkin: true, timeMs: 1000, playing: true })

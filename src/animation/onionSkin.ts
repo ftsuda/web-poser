@@ -14,6 +14,23 @@ import { keyframeStartTimesMs, type Animation, type AnimationKeyframe } from './
 
 export type OnionSkinRole = 'previous' | 'next'
 
+/**
+ * Quais vizinhos desenhar (pedido do usuário): os dois juntos, só o de trás ou
+ * só o da frente.
+ *
+ * Ver um lado de cada vez não é enfeite: com os dois fantasmas em volta, uma
+ * pose parada no meio do movimento fica cercada de corpo por todos os lados e
+ * some no meio deles. Isolando o anterior, lê-se de onde a pose VEIO (o que se
+ * quer ao ajustar a chegada); isolando o seguinte, para onde ela VAI.
+ *
+ * Os papéis são os mesmos e as cores também — o modo só escolhe quem aparece,
+ * então o fantasma quente continua sendo o passado nos três casos.
+ */
+export type OnionSkinMode = 'both' | 'previous' | 'next'
+
+/** Na ordem em que aparecem no combo do painel. */
+export const ONION_SKIN_MODES: readonly OnionSkinMode[] = ['both', 'previous', 'next']
+
 export interface OnionSkinFrame {
   role: OnionSkinRole
   /** Índice do keyframe na animação — usado como chave estável no React. */
@@ -62,14 +79,22 @@ export function anchorKeyframeIndex(animation: Animation, timeMs: number): numbe
 
 /**
  * Os fantasmas a desenhar para o instante dado: o keyframe anterior ao âncora e
- * o seguinte, quando existem.
+ * o seguinte, conforme o `mode` e quando existem.
  *
  * Nas pontas sai só um — no primeiro keyframe não há passado, no último não há
- * futuro. Com menos de dois keyframes não há vizinho nenhum, e o papel-cebola
- * simplesmente não aparece (em vez de desenhar o próprio keyframe por cima
- * dele mesmo, que só faria sujeira).
+ * futuro —, e num modo de um lado só, na ponta daquele lado não sai nenhum: o
+ * papel-cebola simplesmente não aparece, em vez de mostrar o outro vizinho
+ * "para não ficar vazio", que é justamente o que quem escolheu um lado não
+ * quer ver.
+ *
+ * Com menos de dois keyframes não há vizinho nenhum (em vez de desenhar o
+ * próprio keyframe por cima dele mesmo, que só faria sujeira).
  */
-export function onionSkinFrames(animation: Animation | null, timeMs: number): OnionSkinFrame[] {
+export function onionSkinFrames(
+  animation: Animation | null,
+  timeMs: number,
+  mode: OnionSkinMode = 'both',
+): OnionSkinFrame[] {
   if (!animation || animation.keyframes.length < 2) return []
 
   const anchor = anchorKeyframeIndex(animation, timeMs)
@@ -77,10 +102,10 @@ export function onionSkinFrames(animation: Animation | null, timeMs: number): On
 
   const frames: OnionSkinFrame[] = []
   const previous = animation.keyframes[anchor - 1]
-  if (previous) frames.push({ role: 'previous', index: anchor - 1, keyframe: previous })
+  if (previous && mode !== 'next') frames.push({ role: 'previous', index: anchor - 1, keyframe: previous })
 
   const next = animation.keyframes[anchor + 1]
-  if (next) frames.push({ role: 'next', index: anchor + 1, keyframe: next })
+  if (next && mode !== 'previous') frames.push({ role: 'next', index: anchor + 1, keyframe: next })
 
   return frames
 }

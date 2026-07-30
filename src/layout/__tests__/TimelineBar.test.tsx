@@ -236,3 +236,59 @@ describe('TimelineBar — inserir keyframe', () => {
     expect(screen.getByRole('button', { name: 'Inserir keyframe aqui' })).toBeDisabled()
   })
 })
+
+/**
+ * Item 41: o keyframe que o painel destaca (item 40) também aparece na régua,
+ * para a barra e o painel contarem a mesma história.
+ */
+describe('TimelineBar — marca do keyframe na bancada', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, timeline: false } }))
+  })
+
+  const marca = (container: HTMLElement) => container.querySelector('.timeline-bar__visited')
+
+  it('sem "Ir para" a régua não tem marca nenhuma', async () => {
+    comAnimacao(3)
+    const { container } = await renderTimelineBar()
+
+    expect(marca(container)).toBeNull()
+  })
+
+  it('marca a posição do keyframe que está na cena de trabalho', async () => {
+    comAnimacao(3)
+    // 3 keyframes de 1000 ms: o total é 2000 ms e o k2 cai na metade.
+    useAnimationStore.setState({ visitedKeyframeId: 'k2' })
+    const { container } = await renderTimelineBar()
+
+    const traco = marca(container)
+    expect(traco).toHaveStyle({ left: '50%' })
+    expect(traco).toHaveAttribute('title', 'Keyframe 2 está na cena de trabalho')
+  })
+
+  /** A marca é leitura: some sozinha quando o keyframe deixa de existir. */
+  it('remover o keyframe marcado apaga a marca', async () => {
+    comAnimacao(3)
+    useAnimationStore.setState({ visitedKeyframeId: 'k3' })
+    const { container } = await renderTimelineBar()
+    expect(marca(container)).not.toBeNull()
+
+    act(() => {
+      useFiguresStore.getState().removeAnimationKeyframe(WORKING_ANIMATION_ID, 'k3')
+    })
+
+    expect(marca(container)).toBeNull()
+  })
+
+  /** Recolhida, o corpo da barra nem é renderizado — não há o que marcar. */
+  it('recolhida, não desenha marca', async () => {
+    comAnimacao(3)
+    useAnimationStore.setState({ visitedKeyframeId: 'k2' })
+    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, timeline: true } }))
+    const { container } = await renderTimelineBar()
+
+    expect(marca(container)).toBeNull()
+  })
+})

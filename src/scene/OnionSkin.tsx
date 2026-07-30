@@ -26,13 +26,14 @@ import { OVERLAY_NAMES } from './constants'
  */
 export function OnionSkin() {
   const enabled = useAnimationStore((state) => state.onionSkin)
+  const mode = useAnimationStore((state) => state.onionSkinMode)
   const playing = useAnimationStore((state) => state.playing)
   const exportPhase = useAnimationStore((state) => state.exportPhase)
   const timeMs = useAnimationStore((state) => state.timeMs)
   const animations = useFiguresStore((state) => state.animations)
 
   const busy = playing || exportPhase === 'running'
-  const frames = enabled && !busy ? onionSkinFrames(findWorkingAnimation(animations), timeMs) : []
+  const frames = enabled && !busy ? onionSkinFrames(findWorkingAnimation(animations), timeMs, mode) : []
 
   if (frames.length === 0) return null
 

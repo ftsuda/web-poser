@@ -16,6 +16,7 @@ import {
   findWorkingAnimation,
   freeKeyframeLabel,
   keyframeGroups,
+  keyframeIndexAtTimeMs,
   keyframeStartTimesMs,
   neighbourKeyframeTimeMs,
   stepFrameMs,
@@ -355,6 +356,40 @@ describe('neighbourKeyframeTimeMs', () => {
     expect(neighbourKeyframeTimeMs(marcas, 0, -1)).toBeNull()
     expect(neighbourKeyframeTimeMs(marcas, 4000, 1)).toBeNull()
     expect(neighbourKeyframeTimeMs([], 0, 1)).toBeNull()
+  })
+})
+
+/**
+ * Em qual keyframe a linha do tempo parou — o que o painel marca depois de um
+ * ⏮/⏭ (pedido do usuário).
+ */
+describe('keyframeIndexAtTimeMs', () => {
+  const anim = animation([1000, 1000, 500])
+
+  it('em cima de um keyframe, devolve o índice dele', () => {
+    expect(keyframeIndexAtTimeMs(anim, 0)).toBe(0)
+    expect(keyframeIndexAtTimeMs(anim, 1000)).toBe(1)
+    expect(keyframeIndexAtTimeMs(anim, 1500)).toBe(2)
+  })
+
+  /**
+   * No MEIO de um trecho não há keyframe sob o playhead — e a resposta certa é
+   * "nenhum". É o que separa esta leitura do âncora do papel-cebola, que nesse
+   * caso devolve o keyframe de trás.
+   */
+  it('no meio de um trecho, não devolve keyframe nenhum', () => {
+    expect(keyframeIndexAtTimeMs(anim, 400)).toBe(-1)
+    expect(keyframeIndexAtTimeMs(anim, 1499)).toBe(-1)
+  })
+
+  it('arredonda ao milissegundo, que é como os instantes chegam', () => {
+    expect(keyframeIndexAtTimeMs(anim, 1000.4)).toBe(1)
+    expect(keyframeIndexAtTimeMs(anim, 999.6)).toBe(1)
+  })
+
+  it('sem animação, ou passado o fim, não há keyframe nenhum', () => {
+    expect(keyframeIndexAtTimeMs(null, 0)).toBe(-1)
+    expect(keyframeIndexAtTimeMs(anim, 9000)).toBe(-1)
   })
 })
 

@@ -880,11 +880,53 @@ describe('AnimationPanel — miniaturas', () => {
     await user.click(caixa)
     expect(useAnimationStore.getState().onionSkin).toBe(true)
     expect(
-      screen.getByText(/Mostra o keyframe anterior \(quente\) e o seguinte \(frio\)/),
+      screen.getByText(/Mostra em fantasma os keyframes vizinhos do que está no playhead/),
     ).toBeInTheDocument()
 
     await user.click(caixa)
     expect(useAnimationStore.getState().onionSkin).toBe(false)
+  })
+
+  /**
+   * Escolher o lado (pedido do usuário): os dois vizinhos, só o anterior ou só
+   * o seguinte.
+   */
+  it('escolhe quais vizinhos o papel-cebola mostra', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    await renderAnimationPanel()
+
+    // Desligado, o combo não aparece: ocuparia a linha logo acima da lista de
+    // keyframes sem fazer nada.
+    expect(screen.queryByLabelText('Mostrar')).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Papel-cebola'))
+
+    const combo = screen.getByLabelText('Mostrar')
+    expect(combo).toHaveValue('both')
+
+    await user.selectOptions(combo, 'previous')
+    expect(useAnimationStore.getState().onionSkinMode).toBe('previous')
+
+    await user.selectOptions(combo, 'next')
+    expect(useAnimationStore.getState().onionSkinMode).toBe('next')
+  })
+
+  /** O lado escolhido é preferência: desligar e religar não o perde. */
+  it('desligar e religar mantém o lado escolhido', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    await renderAnimationPanel()
+
+    const caixa = screen.getByLabelText('Papel-cebola')
+    await user.click(caixa)
+    await user.selectOptions(screen.getByLabelText('Mostrar'), 'next')
+
+    await user.click(caixa)
+    await user.click(caixa)
+
+    expect(screen.getByLabelText('Mostrar')).toHaveValue('next')
+    expect(useAnimationStore.getState().onionSkinMode).toBe('next')
   })
 
   /** Com um keyframe só não há vizinho para virar fantasma. */
@@ -893,5 +935,168 @@ describe('AnimationPanel — miniaturas', () => {
     await renderAnimationPanel()
 
     expect(screen.queryByLabelText('Papel-cebola')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Item 40: depois de um "Ir para", o card do keyframe que ficou na cena de
+ * trabalho aparece destacado — é nele que "Regravar" deve ser clicado, e antes
+ * disso nada na tela dizia qual era.
+ */
+describe('AnimationPanel — keyframe na bancada', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, animation: false } }))
+  })
+
+  /** O `aria-current` é o gancho: "o item atual do conjunto". */
+  const cards = () => Array.from(document.querySelectorAll('.animation-panel__keyframe'))
+  const destacado = () => cards().findIndex((card) => card.getAttribute('aria-current') === 'true')
+
+  it('sem "Ir para" nenhum card está destacado', async () => {
+    comAnimacao(3)
+    await renderAnimationPanel()
+
+    expect(cards()).toHaveLength(3)
+    expect(destacado()).toBe(-1)
+  })
+
+  it('"Ir para" destaca o card daquele keyframe, e só ele', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Ir para' })[1])
+
+    expect(useAnimationStore.getState().visitedKeyframeId).toBe('k2')
+    expect(destacado()).toBe(1)
+
+    await user.click(screen.getAllByRole('button', { name: 'Ir para' })[2])
+    expect(destacado()).toBe(2)
+  })
+
+  /** Regravar reescreve o keyframe em que se está — e continua-se nele. */
+  it('regravar não larga o destaque', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Ir para' })[1])
+    await user.click(screen.getAllByRole('button', { name: 'Regravar' })[1])
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    expect(useAnimationStore.getState().visitedKeyframeId).toBe('k2')
+    expect(destacado()).toBe(1)
+  })
+
+  /** O keyframe novo vai para o FIM: a bancada deixa de ser o marcado. */
+  it('capturar um keyframe novo larga o destaque', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Ir para' })[0])
+    await user.click(screen.getByRole('button', { name: 'Capturar keyframe' }))
+
+    expect(useAnimationStore.getState().visitedKeyframeId).toBeNull()
+    expect(destacado()).toBe(-1)
+  })
+
+  /** Ids são únicos DENTRO de uma animação: o `k1` de outra não é o mesmo. */
+  it('abrir uma animação da biblioteca larga o destaque', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    act(() => {
+      useFiguresStore.getState().saveAnimationToLibrary('Tomada 1')
+    })
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Ir para' })[0])
+    await user.click(screen.getByRole('button', { name: 'Abrir' }))
+
+    expect(useAnimationStore.getState().visitedKeyframeId).toBeNull()
+    expect(destacado()).toBe(-1)
+  })
+
+  /**
+   * Marca do PLAYHEAD (pedido do usuário): saber em qual keyframe o ⏮/⏭ da
+   * barra parou. A barra põe o instante exato do keyframe em `timeMs` (travado
+   * nos testes da `TimelineBar`); o que se confere aqui é a leitura desse
+   * instante — que vale igual para arrastar a régua e para as setas de quadro.
+   */
+  const comPlayhead = () =>
+    Array.from(document.querySelectorAll('.animation-panel__keyframe')).findIndex((card) =>
+      card.classList.contains('animation-panel__keyframe--playhead'),
+    )
+
+  it('marca o card em que a linha do tempo parou', async () => {
+    comAnimacao(3)
+    useAnimationStore.setState({ timeMs: 1000 })
+    await renderAnimationPanel()
+
+    expect(comPlayhead()).toBe(1)
+    expect(screen.getByTitle('A linha do tempo parou neste keyframe')).toBeInTheDocument()
+
+    act(() => {
+      useAnimationStore.getState().setTimeMs(2000)
+    })
+    expect(comPlayhead()).toBe(2)
+  })
+
+  /** No meio de um trecho não há keyframe sob o playhead. */
+  it('entre dois keyframes, nenhum card fica marcado pelo playhead', async () => {
+    comAnimacao(3)
+    useAnimationStore.setState({ timeMs: 1500 })
+    await renderAnimationPanel()
+
+    expect(comPlayhead()).toBe(-1)
+    expect(screen.queryByTitle('A linha do tempo parou neste keyframe')).not.toBeInTheDocument()
+  })
+
+  /**
+   * As duas marcas são coisas diferentes e convivem: o playhead só mexe na
+   * pré-visualização, enquanto quem diz o que "Regravar" reescreve é a bancada.
+   */
+  it('playhead e bancada são marcas independentes', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    await renderAnimationPanel()
+
+    // "Ir para" põe as duas no mesmo card — ele leva o playhead junto.
+    await user.click(screen.getAllByRole('button', { name: 'Ir para' })[1])
+    expect(destacado()).toBe(1)
+    expect(comPlayhead()).toBe(1)
+
+    // Andar pela régua move só a do playhead; a bancada continua no keyframe 2.
+    act(() => {
+      useAnimationStore.getState().setTimeMs(2000)
+    })
+    expect(comPlayhead()).toBe(2)
+    expect(destacado()).toBe(1)
+  })
+
+  /**
+   * O destaque casa por id: reordenar leva a marca junto e remover faz a marca
+   * sumir sozinha — nenhuma escrituração extra.
+   */
+  it('mover o keyframe leva o destaque junto; remover faz o destaque sumir', async () => {
+    const user = userEvent.setup()
+    const id = comAnimacao(3)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Ir para' })[2])
+    expect(destacado()).toBe(2)
+
+    act(() => {
+      useFiguresStore.getState().moveAnimationKeyframe(id, 'k3', -1)
+    })
+    expect(destacado()).toBe(1)
+
+    act(() => {
+      useFiguresStore.getState().removeAnimationKeyframe(id, 'k3')
+    })
+    expect(destacado()).toBe(-1)
   })
 })

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ONION_SKIN_COLORS,
+  ONION_SKIN_MODES,
   ONION_SKIN_OPACITY,
   anchorKeyframeIndex,
   onionSkinFrames,
@@ -118,5 +119,53 @@ describe('onionSkinFrames', () => {
     expect(ONION_SKIN_COLORS.previous).not.toBe(ONION_SKIN_COLORS.next)
     expect(ONION_SKIN_OPACITY).toBeGreaterThan(0)
     expect(ONION_SKIN_OPACITY).toBeLessThan(1)
+  })
+})
+
+/**
+ * Escolher o lado (pedido do usuário): os dois vizinhos, só o de trás ou só o
+ * da frente.
+ */
+describe('onionSkinFrames — modes', () => {
+  it('defaults to both neighbours when no mode is given', () => {
+    expect(onionSkinFrames(animation(3), 1000).map((frame) => frame.role)).toEqual(['previous', 'next'])
+    expect(onionSkinFrames(animation(3), 1000, 'both').map((frame) => frame.role)).toEqual([
+      'previous',
+      'next',
+    ])
+  })
+
+  it('previous-only drops the ghost that comes after', () => {
+    const frames = onionSkinFrames(animation(3), 1000, 'previous')
+
+    expect(frames.map((frame) => frame.role)).toEqual(['previous'])
+    expect(frames[0].keyframe.id).toBe('k1')
+  })
+
+  it('next-only drops the ghost that came before', () => {
+    const frames = onionSkinFrames(animation(3), 1000, 'next')
+
+    expect(frames.map((frame) => frame.role)).toEqual(['next'])
+    expect(frames[0].keyframe.id).toBe('k3')
+  })
+
+  /**
+   * Na ponta do lado escolhido não sai NADA. Mostrar o outro vizinho "para não
+   * ficar vazio" seria justamente o que quem escolheu um lado não quer ver.
+   */
+  it('shows nothing at the end of the chosen side, instead of falling back', () => {
+    expect(onionSkinFrames(animation(3), 0, 'previous')).toEqual([])
+    expect(onionSkinFrames(animation(3), 2000, 'next')).toEqual([])
+  })
+
+  it('keeps the roles — and therefore the colours — the same in every mode', () => {
+    // O modo escolhe QUEM aparece, não o que cada um significa: o fantasma
+    // quente continua sendo o passado nos três casos.
+    expect(onionSkinFrames(animation(3), 1000, 'previous')[0].role).toBe('previous')
+    expect(onionSkinFrames(animation(3), 1000, 'next')[0].role).toBe('next')
+  })
+
+  it('lists the three modes, in the order the panel offers them', () => {
+    expect(ONION_SKIN_MODES).toEqual(['both', 'previous', 'next'])
   })
 })

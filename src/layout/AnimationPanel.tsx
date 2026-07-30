@@ -9,12 +9,14 @@ import {
   animationOutputDurationMs,
   findWorkingAnimation,
   keyframeGroups,
+  keyframeIndexAtTimeMs,
   keyframeStartTimesMs,
   savedAnimations,
 } from '../animation/animation'
 import { ANIMATION_CLIPS, ANIMATION_CLIP_KEYS, type AnimationClipKey } from '../animation/animationClips'
 import { clipRoleCount } from '../animation/clipLibrary'
 import { FPS_OPTIONS } from '../animation/frameTimeline'
+import { ONION_SKIN_MODES, type OnionSkinMode } from '../animation/onionSkin'
 import { SNAPSHOT_RESOLUTION_PRESETS } from '../snapshot/constants'
 import { useAnimationStore } from '../store/animationStore'
 import { useCameraStore } from '../store/cameraStore'
@@ -27,6 +29,13 @@ const PRESET_LABEL_KEYS: Record<string, string> = {
   fullHD: 'panels.snapshots.resolutionFullHD',
   square: 'panels.snapshots.resolutionSquare',
   fourK: 'panels.snapshots.resolutionFourK',
+}
+
+/** Rótulo de cada modo do papel-cebola — mapa explícito, para o typecheck acusar modo novo sem tradução. */
+const ONION_SKIN_MODE_LABEL_KEYS: Record<OnionSkinMode, string> = {
+  both: 'panels.animation.onionSkinModeBoth',
+  previous: 'panels.animation.onionSkinModePrevious',
+  next: 'panels.animation.onionSkinModeNext',
 }
 
 /** Rótulo e dica de cada trecho pronto — mapa explícito para o typecheck acusar trecho novo sem tradução. */
@@ -46,6 +55,10 @@ const CLIP_LABEL_KEYS: Record<AnimationClipKey, { label: string; hint: string }>
   kpopShoulderWave: {
     label: 'panels.animation.clipKpopShoulderWave',
     hint: 'panels.animation.clipHintKpopShoulderWave',
+  },
+  balletPirouette: {
+    label: 'panels.animation.clipBalletPirouette',
+    hint: 'panels.animation.clipHintBalletPirouette',
   },
   dance: { label: 'panels.animation.clipDance', hint: 'panels.animation.clipHintDance' },
   handshake: { label: 'panels.animation.clipHandshake', hint: 'panels.animation.clipHintHandshake' },
@@ -269,6 +282,8 @@ export function AnimationPanel() {
   const timeMs = useAnimationStore((state) => state.timeMs)
   const onionSkin = useAnimationStore((state) => state.onionSkin)
   const setOnionSkin = useAnimationStore((state) => state.setOnionSkin)
+  const onionSkinMode = useAnimationStore((state) => state.onionSkinMode)
+  const setOnionSkinMode = useAnimationStore((state) => state.setOnionSkinMode)
   const fps = useAnimationStore((state) => state.fps)
   const presetKey = useAnimationStore((state) => state.presetKey)
   const exportPhase = useAnimationStore((state) => state.exportPhase)
@@ -277,6 +292,7 @@ export function AnimationPanel() {
   const exportErrorKey = useAnimationStore((state) => state.exportErrorKey)
   const lastExportFilename = useAnimationStore((state) => state.lastExportFilename)
   const resetTimeline = useAnimationStore((state) => state.resetTimeline)
+  const visitedKeyframeId = useAnimationStore((state) => state.visitedKeyframeId)
   const setFps = useAnimationStore((state) => state.setFps)
   const selectPreset = useAnimationStore((state) => state.selectPreset)
   const requestCaptureKeyframe = useAnimationStore((state) => state.requestCaptureKeyframe)
@@ -331,6 +347,11 @@ export function AnimationPanel() {
   // parada além do fim; o que se mostra é sempre o instante que existe.
   const currentMs = Math.min(timeMs, totalMs)
   const startTimes = active ? keyframeStartTimesMs(active) : []
+  // Em qual keyframe a linha do tempo parou (pedido do usuário): é o que
+  // responde "onde o ⏮/⏭ me deixou". Derivado do instante, sem estado novo —
+  // vale também para arrastar a régua e para as setas de quadro, que param em
+  // cima de um keyframe do mesmo jeito.
+  const playheadIndex = keyframeIndexAtTimeMs(active, currentMs)
   const groups = active ? keyframeGroups(active) : []
   const exporting = exportPhase === 'running'
 
@@ -722,8 +743,28 @@ export function AnimationPanel() {
           {t('panels.animation.onionSkin')}
         </label>
       )}
+      {/* Qual lado mostrar (pedido do usuário). Só aparece com o papel-cebola
+          LIGADO: desligado, é um combo que não faz nada e ainda ocupa a linha
+          logo acima da lista de keyframes, que é o espaço mais disputado do
+          painel. */}
       {active && active.keyframes.length > 1 && onionSkin && (
-        <p className="animation-panel__hint">{t('panels.animation.onionSkinHint')}</p>
+        <>
+          <label className="animation-panel__field" htmlFor="onion-skin-mode">
+            {t('panels.animation.onionSkinMode')}
+            <select
+              id="onion-skin-mode"
+              value={onionSkinMode}
+              onChange={(event) => setOnionSkinMode(event.target.value as OnionSkinMode)}
+            >
+              {ONION_SKIN_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {t(ONION_SKIN_MODE_LABEL_KEYS[mode])}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="animation-panel__hint">{t('panels.animation.onionSkinHint')}</p>
+        </>
       )}
 
       {active && active.keyframes.length > 0 && (
@@ -759,9 +800,31 @@ export function AnimationPanel() {
                   </li>
                 )}
 
+                {/* O card do keyframe que está NA BANCADA fica destacado (item
+                    40): depois de um "Ir para", é ele que "Regravar" deve
+                    reescrever, e sem a marca não havia nada na tela dizendo
+                    qual era. O `aria-current` é a semântica certa para "o item
+                    atual de um conjunto" — e serve de gancho ao teste. */}
+                {/* E o card em que a LINHA DO TEMPO parou ganha marca própria,
+                    mais discreta (pedido do usuário: saber onde o ⏮/⏭ deixou o
+                    playhead). São duas coisas diferentes e por isso duas
+                    marcas: o playhead só mexe na pré-visualização, enquanto a
+                    cena que "Regravar" reescreve continua sendo a da bancada.
+                    Fundi-las diria que se está editando um keyframe que não foi
+                    carregado. */}
                 {!groupCollapsed && (
-            <li className="animation-panel__keyframe">
+            <li
+              className={`animation-panel__keyframe${
+                keyframe.id === visitedKeyframeId ? ' animation-panel__keyframe--visited' : ''
+              }${index === playheadIndex ? ' animation-panel__keyframe--playhead' : ''}`}
+              aria-current={keyframe.id === visitedKeyframeId ? 'true' : undefined}
+            >
               <span className="animation-panel__keyframe-index">
+                {index === playheadIndex && (
+                  <span className="animation-panel__playhead" title={t('panels.animation.playheadHere')}>
+                    ▶
+                  </span>
+                )}
                 {t('panels.animation.keyframeLabel', { index: index + 1, time: formatSeconds(startTimes[index]) })}
               </span>
 

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AnimationClipKey } from '../animation/animationClips'
 import type { AnimationSample } from '../animation/animationSampler'
+import type { OnionSkinMode } from '../animation/onionSkin'
 import { DEFAULT_FPS, clampFps, type Fps } from '../animation/frameTimeline'
 import {
   DEFAULT_VIDEO_RESOLUTION_PRESET,
@@ -84,6 +85,31 @@ export interface AnimationUIState {
    * dois bonecos translúcidos a mais atrapalham quem só está posando.
    */
   onionSkin: boolean
+  /**
+   * Quais vizinhos o papel-cebola mostra (pedido do usuário): os dois, só o
+   * anterior ou só o seguinte.
+   *
+   * Fica SEPARADO do `onionSkin` de propósito. Ligar/desligar é o gesto
+   * repetido — a caixa que já existia —, e a escolha de lado é uma preferência
+   * que se faz uma vez e se mantém: juntar tudo num só campo de quatro valores
+   * faria desligar e religar perder o lado escolhido.
+   */
+  onionSkinMode: OnionSkinMode
+  /**
+   * Qual keyframe está NA BANCADA (item 40): o último carregado na cena de
+   * trabalho pelo "Ir para". O painel destaca o card dele e a régua marca o
+   * instante — é a informação que falta na hora de clicar "Regravar" no card
+   * certo.
+   *
+   * Não é derivado do instante de propósito. "Ir para" carrega o retrato do
+   * keyframe na cena EDITÁVEL; arrastar a régua ou usar ⏮/⏭ só mexe na
+   * pré-visualização. Derivar do `timeMs` faria a marca andar enquanto a cena
+   * que se edita continuava sendo outra — exatamente o engano que este destaque
+   * existe para evitar.
+   *
+   * Estado de FERRAMENTA, como `onionSkin`: fora do undo e fora do arquivo.
+   */
+  visitedKeyframeId: string | null
   fps: Fps
   presetKey: ResolutionPresetKey
   width: number
@@ -115,6 +141,7 @@ export interface AnimationUIState {
   pause: () => void
   setRepeat: (repeat: boolean) => void
   setOnionSkin: (onionSkin: boolean) => void
+  setOnionSkinMode: (mode: OnionSkinMode) => void
   setFps: (fps: number) => void
   selectPreset: (key: ResolutionPresetKey) => void
   setWidth: (width: number) => void
@@ -152,6 +179,8 @@ export const useAnimationStore = create<AnimationUIState>((set, get) => ({
   playing: false,
   repeat: false,
   onionSkin: false,
+  onionSkinMode: 'both',
+  visitedKeyframeId: null,
   fps: DEFAULT_FPS,
   presetKey: DEFAULT_VIDEO_RESOLUTION_PRESET,
   width: initialResolution.width,
@@ -165,7 +194,10 @@ export const useAnimationStore = create<AnimationUIState>((set, get) => ({
   lastExportFilename: null,
   cancelRequested: false,
 
-  resetTimeline: () => set({ timeMs: 0, playing: false, preview: null }),
+  // Ids de keyframe são únicos DENTRO de uma animação: abrir outra da
+  // biblioteca deixaria a marca do `k1` antigo em cima do `k1` novo. Mesma
+  // razão que limpa o cache de miniaturas.
+  resetTimeline: () => set({ timeMs: 0, playing: false, preview: null, visitedKeyframeId: null }),
 
   setTimeMs: (timeMs) => set({ timeMs: Math.max(0, timeMs) }),
 
@@ -179,6 +211,8 @@ export const useAnimationStore = create<AnimationUIState>((set, get) => ({
   setRepeat: (repeat) => set({ repeat }),
 
   setOnionSkin: (onionSkin) => set({ onionSkin }),
+
+  setOnionSkinMode: (onionSkinMode) => set({ onionSkinMode }),
 
   setFps: (fps) => set({ fps: clampFps(fps) }),
 
@@ -202,8 +236,15 @@ export const useAnimationStore = create<AnimationUIState>((set, get) => ({
   // Capturar sempre larga a pré-visualização: o retrato é da CENA DE TRABALHO,
   // e com a animação na tela o usuário estaria vendo uma coisa e gravando
   // outra.
+  // E larga o destaque do "Ir para" (item 40): o keyframe novo entra no FIM, e
+  // a bancada deixa de ser o retrato daquele que estava marcado.
   requestCaptureKeyframe: () =>
-    set({ playing: false, preview: null, pendingCommand: { type: 'captureKeyframe' } }),
+    set({
+      playing: false,
+      preview: null,
+      visitedKeyframeId: null,
+      pendingCommand: { type: 'captureKeyframe' },
+    }),
 
   // Mesma regra da captura: o trecho congela a câmera VIVA em todos os
   // keyframes, então a pré-visualização sai da frente para o usuário ver
@@ -229,8 +270,18 @@ export const useAnimationStore = create<AnimationUIState>((set, get) => ({
   // mostrava o keyframe 3 — e o papel-cebola (item 31), que se ancora no
   // instante, desenhava os vizinhos do keyframe errado: os fantasmas caíam em
   // cima do próprio boneco, só deixando a cena lavada.
+  //
+  // E é aqui — e só aqui — que nasce o destaque do item 40: `visitedKeyframeId`
+  // marca o keyframe que passou a ser a cena de trabalho. "Regravar" NÃO o
+  // limpa, porque regravar reescreve o keyframe em que se está e continua-se
+  // nele.
   requestGoToKeyframe: (keyframeId, timeMs) =>
-    set({ playing: false, timeMs, pendingCommand: { type: 'goToKeyframe', keyframeId } }),
+    set({
+      playing: false,
+      timeMs,
+      visitedKeyframeId: keyframeId,
+      pendingCommand: { type: 'goToKeyframe', keyframeId },
+    }),
 
   // As miniaturas são renderizadas a partir do RETRATO de cada keyframe, então
   // a pré-visualização é usada e devolvida pelo próprio player.

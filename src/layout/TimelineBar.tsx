@@ -48,6 +48,7 @@ export function TimelineBar() {
   const repeat = useAnimationStore((state) => state.repeat)
   const fps = useAnimationStore((state) => state.fps)
   const exportPhase = useAnimationStore((state) => state.exportPhase)
+  const visitedKeyframeId = useAnimationStore((state) => state.visitedKeyframeId)
   const requestSeek = useAnimationStore((state) => state.requestSeek)
   const setTimeMs = useAnimationStore((state) => state.setTimeMs)
   const setPreview = useAnimationStore((state) => state.setPreview)
@@ -63,6 +64,13 @@ export function TimelineBar() {
   const startTimes = active ? keyframeStartTimesMs(active) : []
   const groups = active ? keyframeGroups(active) : []
   const canPlay = totalMs > 0 && exportPhase !== 'running'
+
+  // Onde está, na régua, o keyframe que o painel destaca (item 41). Lê o mesmo
+  // `visitedKeyframeId` do item 40 e o converte em instante com os tempos que a
+  // barra já calcula — sem estado novo, e sumindo sozinho quando o keyframe é
+  // removido, porque o `findIndex` deixa de achá-lo.
+  const visitedIndex = active ? active.keyframes.findIndex((k) => k.id === visitedKeyframeId) : -1
+  const visitedMs = visitedIndex >= 0 ? startTimes[visitedIndex] : null
 
   const previousKeyframeMs = neighbourKeyframeTimeMs(startTimes, currentMs, -1)
   const nextKeyframeMs = neighbourKeyframeTimeMs(startTimes, currentMs, 1)
@@ -226,6 +234,20 @@ export function TimelineBar() {
                 <option key={index} value={start} label={String(index + 1)} />
               ))}
             </datalist>
+
+            {/* O keyframe que está na bancada (item 41), como um traço fino
+                ABAIXO da régua: o `<datalist>` acima é lista nativa do próprio
+                controle e não aceita estilo por marca, e disputar o espaço do
+                polegar atrapalharia justamente o que a mão arrasta. */}
+            {totalMs > 0 && visitedMs !== null && (
+              <div className="timeline-bar__marks">
+                <span
+                  className="timeline-bar__visited"
+                  title={t('timeline.visitedKeyframe', { index: visitedIndex + 1 })}
+                  style={{ left: `${(visitedMs / totalMs) * 100}%` }}
+                />
+              </div>
+            )}
 
             {/* Faixas dos grupos (item 38): a segunda camada da mesma régua —
                 é aqui que "keyframes 1 a 5 = Andando 1" vira coisa que se vê. */}

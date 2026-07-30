@@ -151,6 +151,8 @@ const POSE_PRESET_LABEL_KEYS: Record<PosePresetKey, string> = {
   carryingBox: 'panels.properties.posePresetCarryingBox',
   climbing: 'panels.properties.posePresetClimbing',
   stepUp: 'panels.properties.posePresetStepUp',
+  balletPreparation: 'panels.properties.posePresetBalletPreparation',
+  balletPirouette: 'panels.properties.posePresetBalletPirouette',
   handshake: 'panels.properties.posePresetHandshake',
   hug: 'panels.properties.posePresetHug',
   danceLead: 'panels.properties.posePresetDanceLead',
@@ -233,6 +235,8 @@ const POSE_PRESET_HINT_KEYS: Partial<Record<PosePresetKey, string>> = {
   carryingBox: 'panels.properties.posePresetCarryingBoxHint',
   climbing: 'panels.properties.posePresetClimbingHint',
   stepUp: 'panels.properties.posePresetStepUpHint',
+  balletPreparation: 'panels.properties.posePresetBalletPreparationHint',
+  balletPirouette: 'panels.properties.posePresetBalletPirouetteHint',
   // Nos pares, a dica é a única coisa que diz a DISTÂNCIA em que as duas
   // poses se encaixam — sem ela o encaixe resolvido numericamente não chega
   // ao usuário (DECISOES.md #37).

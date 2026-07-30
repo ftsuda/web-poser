@@ -401,3 +401,45 @@ describe('animationClips — resolução no referencial do boneco-âncora', () =
     expect(resolveClipFigure({ preset: 'standing', seat: true, at: [0, 0] }, 0).groundOffsetM).toBe(0)
   })
 })
+
+/**
+ * Pirueta de balé (pedido do usuário): duas voltas completas sobre uma perna.
+ */
+describe('animationClips — pirueta de balé', () => {
+  const passos = ANIMATION_CLIPS.balletPirouette.steps
+
+  it('sai do plié, gira em retiré e volta ao plié', () => {
+    expect(passos[0].a.preset).toBe('standing')
+    expect(passos[1].a.preset).toBe('balletPreparation')
+    expect(passos[passos.length - 2].a.preset).toBe('balletPreparation')
+    expect(passos[passos.length - 1].a.preset).toBe('standing')
+
+    const girando = passos.filter((passo) => passo.a.preset === 'balletPirouette')
+    expect(girando.length).toBeGreaterThanOrEqual(6)
+  })
+
+  it('soma exatamente duas voltas, sempre no mesmo sentido', () => {
+    const giros = passos.map((passo) => passo.a.turnDeg ?? 0)
+
+    expect(giros[giros.length - 1]).toBe(720)
+    for (let i = 1; i < giros.length; i += 1) expect(giros[i]).toBeGreaterThanOrEqual(giros[i - 1])
+  })
+
+  /**
+   * A trava que importa: a interpolação da rotação do boneco (`lerpAngle`, em
+   * `poseBlend.ts`) toma sempre o caminho MAIS CURTO. Um passo de 180° resolve
+   * para −180 e faria o boneco girar ao contrário; qualquer passo maior que
+   * 180 dá a volta pelo lado errado. Por isso os degraus são de 120°.
+   */
+  it('nenhum degrau de giro chega a 180°, senão a volta sairia ao contrário', () => {
+    const giros = passos.map((passo) => passo.a.turnDeg ?? 0)
+
+    for (let i = 1; i < giros.length; i += 1) {
+      expect(giros[i] - giros[i - 1], `passo ${i}`).toBeLessThan(180)
+    }
+  })
+
+  it('gira no lugar: o boneco não sai do ponto de apoio', () => {
+    for (const passo of passos) expect(passo.a.at).toEqual([0, 0])
+  })
+})

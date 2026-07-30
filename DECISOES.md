@@ -1983,3 +1983,135 @@ Sem mudança de comportamento: mesma regra de `disabled` (em cima de um keyframe
 **Verificação:** suíte em **2.003**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. No Chrome real, sem erro de console: as duas linhas confirmadas por caixa delimitadora (inserir acima de "Tocar", mesma coluna, dois topos distintos).
 
 **Nota de ferramenta:** rodar `npx prettier --write` neste arquivo reformatou-o inteiro no padrão do prettier (aspas duplas, ponto e vírgula), que **não** é o do projeto — não há config de prettier aqui, e o estilo do código é aspas simples sem ponto e vírgula. Desfeito com `--single-quote --no-semi --print-width 110`. Neste repositório, formatação é do `eslint`; prettier avulso não.
+
+## 72. Duas poses de balé e a pirueta
+
+Pedido do usuário em 2026-07-29: duas poses e uma animação de uma bailarina girando com uma perna levantada, girando sobre a outra.
+
+### As poses, resolvidas por varredura numérica
+
+Como as poses de encaixe do #35/#37, os ângulos saíram de busca sobre a cinemática direta, não de estimativa — e o que a busca otimiza é o que define a pose:
+
+- **`balletPirouette`** (passé/retiré): apoia na perna ESQUERDA esticada, na meia-ponta; a direita levantada com `hip.R {x:-72, y:-40, z:-45}` e `knee.R {x:121}`. Duas exigências ao mesmo tempo, e é a segunda que faz a diferença: o pé encosta no joelho de apoio (**6,9 cm** entre as juntas, e o pé é mais largo que isso) **e** o joelho levantado aponta para fora — x = −0,315 m, z = +0,221 m. Só a primeira exigência produz um "coupé" de rua, com o joelho à frente; a abertura lateral é o *en dehors* que faz a pose ser de balé. Braços em coroa à frente (primeira posição), punhos a 18 cm um do outro. Tronco e cabeça com um leve giro — o *spot* do bailarino.
+- **`balletPreparation`**: demi-plié com os pés virados para fora e os braços na segunda posição, quadril a 0,811 m. Ela existe para a pirueta ter começo e fim, em vez de o boneco surgir já rodando.
+
+Ambas em `hipHeightM` medido com `seatedHipHeightM` (0,967 na meia-ponta, 0,811 no plié), não estimado.
+
+### O trecho: 120° por passo, e isso não é estética
+
+`balletPirouette` (11 keyframes): em pé → plié → sobe em retiré → **seis degraus de 120°** → plié → em pé. Duas voltas completas, 720°.
+
+O tamanho do degrau é uma restrição, não um gosto: a interpolação da rotação do boneco (`lerpAngle`, em `poseBlend.ts`) toma sempre o caminho **mais curto**, e a conta `((to - from + 540) % 360) - 180` resolve um passo de exatamente 180° como **−180** — o boneco giraria ao contrário. Qualquer degrau ≥ 180 dá a volta pelo lado errado. Com 120° cada trecho tem um sentido só. Há teste travando `< 180` por degrau, com a razão escrita ao lado.
+
+### A armadilha da clavícula
+
+Na primeira medição os punhos saíram tortos numa pose declarada simétrica. Causa: a clavícula foi escrita com o MESMO sinal nos dois lados, e os limites dela são espelhados (`z: 0..20` na esquerda, `-20..0` na direita) — o valor positivo do lado direito grampeia em **zero**, e a assimetria se propaga por todo o braço. A regra do lado direito é `(x, −y, −z)`, e o `symmetric()` de `posePresets.ts` existe justamente para não depender de digitar isso à mão; a pirueta usa `symmetric` nos braços e declara só as pernas lado a lado, porque nelas a assimetria é a pose.
+
+### Verificação
+
+**+20 testes**, suíte de 2.003 para **2.023**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Os testes novos travam as medidas que definem as poses (pé no joelho de apoio, joelho aberto, meia-ponta, simetria do plié) e a estrutura do trecho (soma 720°, sentido único, nenhum degrau ≥ 180°, gira no lugar).
+
+No Chrome real (`npm run preview`), sem erro de console: as duas poses aplicadas e conferidas em imagem — inclusive na vista frontal, que é onde o *en dehors* se lê —, o trecho gerando **11 keyframes** e seis instantes ao longo da linha do tempo mostrando o giro sempre no mesmo sentido (costas → perfil → frente) com a perna de apoio no lugar.
+
+**Nota de automação:** capturar keyframe (e portanto aplicar trecho) só vale em **perspectiva** — em ortográfica não há lente para interpolar. A sonda tirava a foto frontal numa vista ortográfica e depois encontrava o botão de aplicar desabilitado, o que parecia defeito do trecho.
+
+## 73. O keyframe que está na bancada: destaque no card e marca na régua
+
+Itens 40 e 41 do `PLANO.md`, pedidos pelo usuário. Depois de clicar "Ir para", nada na tela dizia em qual keyframe a cena de trabalho tinha sido carregada — e é exatamente essa informação que falta na hora de clicar "Regravar" no card certo.
+
+### O destaque é "a bancada mostra este keyframe", não "o playhead está aqui"
+
+A distinção decide todo o resto. "Ir para" carrega o retrato do keyframe na cena EDITÁVEL; arrastar a régua, ⏮/⏭ e as setas de quadro só mexem na pré-visualização. Derivar o destaque do `timeMs` — que não custaria estado nenhum, como o papel-cebola (#66) já faz — faria a marca andar enquanto a cena que se edita continuava sendo outra: o engano que o item existe para evitar, e justamente na operação de risco (regravar substitui pose e câmera).
+
+Por isso é estado próprio: `visitedKeyframeId: string | null` no `animationStore`, ao lado de `onionSkin` e `preview` — estado de FERRAMENTA, fora do undo e fora do arquivo.
+
+### As quatro regras de quem escreve e quem limpa
+
+- **`requestGoToKeyframe` grava.** É o único lugar que grava, e é a definição do destaque.
+- **`requestCaptureKeyframe` limpa.** O keyframe novo entra no fim; a bancada deixa de ser o retrato do que estava marcado.
+- **`resetTimeline` limpa.** É o que roda ao abrir uma animação da biblioteca e ao apagar a de trabalho, e ids de keyframe são únicos DENTRO de uma animação — sem limpar, a marca do `k1` antigo cairia no `k1` da animação nova. Mesma razão que limpa o cache de miniaturas (#59), e são exatamente os mesmos dois pontos de chamada.
+- **`requestUpdateKeyframe` NÃO limpa.** Regravar reescreve o keyframe em que se está, e continua-se nele; largar o destaque aí seria perder a marca bem no gesto que ela existe para guiar.
+
+**Mover, duplicar e remover não pediram código nenhum:** o destaque casa por **id**, então reordenar leva a marca junto e remover faz a marca sumir sozinha. Leitura em vez de escrituração — a mesma escolha dos grupos de keyframe (#67).
+
+### Na UI
+
+- **Card** (item 40): `aria-current="true"` no `<li>` — a semântica certa para "o item atual de um conjunto", e o gancho estável do teste — mais um modificador de classe. O realce vem de `border-color` e de um `box-shadow` INTERNO, não de borda mais grossa: engrossar mexeria na caixa e faria a lista inteira dar um pulo a cada "Ir para". A cor é `--text-h`, que já vira clara no tema escuro; nada de variável nova, e nada de i18n, porque o destaque é visual.
+- **Régua** (item 41): a marca não pôde entrar no `<datalist>` das marcas de keyframe — ele é a lista nativa do próprio `<input type=range>` e não aceita estilo por opção. Vai como elemento posicionado (`left` em porcentagem do total), a mesma técnica das faixas de grupo do #67, numa faixa fina PRÓPRIA logo abaixo da régua: em cima do controle disputaria espaço com o polegar, que é o que a mão arrasta. Três pixels de largura, e não um, para não se confundir com as marcas que o navegador desenha sozinho. Tem `title` (com i18n nas duas línguas), que é o que diz qual keyframe é.
+- Recolhida a barra, o corpo não é renderizado e não há o que marcar — sem código para isso.
+
+### Limite aceito
+
+Um Ctrl+Z logo depois do "Ir para" devolve a cena anterior mas deixa o destaque parado. Carregar o retrato é edição de conteúdo, o destaque é ferramenta; assinar o histórico só para isto custaria mais que o incômodo.
+
+### Verificação
+
+**+10 testes** (6 no `AnimationPanel`, 4 na `TimelineBar`), suíte de 2.023 para **2.033**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Os testes travam as quatro regras de limpeza, o "só um card por vez", o mover/remover por id, a posição da marca (50% com o k2 de três keyframes de 1 s) e a barra recolhida.
+
+No Chrome real (`npm run preview`), sem erro de console: "Ir para" no keyframe 2 destaca **só** o card 2 e põe a marca a **0,500** da régua com o título certo; regravar mantém o destaque; capturar larga o destaque **e** apaga a marca. Conferido ampliado nos dois temas — traço escuro no claro, claro no escuro, abaixo do polegar e sem competir com ele.
+
+## 74. Papel-cebola com escolha de lado
+
+Pedido do usuário em 2026-07-29: poder mostrar o keyframe anterior e o seguinte **separadamente** ou os dois juntos.
+
+### Por que ver um lado de cada vez muda o que se enxerga
+
+Com os dois fantasmas ligados, uma pose no meio de um movimento fica cercada de corpo dos dois lados e some no meio deles — foi o que a medição mostrou: no keyframe do meio, com os dois ligados, o boneco de trabalho divide a imagem com ~13 mil pixels quentes e ~18 mil frios. Isolando o anterior lê-se de onde a pose **veio** (é o que interessa ao ajustar a chegada de um gesto); isolando o seguinte, para onde ela **vai**.
+
+O modo escolhe **quem aparece, não o que cada um significa**: os papéis e as cores continuam os mesmos, então o fantasma quente é o passado nos três casos. Há teste travando isso — trocar a cor conforme o modo pareceria "aproveitar" o combo e destruiria a única convenção que o recurso tem.
+
+### Dois campos, e não um de quatro valores
+
+`onionSkin: boolean` continua sendo a liga/desliga, e o modo entrou como campo separado (`onionSkinMode: 'both' | 'previous' | 'next'`, `both` por padrão). Um campo só, de quatro valores, seria mais enxuto no papel e pior no uso: desligar e religar perderia o lado escolhido. Ligar/desligar é o gesto repetido; o lado é preferência que se faz uma vez. Teste travando o ida e volta.
+
+### Na ponta, nada — e isso é decisão
+
+No primeiro keyframe com "só o anterior" (ou no último com "só o seguinte") **não se desenha nada**. Cair no outro vizinho "para não ficar vazio" mostraria justamente o que quem escolheu um lado pediu para não ver. Medido no navegador: no keyframe 1 com "só o anterior", quentes e frios ficam nos ~450 pixels de linha de base.
+
+### O resto seguiu o desenho que já existia
+
+A regra de vizinhança continua em `onionSkin.ts`, testável sem WebGL: `onionSkinFrames` ganhou um terceiro parâmetro com padrão `both`, e é um filtro de papel — o âncora, as pontas e o mínimo de dois keyframes não mudaram. O combo aparece no painel **só com o papel-cebola ligado**: desligado seria um controle inerte na linha logo acima da lista de keyframes, o espaço mais disputado do painel. A dica foi reescrita para valer nos três modos (descreve os papéis e as cores, em vez de afirmar que os dois aparecem).
+
+### Verificação
+
+**+11 testes** (6 na leitura pura, 3 no desenho, 2 no painel), suíte de 2.033 para **2.044**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+No Chrome real (`npm run preview`), sem erro de console, medido por contagem de pixels com o boneco de trabalho pintado de **verde** — de fábrica ele é vermelho e se confundiria com o fantasma quente:
+
+| modo | pixels quentes | pixels frios |
+| --- | --- | --- |
+| anterior e seguinte | 13.322 | 17.932 |
+| só o anterior | 14.899 | **410** |
+| só o seguinte | **492** | 18.361 |
+| keyframe 1, só o anterior | **493** | **410** |
+
+Os ~450 são a linha de base da imagem sem fantasma nenhum. O painel continua sem rolagem horizontal (239 px de conteúdo em 239 px de largura).
+
+## 75. Marca do playhead no card do keyframe
+
+Pedido do usuário em 2026-07-29: ao clicar em ⏮/⏭ na linha do tempo, destacar no painel de Animação em qual keyframe ele parou.
+
+### Duas marcas, e não uma
+
+A marca do #73 diz **"a bancada está mostrando este keyframe"** — é ela que responde onde "Regravar" vai escrever. O ⏮/⏭ não carrega nada na bancada: ele só move o playhead, e o que muda na tela é a pré-visualização. Reaproveitar a mesma marca faria o card apontado dizer "é este que você está editando" a respeito de um keyframe que não foi carregado — e "Regravar" ali gravaria a cena de trabalho antiga por cima dele. É exatamente o acidente que o destaque do #73 e a confirmação do #69 existem para evitar.
+
+Por isso são duas marcas, propositalmente desiguais em peso:
+
+- **Bancada:** contorno inteiro do card mais `aria-current` (a semântica de "item atual do conjunto" pertence a esta, que é a de edição).
+- **Playhead:** tarja fina na borda esquerda e um `▶` antes do título, com `title` traduzido. Mais fraca, porque é informação de navegação.
+
+Quando as duas caem no mesmo card — o que acontece sempre depois de um "Ir para", que leva o playhead junto — os dois `box-shadow` se somam e continuam legíveis: contorno **e** tarja.
+
+### Sem estado novo: é leitura do instante
+
+`keyframeIndexAtTimeMs(animation, timeMs)` devolve o índice do keyframe que está EXATAMENTE naquele instante, ou -1. Nada é guardado, e por isso a marca vale de graça para tudo que move o playhead: ⏮/⏭, arrastar a régua, as setas de quadro que caem em cima de um keyframe, e o "Ir para".
+
+**No meio de um trecho não há keyframe marcado.** É o que separa esta leitura do `anchorKeyframeIndex` do papel-cebola, que nesse caso devolve o keyframe de trás — lá a pergunta é "de quem estes fantasmas são vizinhos", e alguma resposta é obrigatória; aqui a pergunta é "o playhead parou em cima de qual", e a resposta certa entre dois keyframes é "nenhum". Duas funções parecidas com regras diferentes, cada uma com o comentário do porquê.
+
+A comparação é **arredondada ao milissegundo**, que é como os instantes chegam: a régua manda inteiros e as setas de quadro caem na grade de 1/fps.
+
+### Verificação
+
+**+7 testes** (4 na função pura, 3 no painel), suíte de 2.044 para **2.051**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Um dos testes trava justamente a independência das duas marcas: depois de "Ir para" no keyframe 2 as duas apontam para ele; andando com a régua, só a do playhead se move.
+
+No Chrome real (`npm run preview`), com quatro keyframes e sem erro de console: três cliques em ⏭ levaram a marca de 0 → 1 → 2 → 3 acompanhando o relógio da barra (1.0s, 2.0s, 3.0s), um clique em ⏮ voltou para 2, no meio do trecho (1,5s) **nenhum** card ficou marcado e o `▶` sumiu da tela, e depois de "Ir para" no keyframe 2 um ⏭ deixou a bancada no 2 e o playhead no 3 — as duas marcas visíveis ao mesmo tempo, em cards diferentes.

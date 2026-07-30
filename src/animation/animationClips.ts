@@ -50,6 +50,7 @@ export type AnimationClipKey =
   | 'kpopBoxArms'
   | 'kpopPointDance'
   | 'kpopShoulderWave'
+  | 'balletPirouette'
   | 'dance'
   | 'handshake'
   | 'shoulderSpin'
@@ -110,6 +111,7 @@ export const ANIMATION_CLIP_KEYS: readonly AnimationClipKey[] = [
   'kpopBoxArms',
   'kpopPointDance',
   'kpopShoulderWave',
+  'balletPirouette',
   'dance',
   'handshake',
   'shoulderSpin',
@@ -724,6 +726,32 @@ export const ANIMATION_CLIPS: Record<AnimationClipKey, AnimationClipDefinition> 
   // Uma volta completa em posição fechada, girando 60° por keyframe em torno
   // do ponto médio (0,36 m entre os dois, a distância do par). O último
   // keyframe repete o primeiro: o trecho emenda consigo mesmo.
+  // Pirueta de balé (pedido do usuário): prepara em demi-plié, sobe na
+  // meia-ponta com a perna direita em retiré e dá DUAS voltas completas sobre a
+  // perna esquerda, terminando de volta no plié.
+  //
+  // O giro vai de 120 em 120 graus, e isso não é estética: a interpolação da
+  // rotação do boneco (`lerpAngle`, em `poseBlend.ts`) toma sempre o caminho
+  // MAIS CURTO — um passo de 180° é ambíguo e resolve para -180, ou seja, o
+  // boneco giraria ao contrário. Com 120° cada trecho tem um sentido só, e as
+  // seis etapas somam os 720° das duas voltas.
+  balletPirouette: {
+    kind: 'solo',
+    steps: [
+      { durationMs: 500, a: { preset: 'standing', at: [0, 0] } },
+      { durationMs: 450, a: { preset: 'balletPreparation', at: [0, 0] } },
+      { durationMs: 350, a: { preset: 'balletPirouette', at: [0, 0] } },
+      { durationMs: 260, a: { preset: 'balletPirouette', at: [0, 0], turnDeg: 120 } },
+      { durationMs: 260, a: { preset: 'balletPirouette', at: [0, 0], turnDeg: 240 } },
+      { durationMs: 260, a: { preset: 'balletPirouette', at: [0, 0], turnDeg: 360 } },
+      { durationMs: 260, a: { preset: 'balletPirouette', at: [0, 0], turnDeg: 480 } },
+      { durationMs: 260, a: { preset: 'balletPirouette', at: [0, 0], turnDeg: 600 } },
+      { durationMs: 260, a: { preset: 'balletPirouette', at: [0, 0], turnDeg: 720 } },
+      { durationMs: 400, a: { preset: 'balletPreparation', at: [0, 0], turnDeg: 720 } },
+      { durationMs: 500, a: { preset: 'standing', at: [0, 0], turnDeg: 720 } },
+    ],
+  },
+
   dance: { kind: 'duo', steps: danceSteps() },
 
   // Aproximam-se (um passo cada), apertam as mãos a 0,755 m (o encaixe medido

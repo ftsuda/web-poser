@@ -345,6 +345,24 @@ export function neighbourKeyframeTimeMs(
 }
 
 /**
+ * Índice do keyframe que está EXATAMENTE no instante dado, ou -1.
+ *
+ * É o que diz "o playhead parou em cima deste": serve para o painel marcar em
+ * qual keyframe os botões ⏮/⏭ da barra pararam (pedido do usuário). Diferente
+ * do `anchorKeyframeIndex` do papel-cebola, que devolve o keyframe de trás
+ * quando se está NO MEIO de um trecho — aqui, no meio do trecho não há
+ * keyframe nenhum sob o playhead, e a resposta certa é "nenhum".
+ *
+ * Compara arredondado em milissegundos porque é assim que os instantes chegam:
+ * a régua manda inteiros e as setas de quadro caem na grade de 1/fps.
+ */
+export function keyframeIndexAtTimeMs(animation: Animation | null, timeMs: number): number {
+  if (!animation) return -1
+  const now = Math.round(timeMs)
+  return keyframeStartTimesMs(animation).findIndex((start) => Math.round(start) === now)
+}
+
+/**
  * Um quadro para trás ou para frente, na grade de 1/fps (item 29).
  *
  * O passo é calculado pelo ÍNDICE do quadro, e não somando `1000/fps` ao
