@@ -25,7 +25,7 @@ import { useKeyframeThumbnailStore } from '../store/keyframeThumbnailStore'
 import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
 import type { CameraViewState } from './cameraMove'
 import { CAMERA_DEFAULTS } from './constants'
-import { hideSceneOverlays, renderAtResolution } from './sceneCapture'
+import { hideSceneOverlays, renderAtResolution, revealEditorHidden } from './sceneCapture'
 import { applyViewToCamera, getSceneCameraObject } from './sceneCameraObject'
 
 /** Tamanho da miniatura de keyframe (item 30) — 16:9, pequena o bastante para caber no card. */
@@ -195,11 +195,15 @@ export function AnimationPlayer() {
           // Esconder a cada quadro, como na exportação: o commit do React acima
           // pode reacender um apoio de tela.
           const restoreScene = hideSceneOverlays(scene)
+          // O cenário escondido só da bancada (item 42) volta para a miniatura:
+          // ela é uma saída, e tem de mostrar o mesmo que o vídeo mostraria.
+          const restoreEditorHidden = revealEditorHidden(scene)
           renderAtResolution(gl, scene, thumbnailCamera, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, () => {
             useKeyframeThumbnailStore
               .getState()
               .setThumbnail(keyframe.id, gl.domElement.toDataURL('image/jpeg', 0.6))
           })
+          restoreEditorHidden()
           restoreScene()
         }
         // A bancada volta a ser o que era: nem a cena nem o enquadramento
@@ -274,10 +278,12 @@ export function AnimationPlayer() {
             // um apoio de tela no meio da exportação. Um passe pela árvore por
             // quadro não pesa nada perto de renderizar a cena.
             const restoreScene = hideSceneOverlays(scene)
+            const restoreEditorHidden = revealEditorHidden(scene)
             let backpressure: Promise<void> = Promise.resolve()
             renderAtResolution(gl, scene, camera, width, height, () => {
               backpressure = sink.addFrame(frame.timeS, frame.durationS)
             })
+            restoreEditorHidden()
             restoreScene()
             return backpressure
           },

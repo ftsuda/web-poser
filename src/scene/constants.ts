@@ -18,6 +18,22 @@ export const CAMERA_DEFAULTS = {
 export const GROUND_SIZE = 20
 export const GRID_DIVISIONS = 20
 
+/**
+ * Quão escura é a sombra projetada no chão, de 0 (nenhuma) a 1 (o padrão do
+ * three, preto cheio). Baixada a pedido do usuário: com os objetos de cena
+ * (item 42) somando volumes ao cenário, a sombra a 1 empastelava o chão e
+ * competia com o boneco, que é o assunto da referência.
+ *
+ * **É propriedade da LUZ, não de quem projeta** (`light.shadow.intensity`):
+ * uma sombra por objeto exigiria outra técnica inteira. Então este número
+ * clareia junto a sombra dos bonecos — o que é coerente, já que as duas caem
+ * no mesmo chão e sob a mesma luz.
+ *
+ * Não confundir com a elipse de contato do boneco (`FigureShadow`), que é um
+ * *mesh* translúcido e tem opacidade própria.
+ */
+export const SHADOW_INTENSITY = 0.45
+
 /** Distância entre duas linhas da grade do chão, em metros. */
 export const GRID_SPACING_M = GROUND_SIZE / GRID_DIVISIONS
 
@@ -56,3 +72,15 @@ export const OVERLAY_NAMES = {
 } as const
 
 export const OVERLAY_NAME_LIST: readonly string[] = Object.values(OVERLAY_NAMES)
+
+/**
+ * Marca de `userData` do objeto de cena escondido **só da bancada** (item 42).
+ *
+ * É o SIMÉTRICO dos `OVERLAY_NAMES`: aqueles aparecem na tela e somem no
+ * arquivo; este some da tela e **aparece** no arquivo. A captura procura esta
+ * marca para reacender o objeto no instante de renderizar (ver
+ * `sceneCapture.revealEditorHidden`) — sem ela, um cenário tirado da frente
+ * para posar sumiria também do PNG e do MP4, que é o oposto do que a opção
+ * promete.
+ */
+export const EDITOR_HIDDEN_FLAG = 'editorHidden'

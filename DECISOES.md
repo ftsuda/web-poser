@@ -2270,3 +2270,60 @@ O diálogo é o elemento nativo (modalidade e `::backdrop` do navegador), mas o 
 ### Verificação
 
 **37 testes novos** (`animationRemap.test.ts`: identidade do boneco preservada, colocações absolutas, escala da altura, visibilidade, transporte da ação e a invariante da câmera relativa à âncora, papéis ausentes, ids/durações/rótulos; `animationsFile.test.ts`: round-trip do arquivo avulso, várias entradas viram uma linha do tempo, arquivo sem animação; `animationImport.test.ts`: as quatro combinações, um passo de undo, rótulos desconflitados, biblioteca intocada; `AnimationPanel.test.tsx`: exportar desabilitado/nome do arquivo, diálogo com o resumo, remapeamento padrão, aviso de bonecos insuficientes, anexar indisponível na bancada vazia, cancelar e arquivo inválido). Suíte de 2.053 para **2.090**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+## 80. Objetos de cena 3D redimensionáveis, com vértice livre
+
+Pedido do usuário em 2026-07-30: avaliar (sem implementar) a inclusão de objetos 3D simples redimensionáveis na cena. A avaliação apontou que o encaixe é bom por uma razão específica — a complexidade do app é do MANEQUIM (esqueleto, limites articulares, poses, arrasto de cadeia, espelho, travas de junta), e um objeto de cena não reaproveita nada disso como custo: é `forma + tamanho + colocação + cor`. Cinco decisões foram levadas ao usuário antes de escrever código; ele respondeu todas, e acrescentou duas funcionalidades.
+
+### Cenário estático foi a decisão que definiu o custo
+
+`AnimationKeyframe.figures` é o retrato da cena. Se o objeto fosse ATOR, ele teria de entrar no keyframe, e daí em `sanitizeKeyframe`, no amostrador, na biblioteca de trechos, no remapeamento de elenco (#79), nas miniaturas e em toda ação de captura/regravação de keyframe — mais uma regra de compatibilidade para keyframes antigos, que não têm o campo (e cujo carregamento não pode apagar os objetos da cena). Com **cenário estático**, escolha do usuário, nada disso foi tocado: o objeto vive na cena e a animação continua exatamente como estava. É a diferença entre 🟡 e 🔴.
+
+### Tamanho em metros, e por que isso proíbe `scale` de nó
+
+O modelo guarda `size: [x, y, z]` em **metros** — a mesma unidade do boneco de 1,70 m, da grade de 1 m e da régua vertical. O gizmo de escala do viewport é só outra forma de arrastar esse número: `PropTransformGizmo` converte o fator do `TransformControls` contra o tamanho capturado no **início do arrasto** (usar o corrente comporia a cada evento de mouse e multiplicaria o objeto ao infinito) e devolve a escala do nó a 1 ao soltar.
+
+A consequência não óbvia é que a geometria precisa ser construída **no tamanho real**, e não como primitiva unitária mais `scale` no nó: com desvios de vértice em metros absolutos, uma escala de nó multiplicaria a deformação junto com a primitiva — um canto puxado 10 cm passaria a valer 20 cm ao dobrar a caixa. Um caminho de código só, e de quebra o `.glb` sai com a malha de verdade em vez de primitiva + escala.
+
+### Vértice livre: a decisão do usuário contra a recomendação, e o que a viabilizou
+
+A avaliação recomendou **alças de face e de canto** em vez de vértice livre, porque mover um vértice arbitrário tira o objeto do território "primitiva com tamanho em metros". O usuário escolheu vértice livre. Dois mecanismos mantiveram a decisão viável sem virar editor de malha:
+
+**1. Pontos de controle soldados.** O `BoxGeometry` do three tem **24** vértices, não 8 — cada face precisa dos seus, para ter normal e UV próprios. Arrastar "um canto" mexendo num só desses vértices rasgaria a malha em três pedaços; o mesmo vale para a costura do cilindro e os polos da esfera. Vértices coincidentes são soldados num ponto de controle, e mover o ponto move todas as cópias. Caixa 8, plano 4, rampa 6, cone 18, cilindro 34, esfera 114.
+
+**2. Desvios esparsos, em metros absolutos, indexados por ponto de controle.** O arquivo guarda `forma + tamanho + { índice: [dx,dy,dz] }` — nunca uma malha solta. Objeto intacto não grava a chave; o `localStorage` e o `.glb` continuam pequenos; e o objeto permanece editável como primitiva depois de reabrir.
+
+**O índice do ponto de controle virou contrato de arquivo.** Mudar `PROP_SEGMENTS` remapearia deformações já salvas para vértices errados — silenciosamente. Três defesas: a subdivisão é constante, a soldagem é feita sobre a primitiva **unitária** (a ordem não depende do tamanho do objeto, então redimensionar não embaralha desvios) e há um teste travando a contagem de cada forma. Trocar a forma de um objeto **descarta** os vértices movidos, e não há como não descartar: o ponto 3 de um cubo não é o ponto 3 de uma esfera. O painel avisa antes.
+
+### Três estados de visibilidade que não são a mesma coisa
+
+O usuário acrescentou duas funcionalidades depois da avaliação, e elas criaram um trio que a UI precisa distinguir:
+
+- `visible` — conteúdo: desligado, some de tudo, **inclusive** do PNG e do MP4.
+- `hiddenInEditor` — some só da bancada, **continua saindo** na captura. É o simétrico exato dos `OVERLAY_NAMES`: aqueles aparecem na tela e somem no arquivo.
+- `locked` — visível e no arquivo, mas fora do alcance do clique.
+
+**O simétrico exigiu mecanismo novo.** Quem esconde o objeto na bancada é o React (`visible={false}`), e a captura renderiza a árvore viva — então sem um passe que o reacenda, o cenário tirado da frente para posar sumiria também da foto. `revealEditorHidden` faz esse passe, marcado por `userData`, e é chamado **lado a lado** com `hideSceneOverlays`, nunca dentro dele: esconder apoios de tela é opção do usuário na captura de imagem, e reacender o cenário não pode depender dela. Objeto desligado de verdade não carrega a marca e continua fora da imagem.
+
+"Oculto na bancada" vale só no **modo de edição** (`viewMode === 'edit'`): no modo visão-câmera se está conferindo o quadro, e o quadro tem o cenário.
+
+**Os dois vão DENTRO do objeto, e portanto no undo** — decisão do usuário, seguindo a recomendação. Diverge das travas de junta (#42), que são estado de trabalho fora do histórico, e o motivo é que uma trava de objeto é propriedade da CENA (como o `visible` do boneco, que também é desfazível), e não um modo de sessão.
+
+### Seleção generalizada, sem mudar o estado de lugar
+
+Até aqui havia duas coisas selecionáveis e a exclusividade era feita à mão aos pares: o `SceneCameraGizmo` chamava `selectFigure(null)`, e o `Viewport` mantinha um efeito que apagava a câmera ao escolher um boneco. Com uma terceira, isso vira três pares para manter em dia. `store/selection.ts` passou a ser o ponto único de leitura (`useSelection`) e de escrita (`selectTarget`).
+
+**O estado continua onde estava** (`figuresStore` para boneco e objeto, `cameraStore` para a câmera): movê-lo para um store novo tocaria ~15 arquivos e dezenas de testes sem mudar comportamento nenhum, e a seleção já está fora do histórico de undo nos dois lugares. O módulo importa os dois stores e nenhum store o importa — a dependência fica numa direção só, sem ciclo.
+
+### Detalhes que só apareceram ao escrever
+
+- **A rampa não existe no three.** Uma `ExtrudeGeometry` traria biselamento e UVs desnecessários; 8 triângulos escritos à mão, não indexados, dão normais chapadas e exatamente 6 pontos de controle depois da soldagem.
+- **O plano é uma folha:** o eixo Z é ignorado pela geometria, e o material precisa de `DoubleSide` — sem isso ele desaparece quando a câmera passa para trás.
+- **`normalizeFigureColor` mudou de casa.** O objeto precisa da mesma validação de cor livre (#39), mas importar o `figuresStore` a partir do módulo do objeto seria ciclo (o store é quem importa o objeto). A regra foi para `scene/hexColor.ts`, e o store a reexporta — nenhum importador existente mudou.
+- **`updateProp` devolve o array ORIGINAL quando nada mudou**, ao contrário do `updateFigure`. É o que faz uma edição barrada pela trava não empilhar um passo de undo que não desfaz coisa alguma (a `equality` do `zundo` compara por referência).
+- **Geometria é recurso de GPU.** Um arrasto de vértice emite dezenas de geometrias por segundo; sem o `dispose` no desmonte do `useMemo`, cada uma ficaria para trás.
+- **Os números 40 e 41 já estavam ocupados** pelo destaque do keyframe na bancada (#73), acrescentados no fim do PLANO.md em 2026-07-29 e fora da seção da lista. A numeração nunca é reaproveitada, então o item virou **42**, em um grupo I novo — e as referências no código, escritas antes de eu notar, foram corrigidas.
+
+### Verificação
+
+**77 testes novos** (`propGeometry.test.ts`: contagem travada por forma, soldagem cobrindo todo vértice sem sobra, tamanho em metros, plano sem Z, sentido da rampa, malha que não rasga, desvio absoluto, normais recalculadas, geometria por objeto, apoio no chão com rotação e com vértice puxado, sanitização; `propsStore.test.ts`: criação/limite/duplicação, as três chaves independentes, objeto travado inerte a tudo, tamanho grampeado, desvio guardado e revertido, troca de forma descartando vértices e preservando tamanho, exclusividade da seleção nos três sentidos, undo, snapshot de cena, reset do workspace, cor livre; `propSerialization.test.ts`: ida e volta, campo aditivo em arquivo antigo, forma desconhecida virando caixa, desvio fora da forma descartado, `.glb` com malha real e nome de nó seguro, "oculto na bancada" não tirando o objeto do arquivo; `sceneCapture.test.ts`: reacender e restaurar, objeto desligado intocado, e a trava de que o passe **não** faz parte do `hideSceneOverlays`; `PropsSection.test.tsx`: lista, limite, cor, as três chaves, chave geral, medidas em metros, ferramenta de vértice, contador e aviso de descarte, controles inertes com objeto travado). Suíte de 2.090 para **2.167**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. Os arrastos em si não são testáveis por automação (ressalva de sempre dos gizmos) — **falta a conferência visual no navegador pelo usuário**.

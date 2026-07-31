@@ -6,6 +6,8 @@ import { WORKSPACE_MANIFEST_VERSION, buildWorkspaceManifest, parseWorkspaceManif
 const emptyData = {
   figures: [],
   nextFigureSeq: 1,
+  props: [],
+  nextPropSeq: 1,
   environment: { background: 'medium' as const, grid: true },
   cameraBookmarks: [],
   nextCameraBookmarkSeq: 1,

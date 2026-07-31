@@ -6,8 +6,9 @@ import {
   muteJointHighlight,
   renderAtResolution,
   applyOutputAspect,
+  revealEditorHidden,
 } from '../sceneCapture'
-import { OVERLAY_NAMES } from '../constants'
+import { EDITOR_HIDDEN_FLAG, OVERLAY_NAMES } from '../constants'
 import { applyFrameMaskFit, fitFrameRect } from '../frameMask'
 
 function cenaComOverlays() {
@@ -223,5 +224,58 @@ describe('renderAtResolution', () => {
     expect(falso.tamanho).toEqual([800, 600])
     expect(falso.pixelRatio).toBe(2)
     expect(camera.aspect).toBeCloseTo(4 / 3, 9)
+  })
+})
+
+
+/**
+ * O passe SIMÉTRICO ao `hideOverlays` (item 42): o cenário que o usuário tirou
+ * da frente para posar tem de reaparecer na captura. Se isto quebrar, um
+ * objeto escondido na bancada some do PNG e do MP4 — que é o oposto do que a
+ * opção promete.
+ */
+describe('revealEditorHidden', () => {
+  function cenaComObjetoOcultoNaBancada() {
+    const scene = new THREE.Scene()
+
+    const cenario = new THREE.Object3D()
+    cenario.name = 'prop-prop-1'
+    cenario.visible = false
+    cenario.userData = { [EDITOR_HIDDEN_FLAG]: true }
+
+    // Objeto DESLIGADO de verdade: sem a marca, continua fora da imagem.
+    const desligado = new THREE.Object3D()
+    desligado.name = 'prop-prop-2'
+    desligado.visible = false
+
+    scene.add(cenario, desligado)
+    return { scene, cenario, desligado }
+  }
+
+  it('acende o objeto escondido só da bancada e o apaga de volta', () => {
+    const { scene, cenario } = cenaComObjetoOcultoNaBancada()
+
+    const restore = revealEditorHidden(scene)
+    expect(cenario.visible).toBe(true)
+
+    restore()
+    expect(cenario.visible).toBe(false)
+  })
+
+  it('não acende objeto que o usuário desligou de verdade', () => {
+    const { scene, desligado } = cenaComObjetoOcultoNaBancada()
+
+    revealEditorHidden(scene)
+    expect(desligado.visible).toBe(false)
+  })
+
+  it('NÃO faz parte do `hideSceneOverlays` — reacender não é opção de captura', () => {
+    // A opção "ocultar grade/gizmos" pode estar desligada, e ainda assim o
+    // cenário precisa sair na foto: por isso os dois passes são chamados lado
+    // a lado, e não um dentro do outro (ver `SnapshotCapture.tsx`).
+    const { scene, cenario } = cenaComObjetoOcultoNaBancada()
+
+    hideSceneOverlays(scene)
+    expect(cenario.visible).toBe(false)
   })
 })

@@ -12,6 +12,8 @@ const emptyEnvironment = { background: 'medium' as const, grid: true }
 const baseState = {
   figures: [],
   nextFigureSeq: 1,
+  props: [],
+  nextPropSeq: 1,
   environment: emptyEnvironment,
   cameraBookmarks: [],
   nextCameraBookmarkSeq: 1,
@@ -63,6 +65,8 @@ describe('autosave — persistência do workspace em localStorage', () => {
           data: {
             figures: [],
             nextFigureSeq: 1,
+            props: [],
+            nextPropSeq: 1,
             environment: emptyEnvironment,
             cameraBookmarks: [],
             nextCameraBookmarkSeq: 1,

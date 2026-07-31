@@ -29,6 +29,23 @@ export type AutosaveStatus = 'idle' | 'pending' | 'saved' | 'error'
  */
 export type GizmoMode = 'translate' | 'rotate'
 
+/**
+ * Ferramenta em uso sobre o OBJETO DE CENA selecionado (item 42). É um modo à
+ * parte do `gizmoMode` do boneco, e não uma extensão dele, por duas razões: o
+ * objeto tem duas ferramentas que junta nenhuma tem (escala e vértice), e a
+ * ferramenta escolhida para posar não deve mudar por se ter clicado num cubo.
+ *
+ * - `translate`/`rotate`: colocação, como no root do boneco.
+ * - `scale`: arrasta as medidas — mas o que se grava é METRO (ver
+ *   `figuresStore.setPropSize`), nunca um fator de escala.
+ * - `vertex`: cada ponto de controle vira uma alça arrastável (o "vértice
+ *   livre" pedido pelo usuário).
+ *
+ * Modo de ferramenta, então fora do histórico de undo e fora do arquivo —
+ * mesma regra do `gizmoMode`.
+ */
+export type PropGizmoMode = 'translate' | 'rotate' | 'scale' | 'vertex'
+
 /** Estado de UI global sem relação com conteúdo da cena — visibilidade do painel de ajuda (`?`) e situação do autosave. Fora do histórico de undo, como `cameraStore`. */
 export interface UIState {
   helpVisible: boolean
@@ -53,6 +70,10 @@ export interface UIState {
 
   gizmoMode: GizmoMode
   setGizmoMode: (mode: GizmoMode) => void
+
+  /** Ferramenta do objeto de cena selecionado (item 42) — ver `PropGizmoMode`. */
+  propGizmoMode: PropGizmoMode
+  setPropGizmoMode: (mode: PropGizmoMode) => void
 
   /** Painéis laterais recolhidos (fase 9, item 8) — gravado em `localStorage` a cada troca. */
   collapsedPanels: CollapsedPanels
@@ -106,6 +127,9 @@ export const useUIStore = create<UIState>()((set) => ({
 
   gizmoMode: 'translate',
   setGizmoMode: (mode) => set({ gizmoMode: mode }),
+
+  propGizmoMode: 'translate',
+  setPropGizmoMode: (mode) => set({ propGizmoMode: mode }),
 
   collapsedPanels: INITIAL_UI_PREFERENCES.collapsedPanels,
   // Gravam direto, sem o debounce do autosave do workspace: recolher um painel

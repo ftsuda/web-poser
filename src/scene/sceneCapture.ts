@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { OVERLAY_NAME_LIST } from './constants'
+import { EDITOR_HIDDEN_FLAG, OVERLAY_NAME_LIST } from './constants'
 import { suspendViewOffset } from './frameMask'
 
 /**
@@ -75,7 +75,41 @@ export function muteJointHighlight(scene: THREE.Object3D): RestoreScene {
   }
 }
 
-/** Esconde tudo o que é apoio de tela de uma vez; devolve um restaurador só. */
+/**
+ * Reacende os objetos de cena que estão escondidos **só da bancada** (item 42)
+ * — o passe SIMÉTRICO ao `hideOverlays`.
+ *
+ * Um cenário tirado da frente para posar continua fazendo parte da cena: ele
+ * tem de sair no PNG e no MP4. Como quem o esconde é o React (`visible=false`)
+ * e a captura renderiza a árvore viva, sem este passe o arquivo herdaria a
+ * conveniência da bancada.
+ *
+ * Objeto DESLIGADO de verdade (`visible: false` no modelo) não carrega a
+ * marca, então continua fora da imagem — que é o que a outra opção promete.
+ */
+export function revealEditorHidden(scene: THREE.Object3D): RestoreScene {
+  const revealed: THREE.Object3D[] = []
+  scene.traverse((object) => {
+    if (object.userData?.[EDITOR_HIDDEN_FLAG] === true && !object.visible) {
+      revealed.push(object)
+      object.visible = true
+    }
+  })
+
+  return () => {
+    for (const object of revealed) object.visible = false
+  }
+}
+
+/**
+ * Esconde tudo o que é apoio de tela de uma vez; devolve um restaurador só.
+ *
+ * O `revealEditorHidden` NÃO entra aqui de propósito: esconder apoios de tela
+ * é opção do usuário na captura de imagem ("ocultar grade/gizmos"), e reacender
+ * o cenário não é — ele tem de sair na foto mesmo com a opção desligada. Por
+ * isso os dois passes são chamados lado a lado em `SnapshotCapture` e
+ * `AnimationPlayer`, e não um dentro do outro.
+ */
 export function hideSceneOverlays(scene: THREE.Object3D): RestoreScene {
   const restoreOverlays = hideOverlays(scene)
   const restoreHighlight = muteJointHighlight(scene)

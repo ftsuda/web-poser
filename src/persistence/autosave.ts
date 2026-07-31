@@ -5,6 +5,7 @@ import { sanitizeSavedPoses, type SavedPose } from '../figure/poseLibrary'
 import { setJointLimitOverrides, type JointLimitOverrides } from '../figure/skeleton'
 import type { CameraViewState } from '../scene/cameraMove'
 import type { CameraBookmark, EnvironmentSettings, Figure, SceneSnapshot, SceneSnapshotData } from '../store/figuresStore'
+import type { SceneProp } from '../props/sceneProp'
 import { savedPoseToJson } from './posesFile'
 import { sceneFromExtras, sceneToExtras, type SceneWorkingState } from './sceneSerialization'
 
@@ -22,6 +23,9 @@ const AUTOSAVE_KEY = 'virtual-mockup:workspace:v1'
 export interface WorkspaceState {
   figures: Figure[]
   nextFigureSeq: number
+  /** Objetos de cena (item 42) — viajam com a cena de trabalho, como os bonecos. */
+  props: SceneProp[]
+  nextPropSeq: number
   environment: EnvironmentSettings
   cameraBookmarks: CameraBookmark[]
   nextCameraBookmarkSeq: number
@@ -77,6 +81,8 @@ function extrasToSnapshotData(extras: unknown): SceneSnapshotData {
   return {
     figures: scene.figures,
     nextFigureSeq: scene.nextFigureSeq,
+    props: scene.props,
+    nextPropSeq: scene.nextPropSeq,
     environment: scene.environment,
     cameraBookmarks: scene.cameraBookmarks,
     nextCameraBookmarkSeq: scene.nextCameraBookmarkSeq,
@@ -100,6 +106,8 @@ export function saveWorkspaceToLocalStorage(state: WorkspaceState): boolean {
       name: state.sceneName,
       figures: state.figures,
       nextFigureSeq: state.nextFigureSeq,
+      props: state.props,
+      nextPropSeq: state.nextPropSeq,
       environment: state.environment,
       cameraBookmarks: state.cameraBookmarks,
       nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,

@@ -43,6 +43,8 @@ const sampleScene: SceneWorkingState = {
   name: 'Cena de teste',
   figures: [sampleFigure],
   nextFigureSeq: 2,
+  props: [],
+  nextPropSeq: 1,
   environment: { background: 'dark', grid: false },
   cameraBookmarks: [sampleBookmark],
   nextCameraBookmarkSeq: 2,

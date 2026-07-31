@@ -1,7 +1,9 @@
 import * as THREE from 'three'
 import { CAMERA_DEFAULTS } from '../scene/constants'
 import type { CameraBookmark, Figure } from '../store/figuresStore'
+import type { SceneProp } from '../props/sceneProp'
 import { buildFigureObject3D } from './figureObject3D'
+import { buildPropObject3D } from './propObject3D'
 import { exportObjectsToGlb, importGlb } from './gltfIO'
 import {
   SCENE_EXTRAS_VERSION,
@@ -81,12 +83,22 @@ function buildCameraObject3D(bookmark: CameraBookmark): THREE.Object3D {
   return camera
 }
 
-function buildSceneObjects(figures: readonly Figure[], cameraBookmarks: readonly CameraBookmark[]): THREE.Object3D[] {
-  return [...figures.map(buildFigureObject3D), ...cameraBookmarks.map(buildCameraObject3D)]
+function buildSceneObjects(
+  figures: readonly Figure[],
+  props: readonly SceneProp[],
+  cameraBookmarks: readonly CameraBookmark[],
+): THREE.Object3D[] {
+  return [
+    ...figures.map(buildFigureObject3D),
+    // Objetos de cena (item 42): malha real, não simplificada — ver
+    // `propObject3D.ts`.
+    ...props.map(buildPropObject3D),
+    ...cameraBookmarks.map(buildCameraObject3D),
+  ]
 }
 
 export async function exportSceneToGlb(scene: SceneWorkingState): Promise<ArrayBuffer> {
-  const objects = buildSceneObjects(scene.figures, scene.cameraBookmarks)
+  const objects = buildSceneObjects(scene.figures, scene.props, scene.cameraBookmarks)
   const extras = sceneToExtras(scene) as unknown as Record<string, unknown>
   return exportObjectsToGlb(objects, extras)
 }

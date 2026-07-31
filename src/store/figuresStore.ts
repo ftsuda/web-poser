@@ -76,6 +76,20 @@ import {
 } from '../figure/posePairs'
 import { resolveRandomPose } from '../figure/randomPose'
 import { loadWorkspaceFromLocalStorage } from '../persistence/autosave'
+import { normalizeHexColor } from '../scene/hexColor'
+import { controlPointCount, controlPointPosition, propGroundOffset } from '../props/propGeometry'
+import {
+  DEFAULT_PROP_COLOR,
+  DEFAULT_PROP_SIZE,
+  MAX_PROPS,
+  clampPropSize,
+  clampVertexOffset,
+  normalizePropColor,
+  withVertexOffset,
+  type PropShape,
+  type SceneProp,
+  type Vec3,
+} from '../props/sceneProp'
 
 export const MAX_FIGURES = 5
 
@@ -140,26 +154,12 @@ export const COLOR_PALETTE: readonly string[] = [
 /** Cor usada quando um arquivo traz uma cor ilegível (ver `sceneSerialization.ts`). */
 export const DEFAULT_FIGURE_COLOR = COLOR_PALETTE[0]
 
-const HEX_COLOR = /^#[0-9a-f]{6}$/
-
 /**
- * Aceita só `#rrggbb` minúsculo depois de normalizar — é o formato que o
- * `<input type="color">` produz, o que o `THREE.MeshStandardMaterial` entende
- * e o que vai para o `.glb`. Validar o FORMATO (e não uma lista de valores) é
- * o que permite cor livre sem deixar entrar string arbitrária vinda de um
- * arquivo de cena ou do `localStorage`.
- *
- * A forma curta `#rgb` é aceita e expandida: é válida em CSS, e um usuário
- * editando um `.glb` à mão pode escrevê-la.
+ * Cor livre do boneco: valida o FORMATO, não uma lista de valores (DECISOES.md
+ * #39). A regra em si mora em `scene/hexColor.ts` desde os objetos de cena, que
+ * precisam da mesma validação sem poder importar este store (seria ciclo).
  */
-export function normalizeFigureColor(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const text = value.trim().toLowerCase()
-  if (/^#[0-9a-f]{3}$/.test(text)) {
-    return `#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`
-  }
-  return HEX_COLOR.test(text) ? text : null
-}
+export const normalizeFigureColor = normalizeHexColor
 
 export interface Figure {
   id: string
@@ -184,6 +184,12 @@ export interface Figure {
 export interface SceneSnapshotData {
   figures: Figure[]
   nextFigureSeq: number
+  /**
+   * Objetos de cena (item 42) — cenário, e portanto conteúdo da CENA: cada
+   * snapshot guarda os seus, como guarda os bonecos e o enquadramento.
+   */
+  props: SceneProp[]
+  nextPropSeq: number
   environment: EnvironmentSettings
   cameraBookmarks: CameraBookmark[]
   nextCameraBookmarkSeq: number
@@ -210,7 +216,25 @@ export interface ApplyPosePresetOptions {
 
 export interface FiguresState {
   figures: Figure[]
+  /**
+   * Objetos de cena (item 42): cubo, cilindro, esfera, cone, plano e rampa,
+   * com tamanho em metros e vértices arrastáveis (`props/sceneProp.ts`).
+   *
+   * Vivem NESTE store, e não num próprio, pela mesma razão dos bookmarks de
+   * câmera e do catálogo de cenas: o `zundo` mantém uma pilha de undo por
+   * store, e só um store único dá uma linha do tempo cronológica combinada
+   * (DECISOES.md #8). Mover um objeto e mover um boneco têm de desfazer na
+   * ordem em que foram feitos.
+   */
+  props: SceneProp[]
+  nextPropSeq: number
   selectedFigureId: string | null
+  /**
+   * Objeto de cena selecionado. Exclusivo com `selectedFigureId` e com a
+   * seleção da câmera de cena (`cameraStore`) — quem garante isso é
+   * `store/selection.ts`, o ponto único por onde toda seleção passa.
+   */
+  selectedPropId: string | null
   selectedJointName: string | null
   /** Eixo com foco para os atalhos de teclado (setas) quando uma junta com mais de um DOF está selecionada. */
   activeAxis: Axis | null
@@ -651,6 +675,47 @@ export interface FiguresState {
    * `mirrorPoseFull`.
    */
   mirrorWholeFigure: (id: string) => void
+
+  // -------------------------------------------------------------------------
+  // Objetos de cena (item 42)
+  // -------------------------------------------------------------------------
+
+  /** Cria um objeto da forma pedida, no tamanho padrão dela, já apoiado no chão. `null` no limite de `MAX_PROPS`. */
+  addProp: (shape: PropShape, name?: string) => string | null
+  removeProp: (id: string) => void
+  duplicateProp: (id: string) => string | null
+  renameProp: (id: string, name: string) => void
+  /**
+   * Troca a forma do objeto. **Os vértices arrastados são perdidos**, e não há
+   * como não perdê-los: o desvio é indexado por ponto de controle, e o ponto 3
+   * de um cubo não é o ponto 3 de uma esfera. O tamanho, esse, é preservado —
+   * é medida em metros, igual para todas as formas.
+   */
+  setPropShape: (id: string, shape: PropShape) => void
+  setPropColor: (id: string, color: string) => void
+  setPropPosition: (id: string, position: Vec3) => void
+  setPropRotation: (id: string, rotation: Partial<JointRotation>) => void
+  /** Tamanho em METROS por eixo (o gizmo de escala converte antes de chamar aqui). */
+  setPropSize: (id: string, size: Vec3) => void
+  /** Conteúdo: desligado, o objeto some inclusive do PNG e do MP4. */
+  togglePropVisible: (id: string) => void
+  /** Some só da bancada, continuando a sair na captura (ver `SceneProp.hiddenInEditor`). */
+  togglePropHiddenInEditor: (id: string) => void
+  /** Travar/destravar: travado, o objeto não pega clique no viewport nem aceita edição. */
+  togglePropLocked: (id: string) => void
+  /** Oculta (ou revela) TODOS os objetos na bancada de uma vez — o gesto de limpar a mesa para posar. */
+  setAllPropsHiddenInEditor: (hidden: boolean) => void
+  /**
+   * Move um vértice (ponto de controle) para uma posição no espaço LOCAL do
+   * objeto; o store guarda o desvio em relação à primitiva. Objeto travado não
+   * se mexe, mesma regra das juntas travadas (DECISOES.md #42).
+   */
+  setPropVertex: (id: string, index: number, localPosition: Vec3) => void
+  /** Devolve o objeto à primitiva exata, jogando fora todos os vértices arrastados. */
+  clearPropVertices: (id: string) => void
+  /** Baixa/levanta o objeto até a geometria (já girada e deformada) encostar no chão. */
+  seatPropOnGround: (id: string) => void
+  selectProp: (id: string | null) => void
 }
 
 const ZERO_ROTATION: JointRotation = { x: 0, y: 0, z: 0 }
@@ -697,6 +762,30 @@ function updateFigure(
   update: (figure: Figure) => Figure,
 ): Figure[] {
   return figures.map((figure) => (figure.id === id ? update(figure) : figure))
+}
+
+/** Espaçamento em X entre objetos de cena recém-criados, para não nascerem um dentro do outro. */
+const PROP_SPACING_M = 0.8
+
+/**
+ * Como o `updateFigure`, com uma diferença que importa para o undo: devolve o
+ * array ORIGINAL quando o `update` não mudou nada. É o que faz uma edição
+ * barrada pela trava do objeto não empilhar um passo de histórico que não
+ * desfaz coisa alguma (a `equality` do `zundo` compara por referência).
+ */
+function updateProp(
+  props: SceneProp[],
+  id: string,
+  update: (prop: SceneProp) => SceneProp,
+): SceneProp[] {
+  let changed = false
+  const next = props.map((prop) => {
+    if (prop.id !== id) return prop
+    const updated = update(prop)
+    if (updated !== prop) changed = true
+    return updated
+  })
+  return changed ? next : props
 }
 
 /**
@@ -933,7 +1022,10 @@ export const useFiguresStore = create<FiguresState>()(
   temporal(
     (set, get) => ({
       figures: restoredWorkspace?.workingScene.figures ?? [],
+      props: restoredWorkspace?.workingScene.props ?? [],
+      nextPropSeq: restoredWorkspace?.workingScene.nextPropSeq ?? 1,
       selectedFigureId: null,
+      selectedPropId: null,
       selectedJointName: null,
       activeAxis: null,
       nextFigureSeq: restoredWorkspace?.workingScene.nextFigureSeq ?? 1,
@@ -1052,8 +1144,14 @@ export const useFiguresStore = create<FiguresState>()(
 
       selectFigure: (id) => {
         // Selecionar o boneco equivale a selecionar seu root — pronto para
-        // mover/girar (ver PLANO.md > "Interação de pose", passo 1).
-        set({ selectedFigureId: id, selectedJointName: id ? ROOT_JOINT_NAME : null, activeAxis: null })
+        // mover/girar (ver PLANO.md > "Interação de pose", passo 1). E limpa a
+        // seleção de objeto: só uma coisa por vez fica com gizmo na tela.
+        set({
+          selectedFigureId: id,
+          selectedPropId: null,
+          selectedJointName: id ? ROOT_JOINT_NAME : null,
+          activeAxis: null,
+        })
       },
 
       selectJoint: (jointName) => {
@@ -1275,6 +1373,8 @@ export const useFiguresStore = create<FiguresState>()(
           data: {
             figures: state.figures,
             nextFigureSeq: state.nextFigureSeq,
+            props: state.props,
+            nextPropSeq: state.nextPropSeq,
             environment: state.environment,
             cameraBookmarks: state.cameraBookmarks,
             nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
@@ -1300,6 +1400,8 @@ export const useFiguresStore = create<FiguresState>()(
         const data: SceneSnapshotData = {
           figures: state.figures,
           nextFigureSeq: state.nextFigureSeq,
+          props: state.props,
+          nextPropSeq: state.nextPropSeq,
           environment: state.environment,
           cameraBookmarks: state.cameraBookmarks,
           nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
@@ -1326,6 +1428,7 @@ export const useFiguresStore = create<FiguresState>()(
           sceneName: snapshot.name,
           activeSceneId: id,
           selectedFigureId: null,
+          selectedPropId: null,
           selectedJointName: null,
           activeAxis: null,
           // Os ids de boneco vêm da cena carregada: travas de bonecos que não
@@ -1354,6 +1457,8 @@ export const useFiguresStore = create<FiguresState>()(
           figures: data.figures,
           jointLocks: pruneJointLocks(state.jointLocks, data.figures.map((figure) => figure.id)),
           nextFigureSeq: data.nextFigureSeq,
+          props: data.props,
+          nextPropSeq: data.nextPropSeq,
           environment: data.environment,
           cameraBookmarks: data.cameraBookmarks,
           nextCameraBookmarkSeq: data.nextCameraBookmarkSeq,
@@ -1362,6 +1467,7 @@ export const useFiguresStore = create<FiguresState>()(
           sceneName: data.name,
           activeSceneId: null,
           selectedFigureId: null,
+          selectedPropId: null,
           selectedJointName: null,
           activeAxis: null,
         }))
@@ -1447,6 +1553,7 @@ export const useFiguresStore = create<FiguresState>()(
             jointLimits: limits,
             sceneName: active.name,
             selectedFigureId: null,
+            selectedPropId: null,
             selectedJointName: null,
             activeAxis: null,
             jointLocks: pruneJointLocks(state.jointLocks, active.data.figures.map((figure) => figure.id)),
@@ -1485,7 +1592,10 @@ export const useFiguresStore = create<FiguresState>()(
         setJointLimitOverrides({})
         set({
           figures: [],
+          props: [],
+          nextPropSeq: 1,
           selectedFigureId: null,
+          selectedPropId: null,
           selectedJointName: null,
           activeAxis: null,
           nextFigureSeq: 1,
@@ -2349,6 +2459,211 @@ export const useFiguresStore = create<FiguresState>()(
         })
       },
 
+      // -----------------------------------------------------------------------
+      // Objetos de cena (item 42)
+      // -----------------------------------------------------------------------
+
+      addProp: (shape, name) => {
+        const { props, nextPropSeq } = get()
+        if (props.length >= MAX_PROPS) return null
+
+        const id = `prop-${nextPropSeq}`
+        const base: SceneProp = {
+          id,
+          name: name ?? `Object ${nextPropSeq}`,
+          shape,
+          color: DEFAULT_PROP_COLOR,
+          visible: true,
+          hiddenInEditor: false,
+          locked: false,
+          position: [0, 0, 0],
+          rotation: { ...ZERO_ROTATION },
+          size: DEFAULT_PROP_SIZE[shape],
+          vertexOffsets: {},
+        }
+
+        // Nasce APOIADO no chão e deslocado em X: um objeto novo enterrado
+        // até a metade (o pivô é o centro) ou dentro do anterior seria trabalho
+        // de arrumação antes mesmo de começar.
+        const prop: SceneProp = {
+          ...base,
+          position: [props.length * PROP_SPACING_M, propGroundOffset(base), 0],
+        }
+
+        set({
+          props: [...props, prop],
+          nextPropSeq: nextPropSeq + 1,
+          selectedPropId: id,
+          selectedFigureId: null,
+          selectedJointName: null,
+          activeAxis: null,
+        })
+        return id
+      },
+
+      removeProp: (id) => {
+        set((state) => ({
+          props: state.props.filter((prop) => prop.id !== id),
+          selectedPropId: state.selectedPropId === id ? null : state.selectedPropId,
+        }))
+      },
+
+      duplicateProp: (id) => {
+        const { props, nextPropSeq } = get()
+        if (props.length >= MAX_PROPS) return null
+
+        const original = props.find((prop) => prop.id === id)
+        if (!original) return null
+
+        const newId = `prop-${nextPropSeq}`
+        const duplicate: SceneProp = {
+          ...original,
+          id: newId,
+          name: `${original.name} (2)`,
+          rotation: { ...original.rotation },
+          // Os vértices arrastados vêm junto: a cópia existe justamente para
+          // reaproveitar a forma que deu trabalho.
+          vertexOffsets: { ...original.vertexOffsets },
+          position: [
+            original.position[0] + Math.max(original.size[0], PROP_SPACING_M),
+            original.position[1],
+            original.position[2],
+          ],
+        }
+
+        set({ props: [...props, duplicate], nextPropSeq: nextPropSeq + 1, selectedPropId: newId })
+        return newId
+      },
+
+      renameProp: (id, name) => {
+        set((state) => ({ props: updateProp(state.props, id, (prop) => ({ ...prop, name })) }))
+      },
+
+      setPropShape: (id, shape) => {
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) =>
+            prop.locked || prop.shape === shape
+              ? prop
+              : // Os desvios são índices de ponto de controle DAQUELA forma —
+                // mantê-los deformaria a nova em pontos aleatórios.
+                { ...prop, shape, vertexOffsets: {}, size: clampPropSize(prop.size, shape) },
+          ),
+        }))
+      },
+
+      setPropColor: (id, color) => {
+        const normalized = normalizePropColor(color)
+        if (!normalized) return
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) =>
+            prop.color === normalized ? prop : { ...prop, color: normalized },
+          ),
+        }))
+      },
+
+      setPropPosition: (id, position) => {
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) => (prop.locked ? prop : { ...prop, position })),
+        }))
+      },
+
+      setPropRotation: (id, rotation) => {
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) =>
+            prop.locked ? prop : { ...prop, rotation: { ...prop.rotation, ...rotation } },
+          ),
+        }))
+      },
+
+      setPropSize: (id, size) => {
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) =>
+            prop.locked ? prop : { ...prop, size: clampPropSize(size, prop.shape) },
+          ),
+        }))
+      },
+
+      togglePropVisible: (id) => {
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) => ({ ...prop, visible: !prop.visible })),
+        }))
+      },
+
+      togglePropHiddenInEditor: (id) => {
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) => ({ ...prop, hiddenInEditor: !prop.hiddenInEditor })),
+        }))
+      },
+
+      togglePropLocked: (id) => {
+        set((state) => {
+          const props = updateProp(state.props, id, (prop) => ({ ...prop, locked: !prop.locked }))
+          // Travar o que está selecionado limpa a seleção: o gizmo continuaria
+          // na tela sobre um objeto que já não aceita ser arrastado.
+          const locked = props.find((prop) => prop.id === id)?.locked === true
+          if (!locked || state.selectedPropId !== id) return { props }
+          return { props, selectedPropId: null }
+        })
+      },
+
+      setAllPropsHiddenInEditor: (hidden) => {
+        set((state) => {
+          if (state.props.every((prop) => prop.hiddenInEditor === hidden)) return {}
+          return { props: state.props.map((prop) => ({ ...prop, hiddenInEditor: hidden })) }
+        })
+      },
+
+      setPropVertex: (id, index, localPosition) => {
+        set((state) => {
+          const target = state.props.find((prop) => prop.id === id)
+          if (!target || target.locked) return {}
+          if (!Number.isInteger(index) || index < 0 || index >= controlPointCount(target.shape)) return {}
+
+          // O store guarda o DESVIO, não a posição: assim o objeto continua
+          // sendo "primitiva + o que foi puxado", e mudar o tamanho move a
+          // primitiva por baixo em vez de congelar a malha inteira.
+          const base = controlPointPosition(target.shape, target.size, {}, index)
+          const offset = clampVertexOffset([
+            localPosition[0] - base[0],
+            localPosition[1] - base[1],
+            localPosition[2] - base[2],
+          ])
+
+          return {
+            props: updateProp(state.props, id, (prop) => ({
+              ...prop,
+              vertexOffsets: withVertexOffset(prop.vertexOffsets, index, offset),
+            })),
+          }
+        })
+      },
+
+      clearPropVertices: (id) => {
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) =>
+            prop.locked || Object.keys(prop.vertexOffsets).length === 0
+              ? prop
+              : { ...prop, vertexOffsets: {} },
+          ),
+        }))
+      },
+
+      seatPropOnGround: (id) => {
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) =>
+            prop.locked
+              ? prop
+              : { ...prop, position: [prop.position[0], propGroundOffset(prop), prop.position[2]] },
+          ),
+        }))
+      },
+
+      selectProp: (id) => {
+        // Objeto travado não é selecionável — é justamente o que a trava promete.
+        if (id !== null && get().props.find((prop) => prop.id === id)?.locked) return
+        set({ selectedPropId: id, selectedFigureId: null, selectedJointName: null, activeAxis: null })
+      },
+
       toggleJointLock: (figureId, jointName) => {
         set((state) => ({ jointLocks: toggleLockInMap(state.jointLocks, figureId, jointName) }))
       },
@@ -2391,9 +2706,18 @@ export const useFiguresStore = create<FiguresState>()(
       // ENQUADRAR, como a órbita/pan/zoom do viewport — persiste com a cena
       // (autosave/snapshots/.glb), mas um Ctrl+Z de pose não pode teleportar a
       // câmera (decidido com o usuário).
+      // Os objetos de cena (item 42) entram no histórico como os bonecos:
+      // criar, mover, redimensionar e puxar um vértice são edições de conteúdo.
+      // `selectedPropId` fica de fora, como `selectedFigureId` — é ponteiro de
+      // seleção, não conteúdo. As opções "ocultar na bancada" e "travar" ficam
+      // DENTRO do objeto e, portanto, no histórico: são propriedades da cena,
+      // como a visibilidade do boneco (que também é desfazível), e não modo de
+      // trabalho por sessão como as travas de junta do #42.
       partialize: (state) => ({
         figures: state.figures,
         nextFigureSeq: state.nextFigureSeq,
+        props: state.props,
+        nextPropSeq: state.nextPropSeq,
         cameraBookmarks: state.cameraBookmarks,
         nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
         environment: state.environment,
@@ -2413,6 +2737,8 @@ export const useFiguresStore = create<FiguresState>()(
       equality: (past, current) =>
         past.figures === current.figures &&
         past.nextFigureSeq === current.nextFigureSeq &&
+        past.props === current.props &&
+        past.nextPropSeq === current.nextPropSeq &&
         past.cameraBookmarks === current.cameraBookmarks &&
         past.nextCameraBookmarkSeq === current.nextCameraBookmarkSeq &&
         past.environment === current.environment &&

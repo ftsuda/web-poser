@@ -49,7 +49,34 @@
       "clipboardPaste": "Paste",
       "clipboardPasteHint": "Applies this pose to the selected figure. Its spot on the floor, its height and its locked joints stay put.",
       "clipboardRemove": "Delete {{name}}",
-      "clipboardNoSelection": "Select a figure to paste one of these poses."
+      "clipboardNoSelection": "Select a figure to paste one of these poses.",
+      "props": {
+        "title": "Scene objects",
+        "empty": "No objects in the scene yet.",
+        "add": "Add object",
+        "addLimitReached": "Limit of {{max}} objects reached",
+        "defaultName": "Object {{index}}",
+        "nameLabel": "Object name",
+        "shape": "Shape",
+        "changeColor": "Change object color",
+        "duplicate": "Duplicate object",
+        "remove": "Remove object",
+        "toggleVisible": "Show/hide object",
+        "toggleVisibleHint": "When off, the object disappears from everything — including the PNG and the video.",
+        "toggleHiddenInEditor": "Hide object on the workbench",
+        "toggleHiddenInEditorHint": "Hidden from the working view only, so it stays out of the way while posing; still shows up in the PNG and the video.",
+        "toggleLocked": "Lock object",
+        "toggleLockedHint": "When locked, the object stays visible but cannot be selected by accident in the viewport.",
+        "hideAllInEditor": "Hide all objects on the workbench",
+        "shapes": {
+          "box": "Box / cuboid",
+          "cylinder": "Cylinder",
+          "sphere": "Sphere",
+          "cone": "Cone",
+          "plane": "Plane",
+          "ramp": "Ramp"
+        }
+      }
     },
     "properties": {
       "title": "Properties",
@@ -295,7 +322,24 @@
       "gizmoMode": "Gizmo",
       "gizmoTranslate": "Move",
       "gizmoRotate": "Rotate",
-      "gizmoDragHint": "Drag the joint in the viewport: the joints above it are pulled up to their limits, with the root fixed. When they all saturate, the movement locks."
+      "gizmoDragHint": "Drag the joint in the viewport: the joints above it are pulled up to their limits, with the root fixed. When they all saturate, the movement locks.",
+      "prop": {
+        "tool": "Object tool",
+        "tools": {
+          "translate": "Move",
+          "rotate": "Rotate",
+          "scale": "Resize",
+          "vertex": "Vertices"
+        },
+        "size": "Size (m)",
+        "position": "Position (m)",
+        "rotation": "Rotation (°)",
+        "seatOnGround": "Rest on ground",
+        "vertexCount": "{{moved}} of {{total}} vertices moved",
+        "clearVertices": "Reset deformation",
+        "shapeResetsVertices": "Changing the shape discards the moved vertices.",
+        "lockedHint": "Object is locked: unlock it in the object list to edit it."
+      }
     },
     "camera": {
       "title": "Camera",
@@ -501,12 +545,12 @@
       "repeat": "Repeat",
       "repeatHint": "On screen only: the exported video still contains a single pass.",
       "onionSkin": "Onion skin",
-    "playheadHere": "The timeline stopped at this keyframe",
-    "onionSkinMode": "Show",
-    "onionSkinModeBoth": "Previous and next",
-    "onionSkinModePrevious": "Previous only",
-    "onionSkinModeNext": "Next only",
-    "onionSkinHint": "Shows the neighbouring keyframes as ghosts around the one at the playhead — the previous one warm, the next one cool. On screen only: it stays out of the image and the video.",
+      "playheadHere": "The timeline stopped at this keyframe",
+      "onionSkinMode": "Show",
+      "onionSkinModeBoth": "Previous and next",
+      "onionSkinModePrevious": "Previous only",
+      "onionSkinModeNext": "Next only",
+      "onionSkinHint": "Shows the neighbouring keyframes as ghosts around the one at the playhead — the previous one warm, the next one cool. On screen only: it stays out of the image and the video.",
       "speed": "Speed (×)",
       "speedHint": "Applies to the whole timeline, both when playing and in the video: 0.50 plays at half speed, 1.15 speeds it up by 15%. Keyframes stay where they are. Final video: {{duration}}.",
       "thumbnails": "Generate thumbnails",

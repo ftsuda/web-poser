@@ -8,6 +8,7 @@ import { exportFigureToGlb, importFigureFromGlb } from '../persistence/sceneFile
 import { usePoseClipboardStore } from '../store/poseClipboardStore'
 import { importErrorKey } from './fileFeedback'
 import { CollapsiblePanel } from './CollapsiblePanel'
+import { PropsSection } from './PropsSection'
 
 interface FigureRowProps {
   figure: Figure
@@ -232,6 +233,10 @@ export function FiguresPanel() {
       )}
 
       <PoseClipboard selectedFigure={selectedFigure ?? null} />
+
+      {/* Objetos de cena (item 42): subseção deste painel, e não painel
+          próprio — decisão do usuário, para não gastar mais uma coluna. */}
+      <PropsSection />
     </CollapsiblePanel>
   )
 }

@@ -20,6 +20,8 @@ export function ScenesPanel() {
   const sceneName = useFiguresStore((state) => state.sceneName)
   const figures = useFiguresStore((state) => state.figures)
   const nextFigureSeq = useFiguresStore((state) => state.nextFigureSeq)
+  const props = useFiguresStore((state) => state.props)
+  const nextPropSeq = useFiguresStore((state) => state.nextPropSeq)
   const environment = useFiguresStore((state) => state.environment)
   const cameraBookmarks = useFiguresStore((state) => state.cameraBookmarks)
   const nextCameraBookmarkSeq = useFiguresStore((state) => state.nextCameraBookmarkSeq)
@@ -68,6 +70,8 @@ export function ScenesPanel() {
       name: sceneName,
       figures,
       nextFigureSeq,
+      props,
+      nextPropSeq,
       environment,
       cameraBookmarks,
       nextCameraBookmarkSeq,

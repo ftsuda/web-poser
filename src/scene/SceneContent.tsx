@@ -1,4 +1,4 @@
-import { GRID_DIVISIONS, GROUND_SIZE, OVERLAY_NAMES } from './constants'
+import { GRID_DIVISIONS, GROUND_SIZE, OVERLAY_NAMES, SHADOW_INTENSITY } from './constants'
 
 export interface SceneContentProps {
   grid: boolean
@@ -13,6 +13,10 @@ export function SceneContent({ grid }: SceneContentProps) {
         intensity={1.2}
         castShadow
         shadow-mapSize={[1024, 1024]}
+        // Sombra mais clara no chão (ver `SHADOW_INTENSITY`) — vale para tudo
+        // o que projeta, porque a escuridão da sombra é da luz e não de quem a
+        // projeta.
+        shadow-intensity={SHADOW_INTENSITY}
       />
 
       <mesh name="ground" rotation={[-Math.PI / 2, 0, 0]} receiveShadow>

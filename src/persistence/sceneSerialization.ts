@@ -17,6 +17,18 @@ import { DEFAULT_SCENE_CAMERA, type CameraViewState } from '../scene/cameraMove'
 import { clampFocalLength } from '../scene/lens'
 import { DEFAULT_FIGURE_COLOR, normalizeFigureColor } from '../store/figuresStore'
 import type { BackgroundTone, CameraBookmark, CameraProjection, EnvironmentSettings, Figure } from '../store/figuresStore'
+import { controlPointCount } from '../props/propGeometry'
+import {
+  DEFAULT_PROP_COLOR,
+  DEFAULT_PROP_SIZE,
+  clampPropSize,
+  isPropShape,
+  normalizePropColor,
+  sanitizeVertexOffsets,
+  type PropShape,
+  type SceneProp,
+  type VertexOffsets,
+} from '../props/sceneProp'
 
 export const SCENE_EXTRAS_VERSION = 1
 
@@ -43,6 +55,28 @@ export interface CameraBookmarkExtras {
   zoom: number
   /** Topo da tela — ausente nos arquivos gravados antes do ângulo holandês (#46). */
   up?: Vec3Tuple
+}
+
+/**
+ * Objeto de cena serializado (item 42). Guarda **forma + tamanho + desvios**,
+ * e não uma malha: o arquivo continua pequeno, o objeto continua editável como
+ * primitiva depois de reabrir, e a malha de verdade é reconstruída por
+ * `propGeometry.buildPropGeometry`.
+ */
+export interface PropExtras {
+  id: string
+  name: string
+  shape: PropShape
+  color: string
+  visible: boolean
+  hiddenInEditor: boolean
+  locked: boolean
+  position: Vec3Tuple
+  rotation: Vec3Tuple
+  /** Medida real por eixo, em metros. */
+  size: Vec3Tuple
+  /** Vértices arrastados à mão, por índice de ponto de controle. Ausente quando o objeto está intacto. */
+  vertices?: Record<string, Vec3Tuple>
 }
 
 /** A câmera de cena serializada (fase 11). Mesmo formato do `CameraViewState`. */
@@ -73,6 +107,14 @@ export interface SceneExtras {
   nextCameraBookmarkSeq: number
   cameraBookmarks: CameraBookmarkExtras[]
   figures: FigureExtras[]
+  /**
+   * Objetos de cena (item 42). Campo ADITIVO, sem subir
+   * `SCENE_EXTRAS_VERSION` — mesmo precedente do `sceneCamera` e do
+   * `snapshotCounter`: um arquivo gravado antes disto abre com cena sem
+   * objetos, que é exatamente o que ele tinha.
+   */
+  props: PropExtras[]
+  nextPropSeq: number
 }
 
 /** Estado de uma cena de trabalho, no formato usado pelo `figuresStore`. */
@@ -80,6 +122,8 @@ export interface SceneWorkingState {
   name: string
   figures: Figure[]
   nextFigureSeq: number
+  props: SceneProp[]
+  nextPropSeq: number
   environment: EnvironmentSettings
   cameraBookmarks: CameraBookmark[]
   nextCameraBookmarkSeq: number
@@ -159,6 +203,59 @@ export function figureFromExtras(extras: unknown, fallbackIndex: number): Figure
     // copiado do bloco (DECISOES.md #45) — sem isso um punho salvo reabriria
     // com o indicador esticado, virando um "apontando".
     pose: withLegacyIndexFinger(pose),
+  }
+}
+
+export function propToExtras(prop: SceneProp): PropExtras {
+  const vertices: Record<string, Vec3Tuple> = {}
+  for (const [index, offset] of Object.entries(prop.vertexOffsets)) {
+    vertices[index] = [...offset]
+  }
+
+  return {
+    id: prop.id,
+    name: prop.name,
+    shape: prop.shape,
+    color: prop.color,
+    visible: prop.visible,
+    hiddenInEditor: prop.hiddenInEditor,
+    locked: prop.locked,
+    position: [...prop.position],
+    rotation: rotationToTuple(prop.rotation),
+    size: [...prop.size],
+    // Objeto intacto não grava a chave: é o caso comum, e um `{}` por objeto
+    // em cada cena do catálogo pesaria no `localStorage` à toa.
+    ...(Object.keys(vertices).length > 0 ? { vertices } : {}),
+  }
+}
+
+/**
+ * Reconstrói um objeto de um bloco não confiável. A FORMA é o campo que manda:
+ * ela decide o tamanho padrão e quantos pontos de controle existem, e por isso
+ * é resolvida antes de tamanho e vértices. Uma forma desconhecida (arquivo de
+ * uma versão futura, ou editado à mão) vira caixa — o objeto continua na cena,
+ * no lugar certo, em vez de desaparecer sem aviso.
+ */
+export function propFromExtras(extras: unknown, fallbackIndex: number): SceneProp {
+  const source = (typeof extras === 'object' && extras !== null ? extras : {}) as Record<string, unknown>
+  const shape: PropShape = isPropShape(source.shape) ? source.shape : 'box'
+
+  const offsets: VertexOffsets = sanitizeVertexOffsets(source.vertices, controlPointCount(shape))
+
+  return {
+    id: typeof source.id === 'string' ? source.id : `prop-${fallbackIndex + 1}`,
+    name: typeof source.name === 'string' ? source.name : `Object ${fallbackIndex + 1}`,
+    shape,
+    color: normalizePropColor(source.color) ?? DEFAULT_PROP_COLOR,
+    visible: typeof source.visible === 'boolean' ? source.visible : true,
+    // Os dois padrões são o estado "sem nada de especial": um objeto lido de um
+    // arquivo antigo (ou de fora) aparece na bancada e aceita clique.
+    hiddenInEditor: typeof source.hiddenInEditor === 'boolean' ? source.hiddenInEditor : false,
+    locked: typeof source.locked === 'boolean' ? source.locked : false,
+    position: tupleToVec3(source.position, [0, 0, 0]),
+    rotation: tupleToRotation(source.rotation),
+    size: clampPropSize(source.size ?? DEFAULT_PROP_SIZE[shape], shape),
+    vertexOffsets: offsets,
   }
 }
 
@@ -254,6 +351,8 @@ export function sceneToExtras(scene: SceneWorkingState): SceneExtras {
     nextCameraBookmarkSeq: scene.nextCameraBookmarkSeq,
     cameraBookmarks: scene.cameraBookmarks.map(cameraBookmarkToExtras),
     figures: scene.figures.map(figureToExtras),
+    props: scene.props.map(propToExtras),
+    nextPropSeq: scene.nextPropSeq,
   }
 }
 
@@ -269,6 +368,11 @@ export function sceneFromExtras(extras: unknown): SceneWorkingState {
   const figuresSource = Array.isArray(source.figures) ? source.figures : []
   const figures = figuresSource.map((figureExtras, index) => figureFromExtras(figureExtras, index))
 
+  // Arquivo gravado antes do item 42 simplesmente não tem o campo: a cena abre
+  // sem objetos, que é o conteúdo que ela sempre teve.
+  const propsSource = Array.isArray(source.props) ? source.props : []
+  const props = propsSource.map((propExtras, index) => propFromExtras(propExtras, index))
+
   const bookmarksSource = Array.isArray(source.cameraBookmarks) ? source.cameraBookmarks : []
   const cameraBookmarks = bookmarksSource.map((bookmarkExtras, index) =>
     cameraBookmarkFromExtras(bookmarkExtras, index),
@@ -278,6 +382,8 @@ export function sceneFromExtras(extras: unknown): SceneWorkingState {
     name: typeof source.name === 'string' && source.name.trim() !== '' ? source.name : 'Cena 1',
     figures,
     nextFigureSeq: typeof source.nextFigureSeq === 'number' ? source.nextFigureSeq : figures.length + 1,
+    props,
+    nextPropSeq: typeof source.nextPropSeq === 'number' ? source.nextPropSeq : props.length + 1,
     environment: environmentFromExtras(source.environment),
     sceneCamera: sceneCameraFromExtras(source.sceneCamera),
     cameraBookmarks,

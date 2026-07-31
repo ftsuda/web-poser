@@ -49,7 +49,34 @@
       "clipboardPaste": "Colar",
       "clipboardPasteHint": "Aplica esta pose ao boneco selecionado. Onde ele está no chão, a altura e as juntas travadas dele não mudam.",
       "clipboardRemove": "Apagar {{name}}",
-      "clipboardNoSelection": "Selecione um boneco para colar uma destas poses."
+      "clipboardNoSelection": "Selecione um boneco para colar uma destas poses.",
+      "props": {
+        "title": "Objetos de cena",
+        "empty": "Nenhum objeto na cena ainda.",
+        "add": "Adicionar objeto",
+        "addLimitReached": "Limite de {{max}} objetos atingido",
+        "defaultName": "Objeto {{index}}",
+        "nameLabel": "Nome do objeto",
+        "shape": "Forma",
+        "changeColor": "Trocar cor do objeto",
+        "duplicate": "Duplicar objeto",
+        "remove": "Remover objeto",
+        "toggleVisible": "Mostrar/ocultar objeto",
+        "toggleVisibleHint": "Desligado, o objeto some de tudo — inclusive do PNG e do vídeo.",
+        "toggleHiddenInEditor": "Ocultar objeto na bancada",
+        "toggleHiddenInEditorHint": "Some só da tela de trabalho, para não atrapalhar ao posar; continua saindo no PNG e no vídeo.",
+        "toggleLocked": "Travar objeto",
+        "toggleLockedHint": "Travado, o objeto continua visível mas não pode ser selecionado por engano no viewport.",
+        "hideAllInEditor": "Ocultar todos os objetos na bancada",
+        "shapes": {
+          "box": "Caixa / paralelepípedo",
+          "cylinder": "Cilindro",
+          "sphere": "Esfera",
+          "cone": "Cone",
+          "plane": "Plano",
+          "ramp": "Rampa"
+        }
+      }
     },
     "properties": {
       "title": "Propriedades",
@@ -295,7 +322,24 @@
       "gizmoMode": "Gizmo",
       "gizmoTranslate": "Mover",
       "gizmoRotate": "Girar",
-      "gizmoDragHint": "Arraste a junta no viewport: as juntas acima dela são puxadas até os limites articulares, com a raiz fixa. No limite de todas, o movimento trava."
+      "gizmoDragHint": "Arraste a junta no viewport: as juntas acima dela são puxadas até os limites articulares, com a raiz fixa. No limite de todas, o movimento trava.",
+      "prop": {
+        "tool": "Ferramenta do objeto",
+        "tools": {
+          "translate": "Mover",
+          "rotate": "Girar",
+          "scale": "Medir",
+          "vertex": "Vértices"
+        },
+        "size": "Tamanho (m)",
+        "position": "Posição (m)",
+        "rotation": "Rotação (°)",
+        "seatOnGround": "Apoiar no chão",
+        "vertexCount": "{{moved}} de {{total}} vértices movidos",
+        "clearVertices": "Desfazer deformação",
+        "shapeResetsVertices": "Trocar a forma descarta os vértices movidos.",
+        "lockedHint": "Objeto travado: destrave na lista de objetos para editá-lo."
+      }
     },
     "camera": {
       "title": "Câmera",
@@ -501,12 +545,12 @@
       "repeat": "Repetir",
       "repeatHint": "Só na tela: o vídeo exportado continua com uma passada só.",
       "onionSkin": "Papel-cebola",
-    "playheadHere": "A linha do tempo parou neste keyframe",
-    "onionSkinMode": "Mostrar",
-    "onionSkinModeBoth": "Anterior e seguinte",
-    "onionSkinModePrevious": "Só o anterior",
-    "onionSkinModeNext": "Só o seguinte",
-    "onionSkinHint": "Mostra em fantasma os keyframes vizinhos do que está no playhead — o anterior em quente, o seguinte em frio. Só na tela: não sai na imagem nem no vídeo.",
+      "playheadHere": "A linha do tempo parou neste keyframe",
+      "onionSkinMode": "Mostrar",
+      "onionSkinModeBoth": "Anterior e seguinte",
+      "onionSkinModePrevious": "Só o anterior",
+      "onionSkinModeNext": "Só o seguinte",
+      "onionSkinHint": "Mostra em fantasma os keyframes vizinhos do que está no playhead — o anterior em quente, o seguinte em frio. Só na tela: não sai na imagem nem no vídeo.",
       "speed": "Velocidade (×)",
       "speedHint": "Vale para a linha do tempo inteira, tocando e no vídeo: 0,50 toca na metade da velocidade, 1,15 acelera 15%. Os keyframes não saem do lugar. Vídeo final: {{duration}}.",
       "thumbnails": "Gerar miniaturas",

@@ -4,7 +4,7 @@ import { formatSnapshotFilename } from '../snapshot/snapshotNaming'
 import { writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { useFiguresStore } from '../store/figuresStore'
 import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
-import { hideSceneOverlays, renderAtResolution } from './sceneCapture'
+import { hideSceneOverlays, renderAtResolution, revealEditorHidden } from './sceneCapture'
 import { getSceneCameraObject } from './sceneCameraObject'
 
 /**
@@ -53,6 +53,10 @@ export function SnapshotCapture() {
     // foto é da câmera, não da bancada — o mesmo contrato do vídeo.
     const camera = getSceneCameraObject()
     const restoreScene = hideOverlaysOnCapture ? hideSceneOverlays(scene) : () => {}
+    // Sempre, mesmo com "ocultar grade/gizmos" desligado: o cenário tirado da
+    // frente para posar (item 42) continua sendo conteúdo da cena, e a opção de
+    // esconder apoios de tela não decide sobre ele.
+    const restoreEditorHidden = revealEditorHidden(scene)
 
     const sequence = consumeSnapshotNumber()
     const filename = formatSnapshotFilename(sceneName, sequence)
@@ -69,6 +73,7 @@ export function SnapshotCapture() {
     // Overlays de volta na mesma tarefa síncrona — `toBlob` já capturou o
     // conteúdo no momento da chamada, então isso não gera flash visual. A tela
     // volta pela câmera ATIVA, que no modo edição é a da bancada.
+    restoreEditorHidden()
     restoreScene()
     gl.render(scene, getThree().camera)
 

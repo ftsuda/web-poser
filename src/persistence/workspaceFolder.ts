@@ -42,6 +42,8 @@ export interface LoadedWorkspace {
 function sceneToSnapshotData(scene: {
   figures: SceneSnapshotData['figures']
   nextFigureSeq: number
+  props: SceneSnapshotData['props']
+  nextPropSeq: number
   environment: SceneSnapshotData['environment']
   cameraBookmarks: SceneSnapshotData['cameraBookmarks']
   nextCameraBookmarkSeq: number
@@ -51,6 +53,8 @@ function sceneToSnapshotData(scene: {
   return {
     figures: scene.figures,
     nextFigureSeq: scene.nextFigureSeq,
+    props: scene.props,
+    nextPropSeq: scene.nextPropSeq,
     environment: scene.environment,
     cameraBookmarks: scene.cameraBookmarks,
     nextCameraBookmarkSeq: scene.nextCameraBookmarkSeq,

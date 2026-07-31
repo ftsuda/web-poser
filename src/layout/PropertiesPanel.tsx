@@ -19,6 +19,7 @@ import { AXIS_COLORS } from '../scene/axisColors'
 import { useFiguresStore } from '../store/figuresStore'
 import { useUIStore, type GizmoMode } from '../store/uiStore'
 import { CollapsiblePanel } from './CollapsiblePanel'
+import { PropProperties } from './PropsSection'
 
 const POSITION_AXES: readonly Axis[] = ['x', 'y', 'z']
 
@@ -514,6 +515,8 @@ export function PropertiesPanel() {
     null,
   )
   const figures = useFiguresStore((state) => state.figures)
+  const props = useFiguresStore((state) => state.props)
+  const selectedPropId = useFiguresStore((state) => state.selectedPropId)
   const selectedFigureId = useFiguresStore((state) => state.selectedFigureId)
   const selectedJointName = useFiguresStore((state) => state.selectedJointName)
   const selectJoint = useFiguresStore((state) => state.selectJoint)
@@ -545,6 +548,19 @@ export function PropertiesPanel() {
   useFiguresStore((state) => state.jointLimits)
 
   const figure = figures.find((f) => f.id === selectedFigureId)
+  const selectedProp = props.find((prop) => prop.id === selectedPropId)
+
+  // Objeto de cena selecionado (item 42): o painel mostra as MEDIDAS dele. Vem
+  // antes do caminho do boneco porque as duas seleções são exclusivas — com um
+  // objeto escolhido não há boneco escolhido, e cair no "nada selecionado"
+  // seria mentira.
+  if (selectedProp) {
+    return (
+      <CollapsiblePanel panelKey="properties" className="panel--properties" title={t('panels.properties.title')}>
+        <PropProperties prop={selectedProp} />
+      </CollapsiblePanel>
+    )
+  }
 
   if (!figure || !selectedJointName) {
     return (

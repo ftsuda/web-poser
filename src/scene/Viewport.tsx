@@ -9,6 +9,7 @@ import { isDraggableJoint } from '../figure/dragSolver'
 import { ROOT_JOINT_NAME } from '../figure/skeleton'
 import { useFiguresStore } from '../store/figuresStore'
 import { useCameraStore } from '../store/cameraStore'
+import { selectTarget } from '../store/selection'
 import { useUIStore } from '../store/uiStore'
 import { AnimationPlayer } from './AnimationPlayer'
 import { CameraRig } from './CameraRig'
@@ -23,6 +24,7 @@ import { SceneContent } from './SceneContent'
 import { getViewportOrthographicCamera, getViewportPerspectiveCamera } from './viewportCameras'
 import { OnionSkin } from './OnionSkin'
 import { SceneFigures } from './SceneFigures'
+import { SceneProps } from './SceneProps'
 import { SelectionGizmo } from './SelectionGizmo'
 import { VerticalRuler } from './VerticalRuler'
 
@@ -31,8 +33,8 @@ export function Viewport() {
   const environment = useFiguresStore((state) => state.environment)
   const figures = useFiguresStore((state) => state.figures)
   const selectedFigureId = useFiguresStore((state) => state.selectedFigureId)
+  const selectedPropId = useFiguresStore((state) => state.selectedPropId)
   const selectedJointName = useFiguresStore((state) => state.selectedJointName)
-  const selectFigure = useFiguresStore((state) => state.selectFigure)
   const gizmoMode = useUIStore((state) => state.gizmoMode)
   const rulerVisible = useUIStore((state) => state.rulerVisible)
   const viewMode = useCameraStore((state) => state.viewMode)
@@ -43,11 +45,13 @@ export function Viewport() {
   const [jointObjects, setJointObjects] = useState(() => new Map<string, THREE.Object3D>())
   const [isGizmoDragging, setIsGizmoDragging] = useState(false)
 
-  // Seleção exclusiva (fase 11): escolher um boneco desseleciona a câmera de
-  // cena — o caminho inverso (clicar na câmera) já limpa o boneco no clique.
+  // Seleção exclusiva (fase 11, estendida no item 42): escolher um boneco OU um
+  // objeto de cena desseleciona a câmera. É a rede de segurança para quem
+  // chama `selectFigure`/`selectProp` direto (o clique no viewport e os
+  // painéis); o caminho canônico é o `selectTarget` de `store/selection.ts`.
   useEffect(() => {
-    if (selectedFigureId) setCameraSelected(false)
-  }, [selectedFigureId, setCameraSelected])
+    if (selectedFigureId || selectedPropId) setCameraSelected(false)
+  }, [selectedFigureId, selectedPropId, setCameraSelected])
 
   const handleJointRef = (figureId: string, jointName: string, object: THREE.Group | null) => {
     const key = `${figureId}:${jointName}`
@@ -95,10 +99,7 @@ export function Viewport() {
       <Canvas
         shadows
         camera={{ position: CAMERA_DEFAULTS.position, fov: CAMERA_DEFAULTS.fov }}
-        onPointerMissed={() => {
-          selectFigure(null)
-          setCameraSelected(false)
-        }}
+        onPointerMissed={() => selectTarget(null)}
       >
         <color attach="background" args={[BACKGROUND_COLORS[environment.background]]} />
         <SceneContent grid={environment.grid} />
@@ -112,6 +113,9 @@ export function Viewport() {
             `children`: é o que permite ao exportador de vídeo commitar a cena
             de cada quadro de forma síncrona (ver `SceneFigures.tsx`). */}
         <SceneFigures onJointRef={handleJointRef} />
+        {/* Objetos de cena (item 42) — cenário, e portanto conteúdo: entram
+            na cena como os bonecos, e não como apoio de tela. */}
+        <SceneProps onDraggingChange={setIsGizmoDragging} />
         {/* Papel-cebola (item 31) DEPOIS dos bonecos: os fantasmas são
             translúcidos e sem escrita de profundidade, e desenhar por último é
             o que os deixa somar por cima em vez de recortar a cena. */}
