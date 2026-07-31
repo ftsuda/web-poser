@@ -1,8 +1,11 @@
 import { create } from 'zustand'
+import type { FigureStyle } from '../figure/skeleton'
 import {
   loadUIPreferences,
   saveUIPreferences,
+  type SectionKey,
   type CollapsedPanels,
+  type CollapsedSections,
   type PanelKey,
   type UIPreferences,
 } from '../persistence/uiPreferences'
@@ -79,6 +82,13 @@ export interface UIState {
   collapsedPanels: CollapsedPanels
   togglePanel: (panel: PanelKey) => void
 
+  /**
+   * Seções recolhidas dentro dos painéis (pedido do usuário, 2026-07-31) —
+   * mesmo mecanismo e mesmo arquivo do recolhimento dos painéis.
+   */
+  collapsedSections: CollapsedSections
+  toggleSection: (section: SectionKey) => void
+
   /** Régua vertical do viewport (fase 9, item 11) — preferência de tela, persistida junto dos painéis. */
   rulerVisible: boolean
   toggleRuler: () => void
@@ -100,6 +110,15 @@ export interface UIState {
   /** Aplicar uma pose em dupla também posa o outro boneco (DECISOES.md #41)? Preferência de ferramenta, persistida. */
   pairPoseEnabled: boolean
   togglePairPose: () => void
+
+  /**
+   * Casca visual de TODOS os bonecos da cena — manequim de madeira ou palito de
+   * juntas grandes para toque (`skeleton.ts`, DECISOES.md #81). Vive aqui, e não
+   * no `environment` do `figuresStore`, porque é modo de visualização: fica fora
+   * do undo e fora dos arquivos de cena, como a régua e a máscara.
+   */
+  figureStyle: FigureStyle
+  setFigureStyle: (style: FigureStyle) => void
 }
 
 /**
@@ -139,6 +158,15 @@ export const useUIStore = create<UIState>()((set) => ({
     set((state) => persist(state, { collapsedPanels: { ...state.collapsedPanels, [panel]: !state.collapsedPanels[panel] } }))
   },
 
+  collapsedSections: INITIAL_UI_PREFERENCES.collapsedSections,
+  toggleSection: (section) => {
+    set((state) =>
+      persist(state, {
+        collapsedSections: { ...state.collapsedSections, [section]: !state.collapsedSections[section] },
+      }),
+    )
+  },
+
   rulerVisible: INITIAL_UI_PREFERENCES.rulerVisible,
   toggleRuler: () => set((state) => persist(state, { rulerVisible: !state.rulerVisible })),
 
@@ -156,6 +184,9 @@ export const useUIStore = create<UIState>()((set) => ({
 
   pairPoseEnabled: INITIAL_UI_PREFERENCES.pairPoseEnabled,
   togglePairPose: () => set((state) => persist(state, { pairPoseEnabled: !state.pairPoseEnabled })),
+
+  figureStyle: INITIAL_UI_PREFERENCES.figureStyle,
+  setFigureStyle: (style) => set((state) => persist(state, { figureStyle: style })),
 }))
 
 /**
@@ -166,9 +197,11 @@ export const useUIStore = create<UIState>()((set) => ({
 function persist<T extends Partial<UIPreferences>>(state: UIState, change: T): T {
   saveUIPreferences({
     collapsedPanels: state.collapsedPanels,
+    collapsedSections: state.collapsedSections,
     rulerVisible: state.rulerVisible,
     frameMaskSource: state.frameMaskSource,
     pairPoseEnabled: state.pairPoseEnabled,
+    figureStyle: state.figureStyle,
     ...change,
   })
   return change

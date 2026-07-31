@@ -1263,10 +1263,199 @@ export const BONE_STYLES: Record<string, BoneStyle> = {
   'ball.R': { kind: 'hidden' },
 }
 
-/** Peças visuais de uma junta. Valida o nome contra o esqueleto (mesmo erro de `getJoint`). */
-export function getJointParts(name: string): readonly SegmentPart[] {
+// ---------------------------------------------------------------------------
+// VARIANTE PALITO — casca alternativa para tela pequena e toque
+// ---------------------------------------------------------------------------
+//
+// Segunda casca visual sobre EXATAMENTE o mesmo esqueleto: mesmas juntas,
+// mesmos offsets, mesmos limites. Só as tabelas de aparência mudam, então
+// nenhuma pose, arquivo ou solver sabe que ela existe (ver DECISOES.md #81).
+//
+// Por que ela existe: a versão de celular do editor (PLANO.md > "Edição em
+// dispositivo touch") mostra o boneco em vistas pequenas, onde os blocos
+// entalhados do manequim viram uma mancha ilegível, e a seleção é por DEDO —
+// as bolas de junta do manequim (0,011 m nos nós dos dedos, 0,022 na clavícula)
+// são alvos impossíveis num toque. Aqui cada junta é uma esfera deliberadamente
+// GRANDE e cada osso um cilindro fino, invertendo a proporção: o que se toca
+// fica gordo, o que só liga fica magro.
+//
+// Duas decisões de dimensionamento que não são óbvias:
+//
+// - **Nem toda junta engorda igual.** `upperChest`/`neck` estão a 0,04 m um do
+//   outro e `clavicle` a 0,1 do `upperChest`: com o raio das juntas grandes
+//   (0,045-0,05) elas viravam uma bola só, e um alvo de toque que engole o
+//   vizinho não é alvo. Elas ficam pequenas de propósito. O `wrist` cai a 0,032
+//   pelo mesmo motivo — `thumb1` sai a 0,046 dele.
+// - **Os dedos NÃO são dimensionados para toque.** Eles estão fora do arrasto
+//   de cadeia (`HAND_JOINTS` em `dragSolver.ts`), então engordá-los não daria
+//   nenhum alvo novo e só transformaria a mão num bloco. Ficam no tamanho que
+//   ainda lê como mão.
+//
+// Aqui nenhum osso é `hidden`: os três trechos escondidos no manequim
+// (root→hip, ankle→ball, wrist→indexBase) só estavam cobertos pelos blocos da
+// pelve, do pé e da palma, que não existem nesta casca — sem eles, esconder
+// deixaria vãos no quadril, no pé e na mão.
+
+export type FigureStyle = 'wooden' | 'stick'
+
+/** As duas cascas, na ordem em que aparecem no seletor da Toolbar. */
+export const FIGURE_STYLES: readonly FigureStyle[] = ['wooden', 'stick']
+
+export const DEFAULT_FIGURE_STYLE: FigureStyle = 'wooden'
+
+/** Nome da junta sem o sufixo de lado — as medidas do palito são iguais em L e R. */
+function baseJointName(name: string): string {
+  return name.replace(/\.(L|R)$/, '')
+}
+
+/**
+ * Raio da esfera de cada junta no palito, por nome SEM lado (m, na altura de
+ * referência). Ver o bloco acima para o porquê de as juntas do tronco alto e as
+ * da mão fugirem do "grande para o dedo".
+ *
+ * Exportada para o teste de cobertura poder cobrar uma medida explícita de cada
+ * junta do esqueleto — o `FALLBACK_STICK_RADIUS` existe para a aplicação não
+ * quebrar, não para ser usado.
+ */
+export const STICK_JOINT_RADII: Record<string, number> = {
+  root: 0.05,
+  spine: 0.042,
+  // 0,038 e não 0,045 como as outras juntas grandes: o `upperChest` está a só
+  // 0,04 m acima, e com 0,045 a esfera do peito continha o CENTRO dele — a junta
+  // virava uma calota protuberante em vez de um alvo. Invariante verificado em
+  // `skeletonStick.test.ts` ("nenhuma esfera contém o centro da vizinha").
+  chest: 0.038,
+  upperChest: 0.028,
+  neck: 0.028,
+  // `head` não usa esta tabela (é a única com peça própria, `STICK_HEAD_PARTS`),
+  // mas a entrada existe para a checagem de cobertura não abrir exceção.
+  head: 0.075,
+  clavicle: 0.028,
+  shoulder: 0.05,
+  elbow: 0.045,
+  wrist: 0.032,
+  thumb1: 0.014,
+  thumb2: 0.012,
+  indexBase: 0.012,
+  indexMid: 0.011,
+  indexTip: 0.01,
+  fingersBase: 0.016,
+  fingersMid: 0.014,
+  fingersTip: 0.013,
+  hip: 0.045,
+  knee: 0.045,
+  ankle: 0.04,
+  ball: 0.03,
+}
+
+/** Raio do cilindro de cada osso no palito, pelo nome SEM lado da junta FILHA (m). Exportada pelo mesmo motivo da tabela de juntas. */
+export const STICK_BONE_RADII: Record<string, number> = {
+  spine: 0.024,
+  chest: 0.026,
+  upperChest: 0.02,
+  neck: 0.018,
+  head: 0.018,
+  clavicle: 0.016,
+  shoulder: 0.016,
+  elbow: 0.02,
+  wrist: 0.018,
+  thumb1: 0.008,
+  thumb2: 0.008,
+  indexBase: 0.008,
+  indexMid: 0.007,
+  indexTip: 0.007,
+  fingersBase: 0.012,
+  fingersMid: 0.01,
+  fingersTip: 0.01,
+  hip: 0.022,
+  knee: 0.024,
+  ankle: 0.021,
+  ball: 0.018,
+}
+
+/**
+ * Usado se uma junta nova entrar no esqueleto sem medida de palito: a casca sai
+ * feia, mas a aplicação não quebra em runtime por causa de uma tabela de
+ * aparência. Quem cobra a medida explícita é o teste de cobertura
+ * (`skeletonStick.test.ts`), no lugar certo para isso.
+ */
+const FALLBACK_STICK_RADIUS = 0.03
+
+const STICK_HEAD_RADIUS = 0.075
+
+/**
+ * Cabeça do palito: esfera deslocada para CIMA em exatamente o próprio raio, de
+ * modo que a base dela encoste na junta `head` (onde o cilindro do pescoço
+ * termina) e o topo feche a altura de referência — o mesmo 1,70 m que a coroa do
+ * ovo do manequim fecha, para o palito não ser um boneco mais baixo.
+ *
+ * O marcador escuro à frente é o que diz para onde o boneco olha. Numa esfera
+ * lisa isso é invisível, e saber a direção do rosto é justamente o que orienta
+ * quem está posando numa tela pequena. Reusa o `tint: 'eye'` (preto fixo,
+ * independente da cor do boneco) em vez de inventar um tom novo.
+ */
+const STICK_HEAD_PARTS: readonly SegmentPart[] = [
+  { kind: 'ellipsoid', radii: [STICK_HEAD_RADIUS, STICK_HEAD_RADIUS, STICK_HEAD_RADIUS], offset: [0, STICK_HEAD_RADIUS, 0] },
+  {
+    kind: 'ellipsoid',
+    radii: [0.012, 0.012, 0.014],
+    offset: [0, STICK_HEAD_RADIUS, 0.068],
+    tint: 'eye',
+  },
+]
+
+function stickJointRadius(name: string): number {
+  return STICK_JOINT_RADII[baseJointName(name)] ?? FALLBACK_STICK_RADIUS
+}
+
+function stickBoneRadius(childJointName: string): number {
+  return STICK_BONE_RADII[baseJointName(childJointName)] ?? FALLBACK_STICK_RADIUS
+}
+
+/** Cilindro de raio constante — todo osso do palito é este, só mudando a grossura. */
+function stickBone(radius: number): BoneStyle {
+  return {
+    kind: 'turned',
+    points: [
+      { t: 0, radius },
+      { t: 1, radius },
+    ],
+  }
+}
+
+/**
+ * Geradas a partir de `JOINT_NAMES`, e não escritas à mão como as do manequim:
+ * a casca é regular (uma esfera por junta, um cilindro por osso), então uma
+ * tabela literal de 32+31 entradas só criaria a chance de esquecer uma.
+ */
+export const JOINT_PARTS_STICK: Record<string, readonly SegmentPart[]> = Object.fromEntries(
+  JOINT_NAMES.map((name) => [
+    name,
+    name === 'head' ? STICK_HEAD_PARTS : [sphere(stickJointRadius(name))],
+  ]),
+)
+
+export const BONE_STYLES_STICK: Record<string, BoneStyle> = Object.fromEntries(
+  JOINT_NAMES.filter((name) => name !== ROOT_JOINT_NAME).map((name) => [
+    name,
+    stickBone(stickBoneRadius(name)),
+  ]),
+)
+
+/**
+ * Peças visuais de uma junta, na casca pedida. Valida o nome contra o esqueleto
+ * (mesmo erro de `getJoint`).
+ *
+ * O default é `'wooden'` de propósito: todo chamador que não conhece cascas
+ * (enquadramento de câmera em `shotFraming.ts`, exportação, testes antigos)
+ * continua vendo exatamente o manequim que via antes.
+ */
+export function getJointParts(
+  name: string,
+  style: FigureStyle = DEFAULT_FIGURE_STYLE,
+): readonly SegmentPart[] {
   getJoint(name)
-  const parts = JOINT_PARTS[name]
+  const parts = (style === 'stick' ? JOINT_PARTS_STICK : JOINT_PARTS)[name]
   if (!parts) {
     throw new Error(`Junta sem geometria definida: "${name}"`)
   }
@@ -1274,14 +1463,17 @@ export function getJointParts(name: string): readonly SegmentPart[] {
 }
 
 /** Estilo do osso pai→filha, pelo nome da junta filha (a root não tem osso até ela). */
-export function getBoneStyle(childJointName: string): BoneStyle {
+export function getBoneStyle(
+  childJointName: string,
+  style: FigureStyle = DEFAULT_FIGURE_STYLE,
+): BoneStyle {
   getJoint(childJointName)
   if (childJointName === ROOT_JOINT_NAME) {
     throw new Error(`A junta raiz não tem osso até ela: "${childJointName}"`)
   }
-  const style = BONE_STYLES[childJointName]
-  if (!style) {
+  const boneStyle = (style === 'stick' ? BONE_STYLES_STICK : BONE_STYLES)[childJointName]
+  if (!boneStyle) {
     throw new Error(`Osso sem estilo definido para a junta: "${childJointName}"`)
   }
-  return style
+  return boneStyle
 }

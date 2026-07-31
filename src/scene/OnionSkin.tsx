@@ -4,6 +4,7 @@ import { ONION_SKIN_COLORS, ONION_SKIN_OPACITY, onionSkinFrames } from '../anima
 import { Figure } from '../figure/Figure'
 import { useAnimationStore } from '../store/animationStore'
 import { useFiguresStore } from '../store/figuresStore'
+import { useUIStore } from '../store/uiStore'
 import { OVERLAY_NAMES } from './constants'
 
 /**
@@ -31,6 +32,10 @@ export function OnionSkin() {
   const exportPhase = useAnimationStore((state) => state.exportPhase)
   const timeMs = useAnimationStore((state) => state.timeMs)
   const animations = useFiguresStore((state) => state.animations)
+  // Os fantasmas seguem a MESMA casca da cena de trabalho: um palito rodeado de
+  // manequins translúcidos (ou o contrário) leria como dois modelos diferentes,
+  // quando são o mesmo boneco em instantes vizinhos.
+  const figureStyle = useUIStore((state) => state.figureStyle)
 
   const busy = playing || exportPhase === 'running'
   const frames = enabled && !busy ? onionSkinFrames(findWorkingAnimation(animations), timeMs, mode) : []
@@ -46,6 +51,7 @@ export function OnionSkin() {
               key={figure.id}
               figure={figure}
               ghost={{ color: ONION_SKIN_COLORS[frame.role], opacity: ONION_SKIN_OPACITY }}
+              style={figureStyle}
             />
           ))}
         </Fragment>

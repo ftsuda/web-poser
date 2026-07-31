@@ -53,3 +53,30 @@ describe('uiStore — estado do autosave (fase 9, item 2)', () => {
     expect(useUIStore.getState().lastSavedAt).toBe(1_700_000_000_000)
   })
 })
+
+describe('uiStore — casca visual do boneco (DECISOES.md #81)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  it('começa no manequim de madeira', () => {
+    expect(useUIStore.getState().figureStyle).toBe('wooden')
+  })
+
+  it('troca de casca e grava a preferência — é modo de tela, não conteúdo de cena', () => {
+    useUIStore.getState().setFigureStyle('stick')
+
+    expect(useUIStore.getState().figureStyle).toBe('stick')
+    expect(JSON.parse(localStorage.getItem('virtual-mockup:ui:v1') ?? '{}').figureStyle).toBe('stick')
+  })
+
+  it('gravar a casca não apaga as outras preferências do mesmo bloco', () => {
+    useUIStore.getState().toggleRuler()
+    useUIStore.getState().setFigureStyle('stick')
+
+    const gravado = JSON.parse(localStorage.getItem('virtual-mockup:ui:v1') ?? '{}')
+    expect(gravado.figureStyle).toBe('stick')
+    expect(gravado.rulerVisible).toBe(true)
+  })
+})

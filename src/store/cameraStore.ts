@@ -98,7 +98,6 @@ export interface CameraState {
   viewMode: CameraViewMode
   /** O gizmo da câmera de cena está selecionado (mover/girar com W/E)? Exclusivo com a seleção de boneco. */
   cameraSelected: boolean
-  setViewMode: (mode: CameraViewMode) => void
   toggleViewMode: () => void
   setCameraSelected: (selected: boolean) => void
   /** Pede ao rig para levar a câmera de cena até a vista de trabalho atual. */
@@ -156,8 +155,6 @@ export const useCameraStore = create<CameraState>((set, get) => ({
   pendingCommand: null,
   viewMode: 'edit',
   cameraSelected: false,
-
-  setViewMode: (viewMode) => set({ viewMode }),
 
   toggleViewMode: () => set((state) => ({ viewMode: state.viewMode === 'edit' ? 'camera' : 'edit' })),
 

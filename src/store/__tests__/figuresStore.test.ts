@@ -875,6 +875,49 @@ describe('figuresStore — importação de arquivo (.glb)', () => {
     expect(figure?.pose['elbow.L']).toEqual({ x: 45, y: 0, z: 0 })
   })
 
+  it('applyImportedFigurePose mantém X/Z e traz do arquivo só a altura Y, além de pose/rotação/altura', () => {
+    const id = useFiguresStore.getState().addFigure('Original') as string
+    useFiguresStore.getState().setPosition(id, [2, 0, 1])
+    const corOriginal = useFiguresStore.getState().figures.find((f) => f.id === id)?.color
+
+    useFiguresStore.getState().applyImportedFigurePose(id, {
+      height: 1.6,
+      positionY: 0.45,
+      rotation: { x: 0, y: 90, z: 0 },
+      pose: { 'knee.L': { x: 30, y: 0, z: 0 } },
+    })
+
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
+    // Onde ele pisa no plano é composição, não pose: X e Z ficam onde estavam...
+    expect(figure?.position[0]).toBe(2)
+    expect(figure?.position[2]).toBe(1)
+    // ...e o Y vem do arquivo (é o que distingue agachado de pulando).
+    expect(figure?.position[1]).toBe(0.45)
+    expect(figure?.height).toBe(1.6)
+    expect(figure?.rotation).toEqual({ x: 0, y: 90, z: 0 })
+    expect(figure?.pose['knee.L']).toEqual({ x: 30, y: 0, z: 0 })
+    // Identidade e cor são do boneco de destino, nunca do arquivo.
+    expect(figure?.name).toBe('Original')
+    expect(figure?.color).toBe(corOriginal)
+  })
+
+  it('applyImportedFigurePose respeita as juntas travadas', () => {
+    const id = useFiguresStore.getState().addFigure('Original') as string
+    useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: 10, y: 0, z: 0 })
+    useFiguresStore.getState().toggleJointLock(id, 'knee.L')
+
+    useFiguresStore.getState().applyImportedFigurePose(id, {
+      height: 1.7,
+      positionY: 0,
+      rotation: { x: 0, y: 0, z: 0 },
+      pose: { 'knee.L': { x: 140, y: 0, z: 0 }, 'elbow.L': { x: -20, y: 90, z: 0 } },
+    })
+
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
+    expect(figure?.pose['knee.L']).toEqual({ x: 10, y: 0, z: 0 })
+    expect(figure?.pose['elbow.L']).toEqual({ x: -20, y: 90, z: 0 })
+  })
+
   it('importFigureAsNew cria um novo boneco a partir dos dados importados', () => {
     const id = useFiguresStore.getState().importFigureAsNew({
       name: 'Boneco importado',

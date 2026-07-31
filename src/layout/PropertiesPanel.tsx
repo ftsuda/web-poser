@@ -15,10 +15,14 @@ import {
   type PosePresetKey,
 } from '../figure/posePresets'
 import { ROOT_JOINT_NAME, getJoint, getJointAxes, type Axis } from '../figure/skeleton'
+import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
+import { parseFigurePoseFile, serializeFigurePoseFile } from '../persistence/figurePoseFile'
 import { AXIS_COLORS } from '../scene/axisColors'
-import { useFiguresStore } from '../store/figuresStore'
+import { slugifySceneName } from '../snapshot/snapshotNaming'
+import { useFiguresStore, type Figure } from '../store/figuresStore'
 import { useUIStore, type GizmoMode } from '../store/uiStore'
 import { CollapsiblePanel } from './CollapsiblePanel'
+import { CollapsibleSection } from './CollapsibleSection'
 import { PropProperties } from './PropsSection'
 
 const POSITION_AXES: readonly Axis[] = ['x', 'y', 'z']
@@ -299,10 +303,10 @@ function GizmoModeFieldset({ mode, onSelect }: { mode: GizmoMode; onSelect: (mod
       <legend>{t('panels.properties.gizmoMode')}</legend>
       <div className="properties-panel__pose-presets">
         <button type="button" aria-pressed={mode === 'translate'} onClick={() => onSelect('translate')}>
-          {t('panels.properties.gizmoTranslate')}
+          {t('common.gizmoTranslate')}
         </button>
         <button type="button" aria-pressed={mode === 'rotate'} onClick={() => onSelect('rotate')}>
-          {t('panels.properties.gizmoRotate')}
+          {t('common.gizmoRotate')}
         </button>
       </div>
     </fieldset>
@@ -316,6 +320,83 @@ function GizmoModeFieldset({ mode, onSelect }: { mode: GizmoMode; onSelect: (mod
  * posando tem uma junta selecionada. As duas seções são exclusivas, então
  * nunca há dois botões na tela.
  */
+/**
+ * Pose do boneco em ARQUIVO JSON (DECISOES.md #81) — a ponte entre a pose montada
+ * no celular e o refino aqui.
+ *
+ * Mora neste painel, junto das demais operações de pose do boneco INTEIRO
+ * (presets, mistura, salvar na biblioteca, copiar para outro boneco), e por isso
+ * aparece só na visão da raiz, como elas. A área de transferência de poses ficou
+ * no painel de Bonecos por um motivo que não vale aqui: aquela lista é da SESSÃO
+ * e sumiria a cada troca de seleção; esta seção é sobre o boneco selecionado, que
+ * é exatamente o assunto deste painel.
+ *
+ * O arquivo guarda um boneco com a estrutura exata de `keyframes[].figures[]` das
+ * animações; o contrato de colocação (grava no (0,0) do plano, carrega mantendo
+ * X/Z e trazendo só o Y) está em `figurePoseFile.ts`.
+ */
+function PoseFileFieldset({ figure }: { figure: Figure }) {
+  const { t } = useTranslation()
+  const applyImportedFigurePose = useFiguresStore((state) => state.applyImportedFigurePose)
+  const [errorKey, setErrorKey] = useState<string | null>(null)
+
+  const handleExport = async () => {
+    setErrorKey(null)
+    const json = serializeFigurePoseFile(figure)
+    await writeFileToDirectoryOrDownload(
+      null,
+      `${slugifySceneName(figure.name)}-pose.json`,
+      new Blob([json], { type: 'application/json' }),
+    )
+  }
+
+  const handleLoad = async () => {
+    setErrorKey(null)
+    const picked = await pickFile('.json,application/json')
+    if (!picked) return
+    try {
+      const imported = parseFigurePoseFile(JSON.parse(new TextDecoder().decode(picked.data)))
+      // Arquivo lido, mas sem pose aproveitável (nenhuma junta conhecida): dizer
+      // isso vale mais do que aplicar uma pose vazia e apagar a que estava lá.
+      if (!imported) {
+        setErrorKey('errors.importNoPose')
+        return
+      }
+      applyImportedFigurePose(figure.id, imported)
+    } catch {
+      setErrorKey('errors.importUnreadableJson')
+    }
+  }
+
+  return (
+    <fieldset className="properties-panel__pose-file" aria-label={t('panels.properties.poseFile')}>
+      <legend>{t('panels.properties.poseFile')}</legend>
+
+      <button
+        type="button"
+        title={t('panels.properties.poseFileExportHint')}
+        onClick={() => void handleExport()}
+      >
+        {t('panels.properties.poseFileExport')}
+      </button>
+
+      <button
+        type="button"
+        title={t('panels.properties.poseFileLoadHint')}
+        onClick={() => void handleLoad()}
+      >
+        {t('panels.properties.poseFileLoad')}
+      </button>
+
+      {errorKey && (
+        <p role="alert" className="panel__error">
+          {t(errorKey)}
+        </p>
+      )}
+    </fieldset>
+  )
+}
+
 function SeatOnGroundButton({ figureId }: { figureId: string }) {
   const { t } = useTranslation()
   const seatFigureOnGround = useFiguresStore((state) => state.seatFigureOnGround)
@@ -403,7 +484,6 @@ function SymmetryFieldset({ figureId, scopeJoint }: SymmetryFieldsetProps) {
 
   return (
     <fieldset aria-label={t('panels.properties.symmetry')}>
-      <legend>{t('panels.properties.symmetry')}</legend>
 
       {hasPairScope && (
         <>
@@ -490,6 +570,44 @@ const POSE_PRESET_GROUP_LABEL_KEYS: Record<PosePresetGroupKey, string> = {
   fight: 'panels.properties.poseGroupFight',
 }
 
+interface PoseNameFormProps {
+  value: string
+  onChange: (value: string) => void
+  onSubmit: (event: FormEvent) => void
+  onCancel: () => void
+}
+
+/**
+ * Campo de nome da biblioteca de poses, usado por SALVAR e por RENOMEAR
+ * (pedido do usuário, 2026-07-31). Um componente só porque é o mesmo gesto —
+ * digitar um nome e confirmar — e porque os dois nunca aparecem ao mesmo
+ * tempo: quem os abre é o mesmo `namingMode`.
+ */
+function PoseNameForm({ value, onChange, onSubmit, onCancel }: PoseNameFormProps) {
+  const { t } = useTranslation()
+
+  return (
+    <form className="properties-panel__save-pose-form" onSubmit={onSubmit}>
+      <label htmlFor="saved-pose-name" className="properties-panel__field">
+        {t('panels.properties.savePoseNameLabel')}
+        <input
+          id="saved-pose-name"
+          type="text"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          autoFocus
+        />
+      </label>
+      <div className="properties-panel__pose-presets">
+        <button type="submit">{t('panels.properties.savePoseConfirm')}</button>
+        <button type="button" onClick={onCancel}>
+          {t('panels.properties.savePoseCancel')}
+        </button>
+      </div>
+    </form>
+  )
+}
+
 export function PropertiesPanel() {
   const { t } = useTranslation()
   /**
@@ -499,8 +617,13 @@ export function PropertiesPanel() {
    * colidirem com as chaves de fábrica.
    */
   const [selectedPose, setSelectedPose] = useState<string>('standing')
-  /** Formulário de nome ao salvar uma pose na biblioteca — fechado por padrão. */
-  const [isNamingPose, setIsNamingPose] = useState(false)
+  /**
+   * Formulário de nome da biblioteca de poses — fechado por padrão. Serve aos
+   * dois gestos: batizar uma pose NOVA e renomear a que está escolhida no
+   * combo (pedido do usuário, 2026-07-31). É o mesmo campo, e ter dois abertos
+   * seria duas chances de digitar no errado.
+   */
+  const [namingMode, setNamingMode] = useState<'save' | 'rename' | null>(null)
   const [copyTargetDraft, setCopyTargetDraft] = useState<string | null>(null)
   const [copyScope, setCopyScope] = useState<JointGroupKey | 'all'>('all')
   const [poseNameDraft, setPoseNameDraft] = useState('')
@@ -535,6 +658,7 @@ export function PropertiesPanel() {
   const copyFigurePose = useFiguresStore((state) => state.copyFigurePose)
   const blendPose = useFiguresStore((state) => state.blendPose)
   const removeSavedPose = useFiguresStore((state) => state.removeSavedPose)
+  const renameSavedPose = useFiguresStore((state) => state.renameSavedPose)
   const jointLocks = useFiguresStore((state) => state.jointLocks)
   const toggleJointLock = useFiguresStore((state) => state.toggleJointLock)
   const clearJointLocks = useFiguresStore((state) => state.clearJointLocks)
@@ -565,7 +689,7 @@ export function PropertiesPanel() {
   if (!figure || !selectedJointName) {
     return (
       <CollapsiblePanel panelKey="properties" className="panel--properties" title={t('panels.properties.title')}>
-                <p className="panel__empty">{t('panels.properties.empty')}</p>
+        <p className="panel__empty">{t('panels.properties.empty')}</p>
       </CollapsiblePanel>
     )
   }
@@ -633,14 +757,21 @@ export function PropertiesPanel() {
     resetMix()
   }
 
-  const confirmSavePose = (event: FormEvent) => {
+  const confirmPoseName = (event: FormEvent) => {
     event.preventDefault()
-    const poseId = saveFigurePose(figure.id, poseNameDraft)
-    setIsNamingPose(false)
+    if (namingMode === 'rename') {
+      // Renomear age sobre a pose ESCOLHIDA no combo, e por isso o formulário
+      // dele aparece ao lado do combo — e não na seção de guardar, que pode
+      // estar recolhida.
+      if (savedPose) renameSavedPose(savedPose.id, poseNameDraft)
+    } else {
+      const poseId = saveFigurePose(figure.id, poseNameDraft)
+      // Já deixa a pose recém-salva escolhida: o passo seguinte natural é
+      // aplicá-la no outro boneco.
+      if (poseId) setSelectedPose(`${SAVED_POSE_PREFIX}${poseId}`)
+    }
+    setNamingMode(null)
     setPoseNameDraft('')
-    // Já deixa a pose recém-salva escolhida: o passo seguinte natural é
-    // aplicá-la no outro boneco.
-    if (poseId) setSelectedPose(`${SAVED_POSE_PREFIX}${poseId}`)
   }
   // Poses de mão aparecem no contexto: qualquer junta do braço (clavícula →
   // ponta dos dedos) revela as poses DAQUELA mão, sem um seletor de lado à
@@ -679,7 +810,7 @@ export function PropertiesPanel() {
 
   return (
     <CollapsiblePanel panelKey="properties" className="panel--properties" title={t('panels.properties.title')}>
-            <p className="properties-panel__figure-name">{figure.name}</p>
+      <p className="properties-panel__figure-name">{figure.name}</p>
 
       <label className="properties-panel__field properties-panel__joint-select" htmlFor="joint-select">
         {t('panels.properties.jointSelect')}
@@ -703,65 +834,192 @@ export function PropertiesPanel() {
 
       {isRoot ? (
         <>
-          {/* Combo agrupado + botão "Aplicar" (pedido do usuário, DECISOES.md
-              #36): com mais de 30 poses a grade de botões deixou de caber. A
-              escolha não aplica sozinha — só o botão aplica —, para que
-              navegar pela lista com o teclado não desmonte a pose atual. */}
-          <fieldset aria-label={t('panels.properties.posePresets')}>
-            <legend>{t('panels.properties.posePresets')}</legend>
-              <select
-                id="pose-preset-select"
-                className="properties-panel__pose-select"
-                aria-label={t('panels.properties.posePresets')}
-                value={poseSelectValue}
-                onChange={(event) => setSelectedPose(event.target.value)}
-              >
-                {POSE_PRESET_GROUPS.map((group) => (
-                  <optgroup key={group.key} label={t(POSE_PRESET_GROUP_LABEL_KEYS[group.key])}>
-                    {group.poses.map((key) => (
-                      <option key={key} value={key}>
-                        {t(POSE_PRESET_LABEL_KEYS[key])}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-                {/* Biblioteca do usuário no MESMO combo das poses de fábrica
-                    (DECISOES.md #42): escolher e aplicar uma pose é um gesto
-                    só, venha ela de onde vier. */}
-                {poseLibrary.length > 0 && (
-                  <optgroup label={t('panels.properties.poseGroupLibrary')}>
-                    {poseLibrary.map((pose) => (
-                      <option key={pose.id} value={`${SAVED_POSE_PREFIX}${pose.id}`}>
-                        {pose.name}
-                      </option>
-                    ))}
-                  </optgroup>
+          {/* A COLOCAÇÃO vem primeiro (pedido do usuário, 2026-07-31).
+              Ela estava no fim, atrás de cinco blocos de pose, e o gizmo
+              W/E — que é a versão arrastável destes mesmos números — ficava
+              separado deles por nada. Montar a cena é o que se faz antes de
+              posar, e é o que a lista de bonecos manda para cá. */}
+          {/* Alternância translação/rotação do gizmo (W/E). Na raiz (fase 9,
+              item 13): mover a colocação ou girar em torno do próprio pivô do
+              quadril, ponto confirmado com o usuário. */}
+          <GizmoModeFieldset mode={gizmoMode} onSelect={setGizmoMode} />
+
+          <fieldset aria-label={t('panels.properties.position')}>
+            <legend>{t('panels.properties.position')}</legend>
+            {POSITION_AXES.map((axis, index) => (
+              <label key={axis} htmlFor={`position-${axis}`} className="properties-panel__field">
+                <span style={{ color: AXIS_COLORS[axis] }}>{axis.toUpperCase()}</span>
+                <input
+                  id={`position-${axis}`}
+                  type="number"
+                  step={0.01}
+                  style={{ accentColor: AXIS_COLORS[axis] }}
+                  value={figure.position[index]}
+                  onChange={handlePositionChange(index)}
+                />
+              </label>
+            ))}
+            {/* Assentar é edição de ALTURA, por isso mora aqui e não junto das
+                poses: depois de mexer no quadril ou nos joelhos o boneco fica
+                flutuando ou afundado, e acertar isso à mão era o que sobrava
+                de trabalho manual em toda pose nova. */}
+            <SeatOnGroundButton figureId={figure.id} />
+          </fieldset>
+
+          {/* Rotação da raiz por slider, como nas demais juntas (fase 9, item
+              13) — os campos numéricos livres não tinham nem faixa nem a
+              mesma interação do resto do painel. */}
+          <fieldset aria-label={t('panels.properties.rotation')}>
+            <legend>{t('panels.properties.rotation')}</legend>
+            {POSITION_AXES.map((axis) => (
+              <AxisSlider
+                key={axis}
+                axis={axis}
+                value={figure.rotation[axis]}
+                min={ROOT_ROTATION_MIN}
+                max={ROOT_ROTATION_MAX}
+                onChange={handleRootRotationChange(axis)}
+              />
+            ))}
+            <button
+              type="button"
+              className="properties-panel__reset"
+              onClick={() => resetJointRotation(figure.id, ROOT_JOINT_NAME)}
+            >
+              {t('panels.properties.resetRootRotation')}
+            </button>
+          </fieldset>
+
+          {/* Escolher e aplicar uma pose: a seção nasce ABERTA, é o motivo
+              de o painel existir. O que saiu daqui foi tudo o que não é
+              "aplicar" — salvar, copiar e o arquivo —, que virou a seção
+              "Guardar e copiar", hoje no rodapé do painel: um fieldset
+              chamado "Poses predefinidas" com 193 linhas abrigava cinco
+              assuntos, e copiar a pose para outro boneco não é uma pose
+              predefinida em sentido nenhum. */}
+          <CollapsibleSection sectionKey="poses" title={t('panels.properties.posePresets')}>
+            <fieldset aria-label={t('panels.properties.posePresets')}>
+                <select
+                  id="pose-preset-select"
+                  className="properties-panel__pose-select"
+                  aria-label={t('panels.properties.posePresets')}
+                  value={poseSelectValue}
+                  onChange={(event) => setSelectedPose(event.target.value)}
+                >
+                  {POSE_PRESET_GROUPS.map((group) => (
+                    <optgroup key={group.key} label={t(POSE_PRESET_GROUP_LABEL_KEYS[group.key])}>
+                      {group.poses.map((key) => (
+                        <option key={key} value={key}>
+                          {t(POSE_PRESET_LABEL_KEYS[key])}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  {/* Biblioteca do usuário no MESMO combo das poses de fábrica
+                      (DECISOES.md #42): escolher e aplicar uma pose é um gesto
+                      só, venha ela de onde vier. */}
+                  {poseLibrary.length > 0 && (
+                    <optgroup label={t('panels.properties.poseGroupLibrary')}>
+                      {poseLibrary.map((pose) => (
+                        <option key={pose.id} value={`${SAVED_POSE_PREFIX}${pose.id}`}>
+                          {pose.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              {selectedPoseHintKey && (
+                <p className="properties-panel__hint">{t(selectedPoseHintKey)}</p>
+              )}
+              {/* A caixa só aparece quando há um par para montar — pose em dupla
+                  E exatamente dois bonecos —, que é quando marcar ou desmarcar
+                  muda alguma coisa. A escolha em si é persistida, então quem
+                  prefere montar à mão não precisa desmarcar de novo a cada pose. */}
+              {pairsAutomatically && (
+                <>
+                  <label className="properties-panel__field properties-panel__field--checkbox">
+                    <input type="checkbox" checked={pairPoseEnabled} onChange={togglePairPose} />
+                    {t('panels.properties.posePairApply')}
+                  </label>
+                  <p className="properties-panel__hint">
+                    {t(pairPoseEnabled ? 'panels.properties.posePairAuto' : 'panels.properties.posePairManual')}
+                  </p>
+                </>
+              )}
+              <div className="properties-panel__pose-presets">
+                <button type="button" className="properties-panel__apply-pose" onClick={applySelectedPose}>
+                  {t('panels.properties.applyPose')}
+                </button>
+                {/* Renomear e remover só aparecem com uma pose da BIBLIOTECA
+                    escolhida: as de fábrica não são nem uma coisa nem outra.
+                    Renomear existia no store desde sempre, testado, e nunca
+                    tinha ganhado botão — dava para salvar e apagar uma pose,
+                    mas não para corrigir o nome dela. */}
+                {savedPose && (
+                  <>
+                    <button
+                      type="button"
+                      title={t('panels.properties.renameSavedPoseHint')}
+                      onClick={() => {
+                        setNamingMode('rename')
+                        setPoseNameDraft(savedPose.name)
+                      }}
+                    >
+                      {t('panels.properties.renameSavedPose')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        removeSavedPose(savedPose.id)
+                        setSelectedPose('standing')
+                      }}
+                    >
+                      {t('panels.properties.removeSavedPose')}
+                    </button>
+                  </>
                 )}
-              </select>
-            {selectedPoseHintKey && (
-              <p className="properties-panel__hint">{t(selectedPoseHintKey)}</p>
-            )}
-            {/* A caixa só aparece quando há um par para montar — pose em dupla
-                E exatamente dois bonecos —, que é quando marcar ou desmarcar
-                muda alguma coisa. A escolha em si é persistida, então quem
-                prefere montar à mão não precisa desmarcar de novo a cada pose. */}
-            {pairsAutomatically && (
-              <>
-                <label className="properties-panel__field properties-panel__field--checkbox">
-                  <input type="checkbox" checked={pairPoseEnabled} onChange={togglePairPose} />
-                  {t('panels.properties.posePairApply')}
+              </div>
+
+              {namingMode === 'rename' && savedPose && (
+                <PoseNameForm
+                  value={poseNameDraft}
+                  onChange={setPoseNameDraft}
+                  onSubmit={confirmPoseName}
+                  onCancel={() => {
+                    setNamingMode(null)
+                    setPoseNameDraft('')
+                  }}
+                />
+              )}
+
+              {/* Mistura entre a pose atual e a escolhida (DECISOES.md #43):
+                  "andando, mas só metade do passo". Não é animação — o que fica
+                  é a pose estática do ponto onde o slider parar, e 100% dá
+                  exatamente o mesmo que "Aplicar pose". */}
+              <div className="properties-panel__mix">
+                <label htmlFor="pose-mix" className="properties-panel__mix-label">
+                  {t('panels.properties.poseMix')}
                 </label>
-                <p className="properties-panel__hint">
-                  {t(pairPoseEnabled ? 'panels.properties.posePairAuto' : 'panels.properties.posePairManual')}
-                </p>
-              </>
-            )}
-            <div className="properties-panel__pose-presets">
-              <button type="button" className="properties-panel__apply-pose" onClick={applySelectedPose}>
-                {t('panels.properties.applyPose')}
-              </button>
+                <div className="properties-panel__axis-row">
+                  <input
+                    id="pose-mix"
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={mixAmount}
+                    onChange={handleMixChange}
+                  />
+                  <span className="properties-panel__value">{mixAmount}%</span>
+                </div>
+                <p className="properties-panel__hint">{t('panels.properties.poseMixHint')}</p>
+              </div>
+
               {/* O sorteio fica FORA do combo (pedido do usuário): não é uma
-                  pose da lista — cada clique dá uma diferente. */}
+                  pose da lista — cada clique dá uma diferente. E fica DEPOIS da
+                  mistura (pedido do usuário, 2026-07-31): a fila de cima é a da
+                  pose escolhida — aplicar, renomear, remover —, e o sorteio não
+                  tem nada a ver com o que está no combo. */}
               <button
                 type="button"
                 className="properties-panel__random-pose"
@@ -773,78 +1031,61 @@ export function PropertiesPanel() {
               >
                 {t('panels.properties.randomPose')}
               </button>
-              {/* Remover só aparece com uma pose da BIBLIOTECA escolhida: as
-                  de fábrica não são removíveis. */}
-              {savedPose && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    removeSavedPose(savedPose.id)
-                    setSelectedPose('standing')
-                  }}
-                >
-                  {t('panels.properties.removeSavedPose')}
-                </button>
-              )}
-            </div>
+            </fieldset>
+          </CollapsibleSection>
 
-            {/* Mistura entre a pose atual e a escolhida (DECISOES.md #43):
-                "andando, mas só metade do passo". Não é animação — o que fica
-                é a pose estática do ponto onde o slider parar, e 100% dá
-                exatamente o mesmo que "Aplicar pose". */}
-            <div className="properties-panel__mix">
-              <label htmlFor="pose-mix" className="properties-panel__mix-label">
-                {t('panels.properties.poseMix')}
-              </label>
-              <div className="properties-panel__axis-row">
-                <input
-                  id="pose-mix"
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={mixAmount}
-                  onChange={handleMixChange}
-                />
-                <span className="properties-panel__value">{mixAmount}%</span>
-              </div>
-              <p className="properties-panel__hint">{t('panels.properties.poseMixHint')}</p>
-            </div>
+          <CollapsibleSection sectionKey="symmetry" title={t('panels.properties.symmetry')}>
+            <SymmetryFieldset figureId={figure.id} scopeJoint={null} />
+          </CollapsibleSection>
 
+          {/* Restaurar, na MESMA ordem das duas vistas: o resumo de travas e o
+              zerar por grupo estavam em pontas opostas do painel, e a dupla
+              (simetria, zerar) aparecia invertida entre a raiz e a junta —
+              trocar de junta reordenava o painel. */}
+          {/* Juntas travadas (DECISOES.md #42): a contagem fica na visão da
+              raiz — é o resumo do boneco inteiro — para que o efeito de uma
+              trava nunca seja inexplicável ao aplicar uma pose. */}
+          {lockedJoints.length > 0 && (
+            <div className="properties-panel__locked-summary">
+              <p className="properties-panel__hint">
+                {t('panels.properties.lockedJointCount', { count: lockedJoints.length })}
+              </p>
+              <button type="button" onClick={() => clearJointLocks(figure.id)}>
+                {t('panels.properties.unlockAllJoints')}
+              </button>
+            </div>
+          )}
+
+          <ResetGroupFieldset figureId={figure.id} />
+
+          {/* Tirar a pose DAQUI e levá-la para outro lugar: a biblioteca,
+              outro boneco ou um arquivo. Os três eram vizinhos de "aplicar"
+              dentro do mesmo fieldset. Fecham o painel (pedido do usuário,
+              2026-07-31): são o fim de uma sessão de trabalho, não o meio
+              dela. */}
+          <CollapsibleSection sectionKey="poseTransfer" title={t('panels.properties.poseTransfer')}>
             {/* Biblioteca de poses (DECISOES.md #42): guardar a pose montada à
                 mão, com nome, para reaplicá-la em qualquer boneco de qualquer
                 cena. */}
-            {isNamingPose ? (
-              <form className="properties-panel__save-pose-form" onSubmit={confirmSavePose}>
-                <label htmlFor="saved-pose-name" className="properties-panel__field">
-                  {t('panels.properties.savePoseNameLabel')}
-                  <input
-                    id="saved-pose-name"
-                    type="text"
-                    value={poseNameDraft}
-                    onChange={(event) => setPoseNameDraft(event.target.value)}
-                    autoFocus
-                  />
-                </label>
-                <div className="properties-panel__pose-presets">
-                  <button type="submit">{t('panels.properties.savePoseConfirm')}</button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsNamingPose(false)
-                      setPoseNameDraft('')
-                    }}
-                  >
-                    {t('panels.properties.savePoseCancel')}
-                  </button>
-                </div>
-              </form>
+            {namingMode === 'save' ? (
+              <PoseNameForm
+                value={poseNameDraft}
+                onChange={setPoseNameDraft}
+                onSubmit={confirmPoseName}
+                onCancel={() => {
+                  setNamingMode(null)
+                  setPoseNameDraft('')
+                }}
+              />
             ) : (
               <button
                 type="button"
                 className="properties-panel__save-pose"
                 title={t('panels.properties.savePoseHint')}
-                onClick={() => setIsNamingPose(true)}
+                onClick={() => {
+                  setNamingMode('save')
+                  setPoseNameDraft('')
+                }}
               >
                 {t('panels.properties.savePose')}
               </button>
@@ -900,76 +1141,9 @@ export function PropertiesPanel() {
                 </button>
               </div>
             )}
-          </fieldset>
 
-          {/* Juntas travadas (DECISOES.md #42): a contagem fica na visão da
-              raiz — é o resumo do boneco inteiro — para que o efeito de uma
-              trava nunca seja inexplicável ao aplicar uma pose. */}
-          {lockedJoints.length > 0 && (
-            <div className="properties-panel__locked-summary">
-              <p className="properties-panel__hint">
-                {t('panels.properties.lockedJointCount', { count: lockedJoints.length })}
-              </p>
-              <button type="button" onClick={() => clearJointLocks(figure.id)}>
-                {t('panels.properties.unlockAllJoints')}
-              </button>
-            </div>
-          )}
-
-          <SymmetryFieldset figureId={figure.id} scopeJoint={null} />
-
-          {/* Alternância translação/rotação do gizmo (W/E). Na raiz (fase 9,
-              item 13): mover a colocação ou girar em torno do próprio pivô do
-              quadril, ponto confirmado com o usuário. */}
-          <GizmoModeFieldset mode={gizmoMode} onSelect={setGizmoMode} />
-
-          <fieldset aria-label={t('panels.properties.position')}>
-            <legend>{t('panels.properties.position')}</legend>
-            {POSITION_AXES.map((axis, index) => (
-              <label key={axis} htmlFor={`position-${axis}`} className="properties-panel__field">
-                <span style={{ color: AXIS_COLORS[axis] }}>{axis.toUpperCase()}</span>
-                <input
-                  id={`position-${axis}`}
-                  type="number"
-                  step={0.01}
-                  style={{ accentColor: AXIS_COLORS[axis] }}
-                  value={figure.position[index]}
-                  onChange={handlePositionChange(index)}
-                />
-              </label>
-            ))}
-            {/* Assentar é edição de ALTURA, por isso mora aqui e não junto das
-                poses: depois de mexer no quadril ou nos joelhos o boneco fica
-                flutuando ou afundado, e acertar isso à mão era o que sobrava
-                de trabalho manual em toda pose nova. */}
-            <SeatOnGroundButton figureId={figure.id} />
-          </fieldset>
-
-          {/* Rotação da raiz por slider, como nas demais juntas (fase 9, item
-              13) — os campos numéricos livres não tinham nem faixa nem a
-              mesma interação do resto do painel. */}
-          <fieldset aria-label={t('panels.properties.rotation')}>
-            <legend>{t('panels.properties.rotation')}</legend>
-            {POSITION_AXES.map((axis) => (
-              <AxisSlider
-                key={axis}
-                axis={axis}
-                value={figure.rotation[axis]}
-                min={ROOT_ROTATION_MIN}
-                max={ROOT_ROTATION_MAX}
-                onChange={handleRootRotationChange(axis)}
-              />
-            ))}
-            <button
-              type="button"
-              className="properties-panel__reset"
-              onClick={() => resetJointRotation(figure.id, ROOT_JOINT_NAME)}
-            >
-              {t('panels.properties.resetRootRotation')}
-            </button>
-          </fieldset>
-
-          <ResetGroupFieldset figureId={figure.id} />
+          <PoseFileFieldset figure={figure} />
+          </CollapsibleSection>
         </>
       ) : (
         <>
@@ -997,26 +1171,11 @@ export function PropertiesPanel() {
             </p>
           )}
 
-          {armSide && (
-            <fieldset aria-label={t(HAND_PRESETS_LEGEND_KEYS[armSide])}>
-              <legend>{t(HAND_PRESETS_LEGEND_KEYS[armSide])}</legend>
-              <div className="properties-panel__pose-presets">
-                {HAND_PRESET_KEYS.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => applyHandPreset(figure.id, armSide, key)}
-                  >
-                    {t(HAND_PRESET_LABEL_KEYS[key])}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-          )}
-
           {/* O mesmo seletor W/E da raiz, nas juntas que têm os dois modos:
               mover (arrasto de cadeia — puxa os ancestrais até os limites,
-              com a raiz fixa) ou girar (FK de sempre). */}
+              com a raiz fixa) ou girar (FK de sempre). Vem ANTES da rotação
+              (pedido do usuário, 2026-07-31), como na raiz: escolher a
+              ferramenta do gizmo é o que se faz antes de mexer nos números. */}
           {selectedJointDraggable && (
             <>
               <GizmoModeFieldset mode={gizmoMode} onSelect={setGizmoMode} />
@@ -1066,17 +1225,34 @@ export function PropertiesPanel() {
             </button>
           </fieldset>
 
+          {armSide && (
+            <fieldset aria-label={t(HAND_PRESETS_LEGEND_KEYS[armSide])}>
+              <legend>{t(HAND_PRESETS_LEGEND_KEYS[armSide])}</legend>
+              <div className="properties-panel__pose-presets">
+                {HAND_PRESET_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => applyHandPreset(figure.id, armSide, key)}
+                  >
+                    {t(HAND_PRESET_LABEL_KEYS[key])}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
+
           {/* O mesmo botão da seção da raiz: dobrar um joelho é o que costuma
               deixar o boneco flutuando, e obrigar a voltar para a raiz só para
               apoiá-lo seria atrito no pior momento. */}
           <SeatOnGroundButton figureId={figure.id} />
 
-          <ResetGroupFieldset figureId={figure.id} />
+          <CollapsibleSection sectionKey="symmetry" title={t('panels.properties.symmetry')}>
+            {/* Simetria parcial (DECISOES.md #34): daqui para baixo, nos dois lados. */}
+            <SymmetryFieldset figureId={figure.id} scopeJoint={selectedJointName} />
+          </CollapsibleSection>
 
-          {/* Simetria parcial (DECISOES.md #34): daqui para baixo, nos dois
-              lados. Fica depois da rotação para não empurrar os sliders — o
-              controle principal da junta — para longe do topo do painel. */}
-          <SymmetryFieldset figureId={figure.id} scopeJoint={selectedJointName} />
+          <ResetGroupFieldset figureId={figure.id} />
         </>
       )}
     </CollapsiblePanel>

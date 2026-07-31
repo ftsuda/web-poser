@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { importedAnimationRoles, remapImportedKeyframes, transportCameraView } from '../animationRemap'
+import {
+  importedAnimationRoles,
+  remapImportedKeyframes,
+  substituteImportedKeyframes,
+  transportCameraView,
+} from '../animationRemap'
 import type { AnimationKeyframe } from '../animation'
 import type { CameraViewState } from '../../scene/cameraMove'
 import type { Figure } from '../../store/figuresStore'
@@ -286,6 +291,171 @@ describe('remapImportedKeyframes — elenco e forma dos keyframes', () => {
     // o primeiro que ele terá, e não com o do boneco da cena.
     expect(remapeado[0].figures[1].position).toEqual([1, 0, 0])
     expect(remapeado[1].figures[1].position).toEqual([1, 0, 0])
+  })
+})
+
+/**
+ * Enxertar (pedido do usuário, 2026-07-31) é a operação que os outros dois
+ * modos não fazem: reescrever PARTE de uma linha do tempo montada. O que estes
+ * testes protegem é justamente o que NÃO pode mudar — os keyframes anteriores,
+ * as durações, os bonecos sem papel e, se a caixa estiver desmarcada, as
+ * câmeras.
+ */
+describe('substituteImportedKeyframes', () => {
+  const cameraDaBancada: CameraViewState = { ...camera, position: [9, 9, 9] }
+
+  /** Três keyframes na bancada, com dois bonecos e uma câmera bem diferente. */
+  function bancada(): AnimationKeyframe[] {
+    return [0, 1, 2].map((index) => ({
+      id: `k${index + 1}`,
+      durationMs: 300 + index,
+      figures: [
+        daCena('figure-1', { position: [index, 0, 0] }),
+        daCena('figure-2', { position: [10 + index, 0, 0] }),
+      ],
+      camera: cameraDaBancada,
+      label: 'Cena montada',
+    }))
+  }
+
+  const cena = [daCena('figure-1'), daCena('figure-2')]
+
+  it('troca a pose só do boneco de destino, e só do keyframe escolhido em diante', () => {
+    const { keyframes: resultado, appended } = substituteImportedKeyframes({
+      keyframes,
+      target: bancada(),
+      sceneFigures: cena,
+      // O papel 0 (o gravado "a") passa a ser executado pelo figure-2.
+      assignment: ['figure-2'],
+      startIndex: 1,
+      replaceCamera: true,
+      baseSeq: 3,
+    })!
+
+    expect(appended).toBe(0)
+    expect(resultado).toHaveLength(3)
+    // O keyframe 1 não foi tocado — nem a pose, nem a câmera.
+    expect(resultado[0]).toEqual(bancada()[0])
+    // Do 2 em diante, o figure-2 recebe a pose gravada e a colocação absoluta.
+    expect(resultado[1].figures[1].pose).toEqual({ neck: { x: 10, y: 0, z: 0 } })
+    expect(resultado[1].figures[1].position).toEqual([0, 0, 0])
+    expect(resultado[2].figures[1].position).toEqual([0, 0, 2])
+    // E o figure-1, sem papel, continua exatamente onde estava em cada um.
+    expect(resultado[1].figures[0].position).toEqual([1, 0, 0])
+    expect(resultado[2].figures[0].position).toEqual([2, 0, 0])
+  })
+
+  it('duração, id e grupo são os da bancada — o arquivo só traz pose e câmera', () => {
+    const alvo = bancada()
+    const { keyframes: resultado } = substituteImportedKeyframes({
+      keyframes,
+      target: alvo,
+      sceneFigures: cena,
+      assignment: ['figure-1'],
+      startIndex: 0,
+      replaceCamera: true,
+      baseSeq: 3,
+    })!
+
+    expect(resultado.map((keyframe) => keyframe.id)).toEqual(['k1', 'k2', 'k3'])
+    expect(resultado.map((keyframe) => keyframe.durationMs)).toEqual([300, 301, 302])
+    expect(resultado.every((keyframe) => keyframe.label === 'Cena montada')).toBe(true)
+    expect(resultado[0].camera).toEqual(camera)
+  })
+
+  it('com a caixa da câmera desmarcada, o enquadramento montado fica de pé', () => {
+    const { keyframes: resultado } = substituteImportedKeyframes({
+      keyframes,
+      target: bancada(),
+      sceneFigures: cena,
+      assignment: ['figure-1'],
+      startIndex: 0,
+      replaceCamera: false,
+      baseSeq: 3,
+    })!
+
+    expect(resultado.every((keyframe) => keyframe.camera === cameraDaBancada)).toBe(true)
+    // …mas as poses entraram assim mesmo.
+    expect(resultado[1].figures[0].position).toEqual([0, 0, 2])
+  })
+
+  it('o que não cabe vai para o fim, com a duração e o rótulo gravados', () => {
+    const { keyframes: resultado, appended } = substituteImportedKeyframes({
+      keyframes,
+      target: bancada(),
+      sceneFigures: cena,
+      assignment: ['figure-1'],
+      // Começando no último, só o primeiro keyframe do arquivo cabe.
+      startIndex: 2,
+      replaceCamera: true,
+      baseSeq: 3,
+    })!
+
+    expect(appended).toBe(1)
+    expect(resultado).toHaveLength(4)
+    expect(resultado[3].id).toBe('k4')
+    expect(resultado[3].durationMs).toBe(1500)
+    expect(resultado[3].label).toBe('Andando')
+    // O boneco sem papel congela onde ele parou: o último keyframe da bancada.
+    expect(resultado[3].figures[1].position).toEqual([12, 0, 0])
+  })
+
+  it('boneco de destino ausente do retrato entra nele — senão a troca não teria efeito', () => {
+    const alvo: AnimationKeyframe[] = [
+      { id: 'k1', durationMs: 300, figures: [daCena('figure-1')], camera: cameraDaBancada },
+    ]
+
+    const { keyframes: resultado } = substituteImportedKeyframes({
+      keyframes,
+      target: alvo,
+      sceneFigures: cena,
+      assignment: ['figure-2'],
+      startIndex: 0,
+      replaceCamera: true,
+      baseSeq: 1,
+    })!
+
+    expect(resultado[0].figures.map((figure) => figure.id)).toEqual(['figure-1', 'figure-2'])
+    expect(resultado[0].figures[1].pose).toEqual({ neck: { x: 10, y: 0, z: 0 } })
+  })
+
+  it('sem papel com boneco, sem bancada ou sem arquivo, não há enxerto', () => {
+    const semPapel = substituteImportedKeyframes({
+      keyframes,
+      target: bancada(),
+      sceneFigures: cena,
+      assignment: [''],
+      startIndex: 0,
+      replaceCamera: true,
+      baseSeq: 3,
+    })
+    const semBancada = substituteImportedKeyframes({
+      keyframes,
+      target: [],
+      sceneFigures: cena,
+      assignment: ['figure-1'],
+      startIndex: 0,
+      replaceCamera: true,
+      baseSeq: 0,
+    })
+
+    expect(semPapel).toBeNull()
+    expect(semBancada).toBeNull()
+  })
+
+  it('índice fora da lista é grampeado ao último keyframe', () => {
+    const { keyframes: resultado, appended } = substituteImportedKeyframes({
+      keyframes,
+      target: bancada(),
+      sceneFigures: cena,
+      assignment: ['figure-1'],
+      startIndex: 99,
+      replaceCamera: true,
+      baseSeq: 3,
+    })!
+
+    expect(appended).toBe(1)
+    expect(resultado).toHaveLength(4)
   })
 })
 

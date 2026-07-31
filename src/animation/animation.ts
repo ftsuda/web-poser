@@ -463,7 +463,14 @@ function sanitizeRotation(value: unknown): JointRotation {
   return { x: axis('x'), y: axis('y'), z: axis('z') }
 }
 
-function sanitizeFigure(value: unknown, index: number): Figure {
+/**
+ * Lê UM boneco de dado não confiável, exatamente como ele aparece dentro de
+ * `keyframes[].figures[]`. Exportado (e não só interno) porque o arquivo de pose
+ * avulsa (`figurePoseFile.ts`, DECISOES.md #79) guarda um boneco com ESTA mesma
+ * estrutura — a ponte entre o celular e o computador é o mesmo objeto que a
+ * animação já usa, não um segundo formato a manter em dia.
+ */
+export function sanitizeFigure(value: unknown, index: number): Figure {
   const source = asRecord(value)
 
   const pose: Record<string, JointRotation> = {}

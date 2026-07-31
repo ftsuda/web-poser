@@ -39,6 +39,7 @@ import { useFiguresStore } from '../store/figuresStore'
 import { useUIStore, type GizmoMode } from '../store/uiStore'
 import { importErrorKey } from './fileFeedback'
 import { CollapsiblePanel } from './CollapsiblePanel'
+import { CollapsibleSection } from './CollapsibleSection'
 
 const PRESET_LABEL_KEYS: Record<OrthoPresetName, string> = {
   front: 'panels.camera.presetFront',
@@ -396,7 +397,7 @@ export function CameraPanel() {
             title={t('panels.camera.gizmoHint')}
             onClick={() => selectCameraGizmo('translate')}
           >
-            {t('panels.properties.gizmoTranslate')}
+            {t('common.gizmoTranslate')}
           </button>
           <button
             type="button"
@@ -405,7 +406,7 @@ export function CameraPanel() {
             title={t('panels.camera.gizmoHint')}
             onClick={() => selectCameraGizmo('rotate')}
           >
-            {t('panels.properties.gizmoRotate')}
+            {t('common.gizmoRotate')}
           </button>
         </div>
 
@@ -456,6 +457,13 @@ export function CameraPanel() {
         ))}
       </fieldset>
 
+
+      {/* Lente e INCLINAÇÃO (pedido do usuário, 2026-07-31). O roll morava
+          no bloco de enquadramento, que é todo "escolha e aperte Aplicar";
+          ele é o único de lá que age ao vivo, e é propriedade contínua da
+          câmera — como a distância focal. Aqui os dois controles ao vivo
+          ficam juntos, e o bloco de enquadramento fica com um só modelo de
+          interação. */}
       <fieldset aria-label={t('panels.camera.lens')}>
         <legend>{t('panels.camera.lens')}</legend>
 
@@ -494,140 +502,6 @@ export function CameraPanel() {
             fov: fov.toFixed(1),
           })}
         </p>
-      </fieldset>
-
-      {/* Enquadramento e ângulo (DECISOES.md #46): o plano decide o recorte, o
-          ângulo decide de que altura se olha, e a lente decide a distorção —
-          os três se compõem, e trocar a lente mantém o recorte escolhido. */}
-      <fieldset aria-label={t('panels.camera.shots')}>
-        <legend>{t('panels.camera.shots')}</legend>
-
-        <label className="camera-panel__field" htmlFor="camera-shot-select">
-          {t('panels.camera.shotGroup')}
-          <select
-            id="camera-shot-select"
-            value={shotDraft}
-            onChange={(event) => setShotDraft(event.target.value as ShotKey)}
-          >
-            {SHOT_KEYS.map((key) => (
-              <option key={key} value={key}>
-                {optionLabel(SHOT_TERMS[key], t(SHOT_LABEL_KEYS[key]))}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {/* De que ALTURA se olha. Ângulo e altura vão no MESMO combo, em dois
-            grupos: as duas respondem à mesma pergunta e só uma pode valer — num
-            combo isso é evidente, com botões era preciso explicar. */}
-        <label className="camera-panel__field" htmlFor="camera-vantage-select">
-          {t('panels.camera.vantageGroup')}
-          <select
-            id="camera-vantage-select"
-            value={vantageDraft}
-            onChange={(event) => setVantageDraft(event.target.value)}
-          >
-            <optgroup label={t('panels.camera.angleGroup')}>
-              {ANGLE_KEYS.map((key) => (
-                <option key={key} value={`angle:${key}`}>
-                  {optionLabel(ANGLE_TERMS[key], t(ANGLE_LABEL_KEYS[key]))}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label={t('panels.camera.heightGroup')}>
-              {CAMERA_HEIGHT_KEYS.map((key) => (
-                <option key={key} value={`height:${key}`}>
-                  {optionLabel(CAMERA_HEIGHT_TERMS[key], t(HEIGHT_LABEL_KEYS[key]))}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-        </label>
-
-        {/* De que LADO se olha — relativo ao boneco, não ao mundo (#50). */}
-        <label className="camera-panel__field" htmlFor="camera-orientation-select">
-          {t('panels.camera.orientationGroup')}
-          <select
-            id="camera-orientation-select"
-            value={orientationDraft}
-            onChange={(event) => setOrientationDraft(event.target.value)}
-          >
-            <option value="">{t('panels.camera.orientationKeep')}</option>
-            {ORIENTATION_KEYS.map((key) => (
-              <option key={key} value={key}>
-                {optionLabel(ORIENTATION_TERMS[key], t(ORIENTATION_LABEL_KEYS[key]))}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {/* Onde o sujeito fica DENTRO do quadro. Eram dois interruptores
-            independentes; como combo, as quatro combinações ficam explícitas. */}
-        <label className="camera-panel__field" htmlFor="camera-composition-select">
-          {t('panels.camera.compositionGroup')}
-          <select
-            id="camera-composition-select"
-            value={compositionDraft}
-            onChange={(event) => setCompositionDraft(event.target.value as CompositionChoice)}
-          >
-            <option value="centered">{t('panels.camera.compositionCentered')}</option>
-            <option value="thirds">
-              {optionLabel(RULE_OF_THIRDS_TERM, t('panels.camera.compositionThirds'))}
-            </option>
-            <option value="leadRoom">
-              {optionLabel(LEAD_ROOM_TERM, t('panels.camera.compositionLeadRoom'))}
-            </option>
-            <option value="both">
-              {optionLabel(
-                `${RULE_OF_THIRDS_TERM} + ${LEAD_ROOM_TERM}`,
-                t('panels.camera.compositionBoth'),
-              )}
-            </option>
-          </select>
-        </label>
-
-        <button
-          type="button"
-          className="camera-panel__apply"
-          disabled={!canApplyShot(shotDraft, figures.length, hasSelection)}
-          onClick={applyDraftFraming}
-        >
-          {t('panels.camera.applyFraming')}
-        </button>
-
-        {/* Vistas que resolvem posição e distância sozinhas, a partir de quem
-            está na cena — por isso não compõem com o tamanho de plano, e por
-            isso ficam num combo separado, com o próprio botão. */}
-        <label className="camera-panel__field" htmlFor="camera-view-select">
-          {t('panels.camera.viewsGroup')}
-          <select
-            id="camera-view-select"
-            value={viewDraft}
-            onChange={(event) => setViewDraft(event.target.value as ViewChoice)}
-          >
-            <option value="overTheShoulder">
-              {optionLabel(OVER_THE_SHOULDER_TERM, t('panels.camera.angleOverTheShoulder'))}
-            </option>
-            <option value="pov">{optionLabel(POV_TERM, t('panels.camera.viewPov'))}</option>
-            <option value="twoShot">
-              {optionLabel(TWO_SHOT_TERM, t('panels.camera.viewTwoShot'))}
-            </option>
-            <option value="reverseAngle">
-              {optionLabel(REVERSE_ANGLE_TERM, t('panels.camera.viewReverseAngle'))}
-            </option>
-          </select>
-        </label>
-
-        <button
-          type="button"
-          className="camera-panel__apply"
-          disabled={!canApplyView}
-          onClick={applyDraftView}
-        >
-          {t('panels.camera.applyView')}
-        </button>
-
-        {!canApplyView && <p className="camera-panel__hint">{t(viewBlockedKey)}</p>}
 
         <label htmlFor="camera-roll" className="camera-panel__slider-label">
           {DUTCH_ANGLE_TERM} — {t('panels.camera.roll', { value: Math.round(rollDeg) })}
@@ -647,172 +521,317 @@ export function CameraPanel() {
           </button>
         </div>
 
-        <p className="camera-panel__hint">
-          {rollDeg !== 0
-            ? t('panels.camera.rollHint')
-            : figures.length === 0
+        {rollDeg !== 0 && <p className="camera-panel__hint">{t('panels.camera.rollHint')}</p>}
+      </fieldset>
+
+      {/* Enquadramento e ângulo (DECISOES.md #46): o plano decide o recorte,
+          o ponto de vista decide de onde se olha, a orientação decide de que
+          lado e a composição decide onde o sujeito fica no quadro. Tudo aqui
+          espera o "Aplicar enquadramento" — e é só isso que espera. */}
+      <CollapsibleSection sectionKey="cameraFraming" title={t('panels.camera.shots')}>
+        <fieldset aria-label={t('panels.camera.shots')}>
+          <label className="camera-panel__field" htmlFor="camera-shot-select">
+            {t('panels.camera.shotGroup')}
+            <select
+              id="camera-shot-select"
+              value={shotDraft}
+              onChange={(event) => setShotDraft(event.target.value as ShotKey)}
+            >
+              {SHOT_KEYS.map((key) => (
+                <option key={key} value={key}>
+                  {optionLabel(SHOT_TERMS[key], t(SHOT_LABEL_KEYS[key]))}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* De que ALTURA se olha. Ângulo e altura vão no MESMO combo, em dois
+              grupos: as duas respondem à mesma pergunta e só uma pode valer — num
+              combo isso é evidente, com botões era preciso explicar. */}
+          <label className="camera-panel__field" htmlFor="camera-vantage-select">
+            {t('panels.camera.vantageGroup')}
+            <select
+              id="camera-vantage-select"
+              value={vantageDraft}
+              onChange={(event) => setVantageDraft(event.target.value)}
+            >
+              <optgroup label={t('panels.camera.angleGroup')}>
+                {ANGLE_KEYS.map((key) => (
+                  <option key={key} value={`angle:${key}`}>
+                    {optionLabel(ANGLE_TERMS[key], t(ANGLE_LABEL_KEYS[key]))}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label={t('panels.camera.heightGroup')}>
+                {CAMERA_HEIGHT_KEYS.map((key) => (
+                  <option key={key} value={`height:${key}`}>
+                    {optionLabel(CAMERA_HEIGHT_TERMS[key], t(HEIGHT_LABEL_KEYS[key]))}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </label>
+
+          {/* De que LADO se olha — relativo ao boneco, não ao mundo (#50). */}
+          <label className="camera-panel__field" htmlFor="camera-orientation-select">
+            {t('panels.camera.orientationGroup')}
+            <select
+              id="camera-orientation-select"
+              value={orientationDraft}
+              onChange={(event) => setOrientationDraft(event.target.value)}
+            >
+              <option value="">{t('panels.camera.orientationKeep')}</option>
+              {ORIENTATION_KEYS.map((key) => (
+                <option key={key} value={key}>
+                  {optionLabel(ORIENTATION_TERMS[key], t(ORIENTATION_LABEL_KEYS[key]))}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {/* Onde o sujeito fica DENTRO do quadro. Eram dois interruptores
+              independentes; como combo, as quatro combinações ficam explícitas. */}
+          <label className="camera-panel__field" htmlFor="camera-composition-select">
+            {t('panels.camera.compositionGroup')}
+            <select
+              id="camera-composition-select"
+              value={compositionDraft}
+              onChange={(event) => setCompositionDraft(event.target.value as CompositionChoice)}
+            >
+              <option value="centered">{t('panels.camera.compositionCentered')}</option>
+              <option value="thirds">
+                {optionLabel(RULE_OF_THIRDS_TERM, t('panels.camera.compositionThirds'))}
+              </option>
+              <option value="leadRoom">
+                {optionLabel(LEAD_ROOM_TERM, t('panels.camera.compositionLeadRoom'))}
+              </option>
+              <option value="both">
+                {optionLabel(
+                  `${RULE_OF_THIRDS_TERM} + ${LEAD_ROOM_TERM}`,
+                  t('panels.camera.compositionBoth'),
+                )}
+              </option>
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="camera-panel__apply"
+            disabled={!canApplyShot(shotDraft, figures.length, hasSelection)}
+            onClick={applyDraftFraming}
+          >
+            {t('panels.camera.applyFraming')}
+          </button>
+
+          <p className="camera-panel__hint">
+            {figures.length === 0
               ? t('panels.camera.shotsNeedFigure')
               : hasSelection
                 ? t('panels.camera.shotsHint')
                 : t('panels.camera.shotsGroup')}
-        </p>
-      </fieldset>
-
-      {/* Movimento entre dois pontos: as pontas guardam a câmera inteira
-          (posição, alvo, inclinação e lente), e o slider anda entre elas. */}
-      <fieldset aria-label={t('panels.camera.move')}>
-        <legend>{t('panels.camera.move')}</legend>
-
-        <div className="camera-panel__presets">
-          <button type="button" aria-pressed={moveA !== null} onClick={() => requestCaptureMovePoint('a')}>
-            {t('panels.camera.moveSetA')}
-          </button>
-          <button type="button" aria-pressed={moveB !== null} onClick={() => requestCaptureMovePoint('b')}>
-            {t('panels.camera.moveSetB')}
-          </button>
-          <button type="button" disabled={!moveA && !moveB} onClick={clearMove}>
-            {t('panels.camera.moveClear')}
-          </button>
-        </div>
-
-        <div className="camera-panel__presets">
-          {MOVE_GENERATOR_KEYS.map((key) => (
-            <TermButton
-              key={key}
-              term={MOVE_TERMS[key]}
-              caption={t(MOVE_LABEL_KEYS[key])}
-              disabled={moveA === null}
-              onClick={() => generateMove(key)}
-            />
-          ))}
-        </div>
-
-        <label htmlFor="camera-move-t" className="camera-panel__slider-label">
-          {t('panels.camera.movePosition', { value: Math.round(moveT * 100) })}
-        </label>
-        <div className="camera-panel__slider-row">
-          <input
-            id="camera-move-t"
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={Math.round(moveT * 100)}
-            disabled={!canPlayMove}
-            onChange={(event) => setMoveT(Number(event.target.value) / 100)}
-          />
-        </div>
-
-        <p className="camera-panel__hint">
-          {canPlayMove ? t('panels.camera.moveHint') : t('panels.camera.moveNeedsBothPoints')}
-        </p>
-
-        {/* Item 34: o movimento e o animador usam o MESMO `interpolateCameraView`
-            (#46) e mesmo assim não se falavam — quem já montou o travelling
-            tinha de remontá-lo em keyframes. */}
-        <button
-          type="button"
-          disabled={!canPlayMove || figureCount === 0}
-          title={t('panels.camera.moveToKeyframesHint')}
-          onClick={() => moveA && moveB && appendCameraMoveKeyframes(null, moveA, moveB)}
-        >
-          {t('panels.camera.moveToKeyframes')}
-        </button>
-        {canPlayMove && figureCount === 0 && (
-          <p className="camera-panel__hint">{t('panels.camera.moveToKeyframesNeedsFigure')}</p>
-        )}
-      </fieldset>
-
-      <fieldset aria-label={t('panels.camera.presets')}>
-        <legend>{t('panels.camera.presets')}</legend>
-        <div className="camera-panel__presets">
-          {ORTHO_PRESET_NAMES.map((preset) => (
-            <button key={preset} type="button" onClick={() => applyPreset(preset)}>
-              {t(PRESET_LABEL_KEYS[preset])}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          className="camera-panel__back-to-perspective"
-          disabled={projection === 'perspective'}
-          onClick={requestPerspective}
-        >
-          {t('panels.camera.backToPerspective')}
-        </button>
-      </fieldset>
-
-      <fieldset aria-label={t('panels.camera.bookmarks')}>
-        <legend>{t('panels.camera.bookmarks')}</legend>
-
-        {cameraBookmarks.length === 0 ? (
-          <p className="panel__empty">{t('panels.camera.bookmarksEmpty')}</p>
-        ) : (
-          <ul className="camera-panel__bookmark-list">
-            {cameraBookmarks.map((bookmark) => (
-              <li key={bookmark.id} className="camera-panel__bookmark-row">
-                <span className="camera-panel__bookmark-name">{bookmark.name}</span>
-                <button
-                  type="button"
-                  aria-label={t('panels.camera.applyBookmark')}
-                  title={t('panels.camera.applyBookmark')}
-                  onClick={() => applyBookmark(bookmark.id)}
-                >
-                  &#8594;
-                </button>
-                <button
-                  type="button"
-                  aria-label={t('panels.camera.removeBookmark')}
-                  title={t('panels.camera.removeBookmark')}
-                  onClick={() => removeCameraBookmark(bookmark.id)}
-                >
-                  &times;
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {isNamingBookmark ? (
-          <form className="camera-panel__save-form" onSubmit={confirmSaveBookmark}>
-            <label htmlFor="camera-bookmark-name" className="camera-panel__field">
-              {t('panels.camera.bookmarkNameLabel')}
-              <input
-                id="camera-bookmark-name"
-                type="text"
-                value={bookmarkNameDraft}
-                onChange={(event) => setBookmarkNameDraft(event.target.value)}
-                autoFocus
-              />
-            </label>
-            <div className="camera-panel__save-form-actions">
-              <button type="submit">{t('panels.camera.confirmSave')}</button>
-              <button type="button" onClick={cancelNamingBookmark}>
-                {t('panels.camera.cancelSave')}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <button type="button" className="camera-panel__save" onClick={startNamingBookmark}>
-            {t('panels.camera.saveCurrent')}
-          </button>
-        )}
-
-        <div className="camera-panel__bookmark-file-actions">
-          <button type="button" onClick={() => void handleExportBookmarks()}>
-            {t('panels.camera.exportBookmarks')}
-          </button>
-          <button type="button" onClick={() => void handleImportBookmarks()}>
-            {t('panels.camera.importBookmarks')}
-          </button>
-        </div>
-
-        {errorKey && (
-          <p role="alert" className="panel__error">
-            {t(errorKey)}
           </p>
-        )}
-      </fieldset>
+        </fieldset>
+      </CollapsibleSection>
+
+      {/* Vistas que resolvem posição e distância sozinhas, a partir de quem
+          está na cena. Dividiam o fieldset com o enquadramento, e o bloco
+          ficava com dois botões "Aplicar" — ambíguo na leitura e no clique. */}
+      <CollapsibleSection sectionKey="cameraViews" title={t('panels.camera.viewsSection')}>
+        <fieldset aria-label={t('panels.camera.viewsSection')}>
+          <label className="camera-panel__field" htmlFor="camera-view-select">
+            {t('panels.camera.viewsGroup')}
+            <select
+              id="camera-view-select"
+              value={viewDraft}
+              onChange={(event) => setViewDraft(event.target.value as ViewChoice)}
+            >
+              <option value="overTheShoulder">
+                {optionLabel(OVER_THE_SHOULDER_TERM, t('panels.camera.angleOverTheShoulder'))}
+              </option>
+              <option value="pov">{optionLabel(POV_TERM, t('panels.camera.viewPov'))}</option>
+              <option value="twoShot">
+                {optionLabel(TWO_SHOT_TERM, t('panels.camera.viewTwoShot'))}
+              </option>
+              <option value="reverseAngle">
+                {optionLabel(REVERSE_ANGLE_TERM, t('panels.camera.viewReverseAngle'))}
+              </option>
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="camera-panel__apply"
+            disabled={!canApplyView}
+            onClick={applyDraftView}
+          >
+            {t('panels.camera.applyView')}
+          </button>
+
+          {!canApplyView && <p className="camera-panel__hint">{t(viewBlockedKey)}</p>}
+        </fieldset>
+      </CollapsibleSection>
+
+      <CollapsibleSection sectionKey="cameraMove" title={t('panels.camera.move')}>
+        {/* Movimento entre dois pontos: as pontas guardam a câmera inteira
+            (posição, alvo, inclinação e lente), e o slider anda entre elas. */}
+        <fieldset aria-label={t('panels.camera.move')}>
+          <div className="camera-panel__presets">
+            <button type="button" aria-pressed={moveA !== null} onClick={() => requestCaptureMovePoint('a')}>
+              {t('panels.camera.moveSetA')}
+            </button>
+            <button type="button" aria-pressed={moveB !== null} onClick={() => requestCaptureMovePoint('b')}>
+              {t('panels.camera.moveSetB')}
+            </button>
+            <button type="button" disabled={!moveA && !moveB} onClick={clearMove}>
+              {t('panels.camera.moveClear')}
+            </button>
+          </div>
+
+          <div className="camera-panel__presets">
+            {MOVE_GENERATOR_KEYS.map((key) => (
+              <TermButton
+                key={key}
+                term={MOVE_TERMS[key]}
+                caption={t(MOVE_LABEL_KEYS[key])}
+                disabled={moveA === null}
+                onClick={() => generateMove(key)}
+              />
+            ))}
+          </div>
+
+          <label htmlFor="camera-move-t" className="camera-panel__slider-label">
+            {t('panels.camera.movePosition', { value: Math.round(moveT * 100) })}
+          </label>
+          <div className="camera-panel__slider-row">
+            <input
+              id="camera-move-t"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(moveT * 100)}
+              disabled={!canPlayMove}
+              onChange={(event) => setMoveT(Number(event.target.value) / 100)}
+            />
+          </div>
+
+          <p className="camera-panel__hint">
+            {canPlayMove ? t('panels.camera.moveHint') : t('panels.camera.moveNeedsBothPoints')}
+          </p>
+
+          {/* Item 34: o movimento e o animador usam o MESMO `interpolateCameraView`
+              (#46) e mesmo assim não se falavam — quem já montou o travelling
+              tinha de remontá-lo em keyframes. */}
+          <button
+            type="button"
+            disabled={!canPlayMove || figureCount === 0}
+            title={t('panels.camera.moveToKeyframesHint')}
+            onClick={() => moveA && moveB && appendCameraMoveKeyframes(null, moveA, moveB)}
+          >
+            {t('panels.camera.moveToKeyframes')}
+          </button>
+          {canPlayMove && figureCount === 0 && (
+            <p className="camera-panel__hint">{t('panels.camera.moveToKeyframesNeedsFigure')}</p>
+          )}
+        </fieldset>
+      </CollapsibleSection>
+
+      {/* A EXCEÇÃO do painel, agora dita no título: as vistas ortográficas
+          e o "voltar à perspectiva" comandam a câmera da BANCADA, não a de
+          cena. O comentário do topo já avisava disso; um bloco que precisa
+          de aviso para não ser confundido estava com o nome errado. */}
+      <CollapsibleSection sectionKey="cameraOrtho" title={t('panels.camera.presets')}>
+        <fieldset aria-label={t('panels.camera.presets')}>
+          <div className="camera-panel__presets">
+            {ORTHO_PRESET_NAMES.map((preset) => (
+              <button key={preset} type="button" onClick={() => applyPreset(preset)}>
+                {t(PRESET_LABEL_KEYS[preset])}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="camera-panel__back-to-perspective"
+            disabled={projection === 'perspective'}
+            onClick={requestPerspective}
+          >
+            {t('panels.camera.backToPerspective')}
+          </button>
+        </fieldset>
+      </CollapsibleSection>
+
+      <CollapsibleSection sectionKey="cameraBookmarks" title={t('panels.camera.bookmarks')}>
+        <fieldset aria-label={t('panels.camera.bookmarks')}>
+          {cameraBookmarks.length === 0 ? (
+            <p className="panel__empty">{t('panels.camera.bookmarksEmpty')}</p>
+          ) : (
+            <ul className="camera-panel__bookmark-list">
+              {cameraBookmarks.map((bookmark) => (
+                <li key={bookmark.id} className="camera-panel__bookmark-row">
+                  <span className="camera-panel__bookmark-name">{bookmark.name}</span>
+                  <button
+                    type="button"
+                    aria-label={t('panels.camera.applyBookmark')}
+                    title={t('panels.camera.applyBookmark')}
+                    onClick={() => applyBookmark(bookmark.id)}
+                  >
+                    &#8594;
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t('panels.camera.removeBookmark')}
+                    title={t('panels.camera.removeBookmark')}
+                    onClick={() => removeCameraBookmark(bookmark.id)}
+                  >
+                    &times;
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {isNamingBookmark ? (
+            <form className="camera-panel__save-form" onSubmit={confirmSaveBookmark}>
+              <label htmlFor="camera-bookmark-name" className="camera-panel__field">
+                {t('panels.camera.bookmarkNameLabel')}
+                <input
+                  id="camera-bookmark-name"
+                  type="text"
+                  value={bookmarkNameDraft}
+                  onChange={(event) => setBookmarkNameDraft(event.target.value)}
+                  autoFocus
+                />
+              </label>
+              <div className="camera-panel__save-form-actions">
+                <button type="submit">{t('panels.camera.confirmSave')}</button>
+                <button type="button" onClick={cancelNamingBookmark}>
+                  {t('panels.camera.cancelSave')}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button type="button" className="camera-panel__save" onClick={startNamingBookmark}>
+              {t('panels.camera.saveCurrent')}
+            </button>
+          )}
+
+          <div className="camera-panel__bookmark-file-actions">
+            <button type="button" onClick={() => void handleExportBookmarks()}>
+              {t('panels.camera.exportBookmarks')}
+            </button>
+            <button type="button" onClick={() => void handleImportBookmarks()}>
+              {t('panels.camera.importBookmarks')}
+            </button>
+          </div>
+
+          {errorKey && (
+            <p role="alert" className="panel__error">
+              {t(errorKey)}
+            </p>
+          )}
+        </fieldset>
+      </CollapsibleSection>
+
     </CollapsiblePanel>
   )
 }

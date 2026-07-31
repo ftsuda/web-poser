@@ -37,8 +37,11 @@ import { useCameraStore } from '../store/cameraStore'
 import { useFiguresStore } from '../store/figuresStore'
 import { useKeyframeThumbnailStore } from '../store/keyframeThumbnailStore'
 import type { AnimationImportMode } from '../store/figuresStore'
-import { AnimationImportDialog } from './AnimationImportDialog'
+import { AnimationImportDialog, type SubstituteChoice } from './AnimationImportDialog'
+import { ApplyCameraDialog } from './ApplyCameraDialog'
 import { CollapsiblePanel } from './CollapsiblePanel'
+import { CollapsibleSection } from './CollapsibleSection'
+import { ConfirmDialog } from './ConfirmDialog'
 
 /** Rótulo de cada modo do papel-cebola — mapa explícito, para o typecheck acusar modo novo sem tradução. */
 const ONION_SKIN_MODE_LABEL_KEYS: Record<OnionSkinMode, string> = {
@@ -277,6 +280,7 @@ export function AnimationPanel() {
   const setAnimationKeyframeLabel = useFiguresStore((state) => state.setAnimationKeyframeLabel)
   const copyAnimationKeyframeCamera = useFiguresStore((state) => state.copyAnimationKeyframeCamera)
   const copyAnimationKeyframeFigures = useFiguresStore((state) => state.copyAnimationKeyframeFigures)
+  const applySceneCameraToKeyframes = useFiguresStore((state) => state.applySceneCameraToKeyframes)
   const duplicateAnimationKeyframe = useFiguresStore((state) => state.duplicateAnimationKeyframe)
   const closeAnimationCycle = useFiguresStore((state) => state.closeAnimationCycle)
   const clipLibrary = useFiguresStore((state) => state.clipLibrary)
@@ -290,6 +294,7 @@ export function AnimationPanel() {
   const projection = useCameraStore((state) => state.projection)
 
   const timeMs = useAnimationStore((state) => state.timeMs)
+  const playing = useAnimationStore((state) => state.playing)
   const onionSkin = useAnimationStore((state) => state.onionSkin)
   const setOnionSkin = useAnimationStore((state) => state.setOnionSkin)
   const onionSkinMode = useAnimationStore((state) => state.onionSkinMode)
@@ -342,6 +347,10 @@ export function AnimationPanel() {
    * tempo seriam duas chances de clicar na errada.
    */
   const [confirmingUpdateId, setConfirmingUpdateId] = useState<string | null>(null)
+  /** O diálogo de carimbar a câmera atual numa faixa de keyframes está aberto? */
+  const [applyingCamera, setApplyingCamera] = useState(false)
+  /** E o de confirmar o "Limpar", que apaga a linha do tempo inteira. */
+  const [clearingWorking, setClearingWorking] = useState(false)
   /** Papéis do trecho salvo escolhido, faixa a salvar e nome do trecho (item 39). */
   const [savedRoleDrafts, setSavedRoleDrafts] = useState<string[]>([])
   const [rangeFromDraft, setRangeFromDraft] = useState(0)
@@ -371,6 +380,16 @@ export function AnimationPanel() {
   const playheadIndex = keyframeIndexAtTimeMs(active, currentMs)
   const groups = active ? keyframeGroups(active) : []
   const exporting = exportPhase === 'running'
+  // Qual keyframe está esperando a confirmação de "Regravar": o diálogo precisa
+  // do número e do instante, porque o card que originou o clique não está mais
+  // à vista. Um keyframe que sumiu da lista (removido enquanto o diálogo
+  // esperava) cai fora sozinho, sem estado a limpar.
+  const confirmingIndex =
+    active && confirmingUpdateId
+      ? active.keyframes.findIndex((keyframe) => keyframe.id === confirmingUpdateId)
+      : -1
+  const confirmingUpdate =
+    confirmingIndex >= 0 && confirmingUpdateId ? { id: confirmingUpdateId, index: confirmingIndex } : null
 
   // A câmera do keyframe é uma câmera em perspectiva (posição, alvo e lente);
   // em ortográfica não há lente que interpolar, então a captura fica de fora.
@@ -495,10 +514,21 @@ export function AnimationPanel() {
     }
   }
 
-  const handleConfirmImport = (mode: AnimationImportMode, assignment: readonly string[] | null) => {
+  const handleConfirmImport = (
+    mode: AnimationImportMode,
+    assignment: readonly string[] | null,
+    substitute?: SubstituteChoice,
+  ) => {
     setPendingImport(null)
     if (!pendingImport) return
-    if (!importAnimation(pendingImport, { mode, assignment })) {
+    if (
+      !importAnimation(pendingImport, {
+        mode,
+        assignment,
+        startIndex: substitute?.startIndex,
+        replaceCamera: substitute?.replaceCamera,
+      })
+    ) {
       setFileErrorKey('errors.importFailed')
       return
     }
@@ -530,267 +560,6 @@ export function AnimationPanel() {
           <p className="animation-panel__hint animation-panel__capture-hint">{t(blockedReasonKey)}</p>
         )}
       </div>
-
-
-      {/* Trechos prontos (DECISOES.md #60): sequências predefinidas de
-          keyframes que entram no FINAL da linha do tempo, ancoradas no boneco
-          do papel A. Nas cenas em dupla, os combos escolhem quem faz o quê. */}
-      <fieldset className="animation-panel__clips">
-        <legend>{t('panels.animation.clips')}</legend>
-
-        <label htmlFor="animation-clip" className="animation-panel__field">
-          {t('panels.animation.clip')}
-          <select
-            id="animation-clip"
-            value={clipSelection}
-            onChange={(event) => setClipSelection(event.target.value)}
-          >
-            <optgroup label={t('panels.animation.clipGroupSolo')}>
-              {ANIMATION_CLIP_KEYS.filter((key) => ANIMATION_CLIPS[key].kind === 'solo').map((key) => (
-                <option key={key} value={key}>
-                  {t(CLIP_LABEL_KEYS[key].label)}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label={t('panels.animation.clipGroupDuo')}>
-              {ANIMATION_CLIP_KEYS.filter((key) => ANIMATION_CLIPS[key].kind === 'duo').map((key) => (
-                <option key={key} value={key}>
-                  {t(CLIP_LABEL_KEYS[key].label)}
-                </option>
-              ))}
-            </optgroup>
-            {/* Trechos do usuário (item 39) no MESMO combo dos prontos — do
-                lado de quem aplica, um trecho salvo é um trecho pronto. */}
-            {clipLibrary.length > 0 && (
-              <optgroup label={t('panels.animation.clipGroupSaved')}>
-                {clipLibrary.map((clip) => (
-                  <option key={clip.id} value={`${SAVED_CLIP_PREFIX}${clip.id}`}>
-                    {clip.name}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-        </label>
-
-        <p className="animation-panel__hint">
-          {savedClip
-            ? t('panels.animation.clipSavedHint', { count: clipRoleCount(savedClip) })
-            : t(CLIP_LABEL_KEYS[clipKey].hint)}
-        </p>
-
-        {/* Item 37: no trecho INDIVIDUAL, marcar vários bonecos aplica o
-            trecho inteiro a todos ao mesmo tempo, cada um ancorado no próprio
-            lugar. Em dupla continua sendo um combo por papel: os encaixes são
-            medidos par a par, e dois "A" cairiam no mesmo ponto. */}
-        {savedClipRoles > 1 ? (
-          // Trecho salvo com mais de um papel: um combo por papel gravado.
-          <>
-            {Array.from({ length: savedClipRoles }, (_, role) => (
-              <label
-                key={role}
-                htmlFor={`animation-saved-role-${role}`}
-                className="animation-panel__field"
-              >
-                {t('panels.animation.clipSavedRole', { role: role + 1 })}
-                <select
-                  id={`animation-saved-role-${role}`}
-                  value={savedRoleIds[role] ?? ''}
-                  onChange={(event) => {
-                    const next = [...savedRoleIds]
-                    next[role] = event.target.value
-                    setSavedRoleDrafts(next)
-                  }}
-                >
-                  {figures.map((figure) => (
-                    <option key={figure.id} value={figure.id}>
-                      {figure.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-            {new Set(savedRoleIds).size < savedClipRoles && (
-              <p className="animation-panel__hint">{t('panels.animation.clipSavedNeedsDistinct')}</p>
-            )}
-          </>
-        ) : duoClip ? (
-          <label htmlFor="animation-clip-role-a" className="animation-panel__field">
-            {t('panels.animation.clipRoleA')}
-            <select
-              id="animation-clip-role-a"
-              value={clipRoleA}
-              onChange={(event) => setClipRoleADraft(event.target.value)}
-            >
-              {figures.map((figure) => (
-                <option key={figure.id} value={figure.id}>
-                  {figure.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <fieldset className="animation-panel__clip-figures">
-            <legend>{t('panels.animation.clipFigures')}</legend>
-            {figures.map((figure) => (
-              <label key={figure.id} className="animation-panel__clip-figure">
-                <input
-                  type="checkbox"
-                  checked={soloFigureIds.includes(figure.id)}
-                  onChange={(event) =>
-                    setSoloDraft(
-                      event.target.checked
-                        ? [...soloFigureIds, figure.id]
-                        : soloFigureIds.filter((id) => id !== figure.id),
-                    )
-                  }
-                />
-                {figure.name}
-              </label>
-            ))}
-            {soloFigureIds.length === 0 && (
-              <p className="animation-panel__hint">{t('panels.animation.clipNeedsFigure')}</p>
-            )}
-          </fieldset>
-        )}
-
-        {duoClip && (
-          <label htmlFor="animation-clip-role-b" className="animation-panel__field">
-            {t('panels.animation.clipRoleB')}
-            <select
-              id="animation-clip-role-b"
-              value={clipRoleB}
-              onChange={(event) => setClipRoleBDraft(event.target.value)}
-            >
-              {figures
-                .filter((figure) => figure.id !== clipRoleA)
-                .map((figure) => (
-                  <option key={figure.id} value={figure.id}>
-                    {figure.name}
-                  </option>
-                ))}
-            </select>
-          </label>
-        )}
-
-        <button
-          type="button"
-          onClick={() => {
-            if (savedClip) {
-              // Um papel só: cada boneco marcado executa o trecho no próprio
-              // lugar (item 37). Mais de um: um elenco só, um boneco por papel.
-              const casts =
-                savedClipRoles === 1 ? soloFigureIds.map((id) => [id]) : [savedRoleIds]
-              requestAppendSavedClip(savedClip.id, casts, `${savedClip.name} 1`)
-              return
-            }
-            requestAppendClip(
-              clipKey,
-              duoClip ? [clipRoleA] : soloFigureIds,
-              duoClip ? clipRoleB : undefined,
-              // O trecho já nasce agrupado com o próprio nome (item 38); o
-              // sufixo resolve a segunda inserção sozinho.
-              `${t(CLIP_LABEL_KEYS[clipKey].label)} 1`,
-            )
-          }}
-          disabled={!canAddClip}
-          title={t('panels.animation.clipAddHint')}
-        >
-          {t('panels.animation.clipAdd')}
-        </button>
-
-        {duoClip && figureCount < 2 && (
-          <p className="animation-panel__hint">{t('panels.animation.clipNeedsTwoFigures')}</p>
-        )}
-
-        {/* Salvar uma faixa da linha do tempo como trecho reutilizável (item
-            39): os keyframes literais, SEM a câmera — ao aplicar, o trecho
-            congela a câmera viva, como os de fábrica. */}
-        {active && active.keyframes.length >= 2 && (
-          <div className="animation-panel__save-clip">
-            <label htmlFor="animation-clip-from" className="animation-panel__field">
-              {t('panels.animation.clipRangeFrom')}
-              <select
-                id="animation-clip-from"
-                value={rangeFrom}
-                onChange={(event) => setRangeFromDraft(Number(event.target.value))}
-              >
-                {active.keyframes.map((keyframe, index) => (
-                  // O número do keyframe MAIS o instante: só o número faria a
-                  // opção "2" (índice 1) e o valor 2 se confundirem, na leitura
-                  // e em qualquer automação.
-                  <option key={keyframe.id} value={index}>
-                    {`${index + 1} — ${formatSeconds(startTimes[index])}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label htmlFor="animation-clip-to" className="animation-panel__field">
-              {t('panels.animation.clipRangeTo')}
-              <select
-                id="animation-clip-to"
-                value={rangeTo}
-                onChange={(event) => setRangeToDraft(Number(event.target.value))}
-              >
-                {active.keyframes.map((keyframe, index) => (
-                  // O número do keyframe MAIS o instante: só o número faria a
-                  // opção "2" (índice 1) e o valor 2 se confundirem, na leitura
-                  // e em qualquer automação.
-                  <option key={keyframe.id} value={index}>
-                    {`${index + 1} — ${formatSeconds(startTimes[index])}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label htmlFor="animation-clip-name" className="animation-panel__field">
-              {t('panels.animation.clipSaveName')}
-              <input
-                id="animation-clip-name"
-                type="text"
-                value={clipNameDraft}
-                onChange={(event) => setClipNameDraft(event.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                if (saveClipFromRange(active.id, rangeFrom, rangeTo, clipNameDraft)) setClipNameDraft('')
-              }}
-              disabled={rangeFrom === rangeTo}
-              title={t('panels.animation.clipSaveHint')}
-            >
-              {t('panels.animation.clipSave')}
-            </button>
-            {rangeFrom === rangeTo && (
-              <p className="animation-panel__hint">{t('panels.animation.clipRangeTooShort')}</p>
-            )}
-          </div>
-        )}
-
-        {savedClip && (
-          <div className="animation-panel__buttons">
-            <button
-              type="button"
-              onClick={() => {
-                renameSavedClip(savedClip.id, clipNameDraft)
-                setClipNameDraft('')
-              }}
-              disabled={!clipNameDraft.trim()}
-            >
-              {t('panels.animation.clipRenameSaved')}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                removeSavedClip(savedClip.id)
-                setClipSelection('walking')
-              }}
-            >
-              {t('panels.animation.clipRemoveSaved')}
-            </button>
-          </div>
-        )}
-      </fieldset>
 
       {/* Papel-cebola (item 31): fica logo acima da lista porque é dela que ele
           fala — o fantasma é o keyframe de cima e o de baixo do que está no
@@ -926,47 +695,28 @@ export function AnimationPanel() {
                     que está na tela, e o Ctrl+Z é a única saída — num painel com
                     oito botões por card, um clique errado custa caro. Os outros
                     botões da lista não pedem confirmação porque são reversíveis
-                    à vista (mover, duplicar) ou não perdem nada (Ir para). */}
-                {confirmingUpdateId === keyframe.id ? (
-                  <>
-                    <p className="animation-panel__hint animation-panel__hint--warning">
-                      {t('panels.animation.updateConfirmHint')}
-                    </p>
-                    <div className="animation-panel__keyframe-row">
-                      <button
-                        type="button"
-                        className="animation-panel__confirm"
-                        onClick={() => {
-                          requestUpdateKeyframe(keyframe.id)
-                          setConfirmingUpdateId(null)
-                        }}
-                      >
-                        {t('panels.animation.updateConfirm')}
-                      </button>
-                      <button type="button" onClick={() => setConfirmingUpdateId(null)}>
-                        {t('panels.animation.updateCancel')}
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="animation-panel__keyframe-row">
-                    <button
-                      type="button"
-                      onClick={() => requestGoToKeyframe(keyframe.id, startTimes[index])}
-                      title={t('panels.animation.goTo')}
-                    >
-                      {t('panels.animation.goTo')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmingUpdateId(keyframe.id)}
-                      disabled={!canCapture}
-                      title={t('panels.animation.update')}
-                    >
-                      {t('panels.animation.update')}
-                    </button>
-                  </div>
-                )}
+                    à vista (mover, duplicar) ou não perdem nada (Ir para).
+                    A confirmação em si mora num `<dialog>` modal, fora da lista
+                    (pedido do usuário, 2026-07-31): dentro do card ela ficava
+                    colada nos botões dos keyframes VIZINHOS, que continuavam
+                    clicáveis — ver `KeyframeUpdateDialog`. */}
+                <div className="animation-panel__keyframe-row">
+                  <button
+                    type="button"
+                    onClick={() => requestGoToKeyframe(keyframe.id, startTimes[index])}
+                    title={t('panels.animation.goTo')}
+                  >
+                    {t('panels.animation.goTo')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingUpdateId(keyframe.id)}
+                    disabled={!canCapture}
+                    title={t('panels.animation.update')}
+                  >
+                    {t('panels.animation.update')}
+                  </button>
+                </div>
 
                 {/* Copiar a câmera do vizinho: é o gesto de segurar o
                     enquadramento num trecho e deixar só os bonecos se moverem.
@@ -1060,252 +810,598 @@ export function AnimationPanel() {
         </ol>
       )}
 
-      {/* A linha do tempo, o transporte e o "pular keyframe" ficam na barra do
-          RODAPÉ (`TimelineBar.tsx`, item 29): aqui fica o que é edição, lá o
-          que é navegação. */}
-      <p className="animation-panel__hint">
-        {t('panels.animation.timelineMoved', {
-          time: formatSeconds(currentMs),
-          total: formatSeconds(totalMs),
-        })}
-      </p>
+      {/* Ações da linha do tempo INTEIRA (pedido do usuário, 2026-07-31):
+          fechar o ciclo, carimbar a câmera, gerar miniaturas e guardar uma
+          faixa como trecho fazem todas a mesma coisa — agem sobre a lista,
+          não sobre um keyframe. Estavam espalhadas por três pontos do painel,
+          duas delas depois do bloco de vídeo. Aqui elas ficam logo abaixo da
+          lista de que falam, e a velocidade fecha o bloco por ser a outra
+          propriedade da linha do tempo como um todo. */}
+      <fieldset className="animation-panel__timeline-actions">
+        <legend>{t('panels.animation.timelineActions')}</legend>
 
-      {/* Vale para a reprodução na tela E para o vídeo — o que se vê tocando é
-          o que sai no arquivo. Não mexe na linha do tempo: os keyframes
-          continuam nos mesmos instantes. */}
-      <SpeedField
-        label={t('panels.animation.speed')}
-        speed={speed}
-        disabled={!active || exporting}
-        onCommit={(value) => active && setAnimationSpeed(active.id, value)}
-      />
-      <p className="animation-panel__hint">
-        {t('panels.animation.speedHint', { duration: formatSeconds(outputMs) })}
-      </p>
-
-      {/* "Inserir keyframe aqui" saiu daqui para a barra da linha do tempo
-          (pedido do usuário): ele corta o trecho NO INSTANTE do playhead, e o
-          playhead mora lá. Ver `TimelineBar.tsx`. */}
-
-      {/* Item 27: sem o keyframe 1 repetido no fim, nenhum ciclo emenda — a
-          última transição não volta ao ponto de partida. */}
-      <button
-        type="button"
-        className="animation-panel__insert"
-        onClick={() => active && closeAnimationCycle(active.id)}
-        disabled={!active || active.keyframes.length < 2 || exporting}
-        title={t('panels.animation.closeCycleHint')}
-      >
-        {t('panels.animation.closeCycle')}
-      </button>
-
-      {/* Item 30: um retrato pequeno por keyframe, gerado sob demanda e
-          guardado só em memória. */}
-      <button
-        type="button"
-        className="animation-panel__insert"
-        onClick={requestThumbnails}
-        disabled={!active || active.keyframes.length === 0 || exporting}
-        title={t('panels.animation.thumbnailsHint')}
-      >
-        {t('panels.animation.thumbnails')}
-      </button>
-
-      <label htmlFor="animation-fps" className="animation-panel__field">
-        {t('panels.animation.fps')}
-        <select id="animation-fps" value={fps} onChange={(event) => setFps(Number(event.target.value))}>
-          {FPS_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {/* Proporção × qualidade (fase 11.4): os mesmos rótulos do instantâneo —
-          o vídeo só não tem a personalizada. */}
-      <label htmlFor="animation-aspect" className="animation-panel__field">
-        {t('panels.snapshots.aspect')}
-        <select
-          id="animation-aspect"
-          value={aspectKey}
-          onChange={(event) => selectAspect(event.target.value as OutputAspectKey)}
+        {/* Item 27: sem o keyframe 1 repetido no fim, nenhum ciclo emenda — a
+            última transição não volta ao ponto de partida. */}
+        <button
+          type="button"
+          className="animation-panel__wide"
+          onClick={() => active && closeAnimationCycle(active.id)}
+          disabled={!active || active.keyframes.length < 2 || exporting}
+          title={t('panels.animation.closeCycleHint')}
         >
-          {OUTPUT_ASPECT_KEYS.map((key) => (
-            <option key={key} value={key}>
-              {t(ASPECT_LABEL_KEYS[key])}
-            </option>
-          ))}
-        </select>
-      </label>
+          {t('panels.animation.closeCycle')}
+        </button>
 
-      <label htmlFor="animation-quality" className="animation-panel__field">
-        {t('panels.snapshots.quality')}
-        <select
-          id="animation-quality"
-          value={qualityKey}
-          onChange={(event) => selectQuality(event.target.value as OutputQualityKey)}
+        {/* Carimbar a câmera atual numa faixa de keyframes (pedido do usuário):
+            o gesto de achar o enquadramento e querer ele na animação inteira.
+            Fica desabilitado TOCANDO porque durante a reprodução quem anda é o
+            objeto vivo da câmera — o store só é sincronizado ao parar, e o que
+            seria carimbado é o enquadramento de antes de dar play. */}
+        <button
+          type="button"
+          className="animation-panel__wide"
+          onClick={() => setApplyingCamera(true)}
+          disabled={!active || active.keyframes.length === 0 || playing || exporting}
+          title={t('panels.animation.applyCameraHint')}
         >
-          {OUTPUT_QUALITY_KEYS.map((key) => (
-            <option key={key} value={key}>
-              {t(QUALITY_LABEL_KEYS[key])}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <button type="button" className="animation-panel__export" onClick={requestExport} disabled={!canExport}>
-        {t('panels.animation.export')}
-      </button>
-
-      {exporting && (
-        <div className="animation-panel__export-status">
-          <p>{t('panels.animation.exporting', { frame: exportedFrames, total: exportTotalFrames })}</p>
-          <button type="button" onClick={cancelExport}>
-            {t('panels.animation.cancelExport')}
-          </button>
-        </div>
-      )}
-
-      {exportPhase === 'done' && lastExportFilename && (
-        <p className="animation-panel__hint">
-          {t('panels.animation.exported', { filename: lastExportFilename })}
-        </p>
-      )}
-      {exportPhase === 'cancelled' && <p className="animation-panel__hint">{t('panels.animation.cancelled')}</p>}
-      {exportPhase === 'error' && exportErrorKey && (
-        <p className="animation-panel__hint animation-panel__hint--error">{t(exportErrorKey)}</p>
-      )}
-
-      {/* Biblioteca de animações (item 36): cópias nomeadas da de trabalho,
-          guardadas no mesmo autosave e no mesmo `animations.json`. Abrir uma
-          delas SUBSTITUI a de trabalho, como carregar um snapshot de cena. */}
-      <fieldset className="animation-panel__library">
-        <legend>{t('panels.animation.library')}</legend>
-
-        {/* O nome da animação de trabalho (item 36) mora AQUI, e não no topo do
-            painel (pedido do usuário): é do mesmo assunto que a biblioteca —
-            ele é o que vira o nome do MP4 e o padrão de "Nome para guardar",
-            logo abaixo. No topo ele separava o botão de capturar da lista de
-            keyframes sem ter nada a ver com nenhum dos dois. */}
-        <NameField
-          label={t('panels.animation.name')}
-          name={active?.name ?? ''}
-          disabled={!active}
-          onCommit={(name) => active && renameAnimation(active.id, name)}
-        />
-
-        <label htmlFor="animation-library-name" className="animation-panel__field">
-          {t('panels.animation.libraryName')}
-          <input
-            id="animation-library-name"
-            type="text"
-            value={libraryNameDraft}
-            onChange={(event) => setLibraryNameDraft(event.target.value)}
-            placeholder={active?.name ?? ''}
-          />
-        </label>
-
-        <div className="animation-panel__buttons">
-          <button
-            type="button"
-            onClick={handleSaveToLibrary}
-            disabled={!active || active.keyframes.length === 0}
-            title={t('panels.animation.saveToLibraryHint')}
-          >
-            {t('panels.animation.saveToLibrary')}
-          </button>
-          <button type="button" onClick={handleClearWorking} disabled={!active}>
-            {t('panels.animation.clearWorking')}
-          </button>
-        </div>
-
-        {/* Arquivo avulso da animação de trabalho (fase 12): exportar leva a
-            linha do tempo inteira num JSON; importar traz um de volta, e o
-            diálogo pergunta se ele substitui a bancada ou emenda no fim dela.
-            A biblioteca não entra nessa história. */}
-        <div className="animation-panel__buttons">
-          <button
-            type="button"
-            onClick={() => void handleExportJson()}
-            disabled={!active || active.keyframes.length === 0}
-            title={t('panels.animation.exportJsonHint')}
-          >
-            {t('panels.animation.exportJson')}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleImportJson()}
-            title={t('panels.animation.importJsonHint')}
-          >
-            {t('panels.animation.importJson')}
-          </button>
-        </div>
-
-        {fileErrorKey && (
-          <p role="alert" className="panel__error">
-            {t(fileErrorKey)}
-          </p>
+          {t('panels.animation.applyCamera')}
+        </button>
+        {active && active.keyframes.length > 0 && playing && (
+          <p className="animation-panel__hint">{t('panels.animation.applyCameraPlaying')}</p>
         )}
 
-        {library.length === 0 ? (
-          <p className="animation-panel__hint">{t('panels.animation.libraryEmpty')}</p>
-        ) : (
-          <>
-            <label htmlFor="animation-saved" className="animation-panel__field">
-              {t('panels.animation.savedAnimation')}
+        {/* Item 30: um retrato pequeno por keyframe, gerado sob demanda e
+            guardado só em memória. */}
+        <button
+          type="button"
+          className="animation-panel__wide"
+          onClick={requestThumbnails}
+          disabled={!active || active.keyframes.length === 0 || exporting}
+          title={t('panels.animation.thumbnailsHint')}
+        >
+          {t('panels.animation.thumbnails')}
+        </button>
+
+        {/* Salvar uma faixa da linha do tempo como trecho reutilizável (item
+            39): os keyframes literais, SEM a câmera — ao aplicar, o trecho
+            congela a câmera viva, como os de fábrica. */}
+        {active && active.keyframes.length >= 2 && (
+          <div className="animation-panel__save-clip">
+            <label htmlFor="animation-clip-from" className="animation-panel__field">
+              {t('panels.animation.clipRangeFrom')}
               <select
-                id="animation-saved"
-                value={selectedSaved}
-                onChange={(event) => setSavedDraft(event.target.value)}
+                id="animation-clip-from"
+                value={rangeFrom}
+                onChange={(event) => setRangeFromDraft(Number(event.target.value))}
               >
-                {library.map((animation) => (
-                  <option key={animation.id} value={animation.id}>
-                    {animation.name}
+                {active.keyframes.map((keyframe, index) => (
+                  // O número do keyframe MAIS o instante: só o número faria a
+                  // opção "2" (índice 1) e o valor 2 se confundirem, na leitura
+                  // e em qualquer automação.
+                  <option key={keyframe.id} value={index}>
+                    {`${index + 1} — ${formatSeconds(startTimes[index])}`}
                   </option>
                 ))}
               </select>
             </label>
+            <label htmlFor="animation-clip-to" className="animation-panel__field">
+              {t('panels.animation.clipRangeTo')}
+              <select
+                id="animation-clip-to"
+                value={rangeTo}
+                onChange={(event) => setRangeToDraft(Number(event.target.value))}
+              >
+                {active.keyframes.map((keyframe, index) => (
+                  // O número do keyframe MAIS o instante: só o número faria a
+                  // opção "2" (índice 1) e o valor 2 se confundirem, na leitura
+                  // e em qualquer automação.
+                  <option key={keyframe.id} value={index}>
+                    {`${index + 1} — ${formatSeconds(startTimes[index])}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label htmlFor="animation-clip-name" className="animation-panel__field">
+              {t('panels.animation.clipSaveName')}
+              <input
+                id="animation-clip-name"
+                type="text"
+                value={clipNameDraft}
+                onChange={(event) => setClipNameDraft(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                if (saveClipFromRange(active.id, rangeFrom, rangeTo, clipNameDraft)) setClipNameDraft('')
+              }}
+              disabled={rangeFrom === rangeTo}
+              title={t('panels.animation.clipSaveHint')}
+            >
+              {t('panels.animation.clipSave')}
+            </button>
+            {rangeFrom === rangeTo && (
+              <p className="animation-panel__hint">{t('panels.animation.clipRangeTooShort')}</p>
+            )}
+          </div>
+        )}
 
+        {/* Vale para a reprodução na tela E para o vídeo — o que se vê tocando é
+            o que sai no arquivo. Não mexe na linha do tempo: os keyframes
+            continuam nos mesmos instantes. */}
+        <SpeedField
+          label={t('panels.animation.speed')}
+          speed={speed}
+          disabled={!active || exporting}
+          onCommit={(value) => active && setAnimationSpeed(active.id, value)}
+        />
+        <p className="animation-panel__hint">
+          {t('panels.animation.speedHint', { duration: formatSeconds(outputMs) })}
+        </p>
+      </fieldset>
+
+      {/* Trechos prontos (DECISOES.md #60): sequências predefinidas de
+          keyframes que entram no FINAL da linha do tempo, ancoradas no boneco
+          do papel A. Nas cenas em dupla, os combos escolhem quem faz o quê.
+          Recolhido por padrão (pedido do usuário, 2026-07-31): o combo tem 21
+          opções e se escolhe uma por sessão — aberto, ele empurrava a lista de
+          keyframes para fora da tela. */}
+      <CollapsibleSection sectionKey="animationClips" title={t('panels.animation.clips')}>
+        <fieldset className="animation-panel__clips">
+          <label htmlFor="animation-clip" className="animation-panel__field">
+            {t('panels.animation.clip')}
+            <select
+              id="animation-clip"
+              value={clipSelection}
+              onChange={(event) => setClipSelection(event.target.value)}
+            >
+              <optgroup label={t('panels.animation.clipGroupSolo')}>
+                {ANIMATION_CLIP_KEYS.filter((key) => ANIMATION_CLIPS[key].kind === 'solo').map((key) => (
+                  <option key={key} value={key}>
+                    {t(CLIP_LABEL_KEYS[key].label)}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label={t('panels.animation.clipGroupDuo')}>
+                {ANIMATION_CLIP_KEYS.filter((key) => ANIMATION_CLIPS[key].kind === 'duo').map((key) => (
+                  <option key={key} value={key}>
+                    {t(CLIP_LABEL_KEYS[key].label)}
+                  </option>
+                ))}
+              </optgroup>
+              {/* Trechos do usuário (item 39) no MESMO combo dos prontos — do
+                  lado de quem aplica, um trecho salvo é um trecho pronto. */}
+              {clipLibrary.length > 0 && (
+                <optgroup label={t('panels.animation.clipGroupSaved')}>
+                  {clipLibrary.map((clip) => (
+                    <option key={clip.id} value={`${SAVED_CLIP_PREFIX}${clip.id}`}>
+                      {clip.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </label>
+
+          <p className="animation-panel__hint">
+            {savedClip
+              ? t('panels.animation.clipSavedHint', { count: clipRoleCount(savedClip) })
+              : t(CLIP_LABEL_KEYS[clipKey].hint)}
+          </p>
+
+          {/* Item 37: no trecho INDIVIDUAL, marcar vários bonecos aplica o
+              trecho inteiro a todos ao mesmo tempo, cada um ancorado no próprio
+              lugar. Em dupla continua sendo um combo por papel: os encaixes são
+              medidos par a par, e dois "A" cairiam no mesmo ponto. */}
+          {savedClipRoles > 1 ? (
+            // Trecho salvo com mais de um papel: um combo por papel gravado.
+            <>
+              {Array.from({ length: savedClipRoles }, (_, role) => (
+                <label
+                  key={role}
+                  htmlFor={`animation-saved-role-${role}`}
+                  className="animation-panel__field"
+                >
+                  {t('panels.animation.clipSavedRole', { role: role + 1 })}
+                  <select
+                    id={`animation-saved-role-${role}`}
+                    value={savedRoleIds[role] ?? ''}
+                    onChange={(event) => {
+                      const next = [...savedRoleIds]
+                      next[role] = event.target.value
+                      setSavedRoleDrafts(next)
+                    }}
+                  >
+                    {figures.map((figure) => (
+                      <option key={figure.id} value={figure.id}>
+                        {figure.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+              {new Set(savedRoleIds).size < savedClipRoles && (
+                <p className="animation-panel__hint">{t('panels.animation.clipSavedNeedsDistinct')}</p>
+              )}
+            </>
+          ) : duoClip ? (
+            <label htmlFor="animation-clip-role-a" className="animation-panel__field">
+              {t('panels.animation.clipRoleA')}
+              <select
+                id="animation-clip-role-a"
+                value={clipRoleA}
+                onChange={(event) => setClipRoleADraft(event.target.value)}
+              >
+                {figures.map((figure) => (
+                  <option key={figure.id} value={figure.id}>
+                    {figure.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <fieldset className="animation-panel__clip-figures">
+              <legend>{t('panels.animation.clipFigures')}</legend>
+              {figures.map((figure) => (
+                <label key={figure.id} className="animation-panel__clip-figure">
+                  <input
+                    type="checkbox"
+                    checked={soloFigureIds.includes(figure.id)}
+                    onChange={(event) =>
+                      setSoloDraft(
+                        event.target.checked
+                          ? [...soloFigureIds, figure.id]
+                          : soloFigureIds.filter((id) => id !== figure.id),
+                      )
+                    }
+                  />
+                  {figure.name}
+                </label>
+              ))}
+              {soloFigureIds.length === 0 && (
+                <p className="animation-panel__hint">{t('panels.animation.clipNeedsFigure')}</p>
+              )}
+            </fieldset>
+          )}
+
+          {duoClip && (
+            <label htmlFor="animation-clip-role-b" className="animation-panel__field">
+              {t('panels.animation.clipRoleB')}
+              <select
+                id="animation-clip-role-b"
+                value={clipRoleB}
+                onChange={(event) => setClipRoleBDraft(event.target.value)}
+              >
+                {figures
+                  .filter((figure) => figure.id !== clipRoleA)
+                  .map((figure) => (
+                    <option key={figure.id} value={figure.id}>
+                      {figure.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              if (savedClip) {
+                // Um papel só: cada boneco marcado executa o trecho no próprio
+                // lugar (item 37). Mais de um: um elenco só, um boneco por papel.
+                const casts =
+                  savedClipRoles === 1 ? soloFigureIds.map((id) => [id]) : [savedRoleIds]
+                requestAppendSavedClip(savedClip.id, casts, `${savedClip.name} 1`)
+                return
+              }
+              requestAppendClip(
+                clipKey,
+                duoClip ? [clipRoleA] : soloFigureIds,
+                duoClip ? clipRoleB : undefined,
+                // O trecho já nasce agrupado com o próprio nome (item 38); o
+                // sufixo resolve a segunda inserção sozinho.
+                `${t(CLIP_LABEL_KEYS[clipKey].label)} 1`,
+              )
+            }}
+            disabled={!canAddClip}
+            title={t('panels.animation.clipAddHint')}
+          >
+            {t('panels.animation.clipAdd')}
+          </button>
+
+          {duoClip && figureCount < 2 && (
+            <p className="animation-panel__hint">{t('panels.animation.clipNeedsTwoFigures')}</p>
+          )}
+
+
+          {savedClip && (
             <div className="animation-panel__buttons">
-              <button type="button" onClick={handleOpenSaved} title={t('panels.animation.openHint')}>
-                {t('panels.animation.open')}
-              </button>
               <button
                 type="button"
-                onClick={() => overwriteSavedAnimation(selectedSaved)}
-                disabled={!active || active.keyframes.length === 0}
-                title={t('panels.animation.overwriteSavedHint')}
+                onClick={() => {
+                  renameSavedClip(savedClip.id, clipNameDraft)
+                  setClipNameDraft('')
+                }}
+                disabled={!clipNameDraft.trim()}
               >
-                {t('panels.animation.overwriteSaved')}
+                {t('panels.animation.clipRenameSaved')}
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  renameAnimation(selectedSaved, libraryNameDraft)
-                  setLibraryNameDraft('')
+                  removeSavedClip(savedClip.id)
+                  setClipSelection('walking')
                 }}
-                disabled={!libraryNameDraft.trim()}
               >
-                {t('panels.animation.rename')}
-              </button>
-              <button type="button" onClick={() => removeAnimation(selectedSaved)}>
-                {t('panels.animation.remove')}
+                {t('panels.animation.clipRemoveSaved')}
               </button>
             </div>
+          )}
+        </fieldset>
+      </CollapsibleSection>
 
-            <p className="animation-panel__hint">{t('panels.animation.openHint')}</p>
-          </>
+      {/* Saída em vídeo, também recolhida: quadros por segundo, proporção,
+          qualidade e a exportação em si. É o último passo do trabalho, e o
+          único bloco que não se toca enquanto se monta a animação. */}
+      <CollapsibleSection sectionKey="animationVideo" title={t('panels.animation.video')}>
+        <label htmlFor="animation-fps" className="animation-panel__field">
+          {t('panels.animation.fps')}
+          <select id="animation-fps" value={fps} onChange={(event) => setFps(Number(event.target.value))}>
+            {FPS_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {/* Proporção × qualidade (fase 11.4): os mesmos rótulos do instantâneo —
+            o vídeo só não tem a personalizada. */}
+        <label htmlFor="animation-aspect" className="animation-panel__field">
+          {t('panels.snapshots.aspect')}
+          <select
+            id="animation-aspect"
+            value={aspectKey}
+            onChange={(event) => selectAspect(event.target.value as OutputAspectKey)}
+          >
+            {OUTPUT_ASPECT_KEYS.map((key) => (
+              <option key={key} value={key}>
+                {t(ASPECT_LABEL_KEYS[key])}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label htmlFor="animation-quality" className="animation-panel__field">
+          {t('panels.snapshots.quality')}
+          <select
+            id="animation-quality"
+            value={qualityKey}
+            onChange={(event) => selectQuality(event.target.value as OutputQualityKey)}
+          >
+            {OUTPUT_QUALITY_KEYS.map((key) => (
+              <option key={key} value={key}>
+                {t(QUALITY_LABEL_KEYS[key])}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <button type="button" className="animation-panel__export" onClick={requestExport} disabled={!canExport}>
+          {t('panels.animation.export')}
+        </button>
+
+        {exporting && (
+          <div className="animation-panel__export-status">
+            <p>{t('panels.animation.exporting', { frame: exportedFrames, total: exportTotalFrames })}</p>
+            <button type="button" onClick={cancelExport}>
+              {t('panels.animation.cancelExport')}
+            </button>
+          </div>
         )}
-      </fieldset>
+
+        {exportPhase === 'done' && lastExportFilename && (
+          <p className="animation-panel__hint">
+            {t('panels.animation.exported', { filename: lastExportFilename })}
+          </p>
+        )}
+        {exportPhase === 'cancelled' && <p className="animation-panel__hint">{t('panels.animation.cancelled')}</p>}
+        {exportPhase === 'error' && exportErrorKey && (
+          <p className="animation-panel__hint animation-panel__hint--error">{t(exportErrorKey)}</p>
+        )}
+      </CollapsibleSection>
+
+      {/* Biblioteca de animações (item 36) e os arquivos JSON (fase 12):
+          guardar, reabrir, exportar e importar. Recolhida pela mesma razão
+          das outras duas — é onde se começa e onde se termina, não onde se
+          trabalha. */}
+      <CollapsibleSection sectionKey="animationLibrary" title={t('panels.animation.library')}>
+        {/* Biblioteca de animações (item 36): cópias nomeadas da de trabalho,
+            guardadas no mesmo autosave e no mesmo `animations.json`. Abrir uma
+            delas SUBSTITUI a de trabalho, como carregar um snapshot de cena. */}
+        <fieldset className="animation-panel__library">
+          {/* O nome da animação de trabalho (item 36) mora AQUI, e não no topo do
+              painel (pedido do usuário): é do mesmo assunto que a biblioteca —
+              ele é o que vira o nome do MP4 e o padrão de "Nome para guardar",
+              logo abaixo. No topo ele separava o botão de capturar da lista de
+              keyframes sem ter nada a ver com nenhum dos dois. */}
+          <NameField
+            label={t('panels.animation.name')}
+            name={active?.name ?? ''}
+            disabled={!active}
+            onCommit={(name) => active && renameAnimation(active.id, name)}
+          />
+
+          <label htmlFor="animation-library-name" className="animation-panel__field">
+            {t('panels.animation.libraryName')}
+            <input
+              id="animation-library-name"
+              type="text"
+              value={libraryNameDraft}
+              onChange={(event) => setLibraryNameDraft(event.target.value)}
+              placeholder={active?.name ?? ''}
+            />
+          </label>
+
+          <div className="animation-panel__buttons">
+            <button
+              type="button"
+              onClick={handleSaveToLibrary}
+              disabled={!active || active.keyframes.length === 0}
+              title={t('panels.animation.saveToLibraryHint')}
+            >
+              {t('panels.animation.saveToLibrary')}
+            </button>
+            <button type="button" onClick={() => setClearingWorking(true)} disabled={!active}>
+              {t('panels.animation.clearWorking')}
+            </button>
+          </div>
+
+          {library.length === 0 ? (
+            <p className="animation-panel__hint">{t('panels.animation.libraryEmpty')}</p>
+          ) : (
+            <>
+              <label htmlFor="animation-saved" className="animation-panel__field">
+                {t('panels.animation.savedAnimation')}
+                <select
+                  id="animation-saved"
+                  value={selectedSaved}
+                  onChange={(event) => setSavedDraft(event.target.value)}
+                >
+                  {library.map((animation) => (
+                    <option key={animation.id} value={animation.id}>
+                      {animation.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="animation-panel__buttons">
+                <button type="button" onClick={handleOpenSaved} title={t('panels.animation.openHint')}>
+                  {t('panels.animation.open')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => overwriteSavedAnimation(selectedSaved)}
+                  disabled={!active || active.keyframes.length === 0}
+                  title={t('panels.animation.overwriteSavedHint')}
+                >
+                  {t('panels.animation.overwriteSaved')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    renameAnimation(selectedSaved, libraryNameDraft)
+                    setLibraryNameDraft('')
+                  }}
+                  disabled={!libraryNameDraft.trim()}
+                >
+                  {t('panels.animation.rename')}
+                </button>
+                <button type="button" onClick={() => removeAnimation(selectedSaved)}>
+                  {t('panels.animation.remove')}
+                </button>
+              </div>
+
+              <p className="animation-panel__hint">{t('panels.animation.openHint')}</p>
+            </>
+          )}
+        </fieldset>
+
+        {/* Arquivo avulso da animação de trabalho (fase 12), em bloco PRÓPRIO
+            (pedido do usuário, 2026-07-31): exportar leva a linha do tempo
+            inteira num JSON e importar traz um de volta. É o outro sistema de
+            guarda — no meio dos botões da biblioteca, os dois se liam como se
+            fossem o mesmo. */}
+        <fieldset className="animation-panel__files">
+          <legend>{t('panels.animation.libraryFiles')}</legend>
+
+          <div className="animation-panel__buttons">
+            <button
+              type="button"
+              onClick={() => void handleExportJson()}
+              disabled={!active || active.keyframes.length === 0}
+              title={t('panels.animation.exportJsonHint')}
+            >
+              {t('panels.animation.exportJson')}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleImportJson()}
+              title={t('panels.animation.importJsonHint')}
+            >
+              {t('panels.animation.importJson')}
+            </button>
+          </div>
+
+          {fileErrorKey && (
+            <p role="alert" className="panel__error">
+              {t(fileErrorKey)}
+            </p>
+          )}
+        </fieldset>
+      </CollapsibleSection>
 
       {pendingImport && (
         <AnimationImportDialog
           imported={pendingImport}
           sceneFigures={figures}
-          hasWorkingKeyframes={active !== null && active.keyframes.length > 0}
+          workingKeyframes={active?.keyframes ?? []}
           onConfirm={handleConfirmImport}
           onCancel={() => setPendingImport(null)}
+        />
+      )}
+
+      {/* A confirmação de "Regravar" (DECISOES.md #69) mora fora da lista: o
+          card que originou o clique some de vista, então o diálogo repete o
+          número e o instante do keyframe. Um id em confirmação por vez — abrir
+          a de outro card fecha a anterior sozinho. */}
+      {active && confirmingUpdate && (
+        <ConfirmDialog
+          title={t('panels.animation.updateTitle')}
+          detail={t('panels.animation.keyframeLabel', {
+            index: confirmingUpdate.index + 1,
+            time: formatSeconds(startTimes[confirmingUpdate.index]),
+          })}
+          message={t('panels.animation.updateConfirmHint')}
+          confirmLabel={t('panels.animation.updateConfirm')}
+          onConfirm={() => {
+            requestUpdateKeyframe(confirmingUpdate.id)
+            setConfirmingUpdateId(null)
+          }}
+          onCancel={() => setConfirmingUpdateId(null)}
+        />
+      )}
+
+      {/* Limpar apaga a linha do tempo INTEIRA e só o Ctrl+Z devolve — e ele
+          ficava ao lado de "Salvar na biblioteca", sem pedir nada, enquanto
+          regravar UM keyframe pedia confirmação. A proteção agora é a mesma
+          (pedido do usuário, 2026-07-31). */}
+      {active && clearingWorking && (
+        <ConfirmDialog
+          title={t('panels.animation.clearWorkingTitle')}
+          detail={t('panels.animation.clearWorkingDetail', {
+            name: active.name,
+            count: active.keyframes.length,
+          })}
+          message={t('panels.animation.clearWorkingConfirmHint')}
+          confirmLabel={t('panels.animation.clearWorkingConfirm')}
+          onConfirm={() => {
+            handleClearWorking()
+            setClearingWorking(false)
+          }}
+          onCancel={() => setClearingWorking(false)}
+        />
+      )}
+
+      {active && applyingCamera && active.keyframes.length > 0 && (
+        <ApplyCameraDialog
+          keyframes={active.keyframes}
+          onConfirm={(fromIndex, toIndex) => {
+            applySceneCameraToKeyframes(active.id, fromIndex, toIndex)
+            setApplyingCamera(false)
+          }}
+          onCancel={() => setApplyingCamera(false)}
         />
       )}
     </CollapsiblePanel>

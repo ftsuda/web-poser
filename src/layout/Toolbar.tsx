@@ -2,6 +2,7 @@ import type { ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { supportedLanguages } from '../i18n'
+import type { FigureStyle } from '../figure/skeleton'
 import type { FrameMaskSource } from '../scene/frameMask'
 import { useFiguresStore, type BackgroundTone } from '../store/figuresStore'
 import { useUIStore } from '../store/uiStore'
@@ -20,6 +21,8 @@ export function Toolbar() {
   const toggleRuler = useUIStore((state) => state.toggleRuler)
   const frameMaskSource = useUIStore((state) => state.frameMaskSource)
   const setFrameMaskSource = useUIStore((state) => state.setFrameMaskSource)
+  const figureStyle = useUIStore((state) => state.figureStyle)
+  const setFigureStyle = useUIStore((state) => state.setFigureStyle)
 
   // O histórico do `zundo` é um store vanilla à parte do `figuresStore` — sem
   // esta assinatura os botões não saberiam quando habilitar/desabilitar.
@@ -40,6 +43,10 @@ export function Toolbar() {
 
   const handleFrameMaskChange = (event: ChangeEvent<HTMLSelectElement>) => {
     setFrameMaskSource(event.target.value as FrameMaskSource)
+  }
+
+  const handleFigureStyleChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    setFigureStyle(event.target.value as FigureStyle)
   }
 
   const savedTime =
@@ -96,6 +103,18 @@ export function Toolbar() {
         <label className="toolbar__field toolbar__field--checkbox" title={t('toolbar.rulerHint')}>
           <input type="checkbox" checked={rulerVisible} onChange={toggleRuler} />
           {t('toolbar.ruler')}
+        </label>
+
+        {/* Casca visual do boneco (DECISOES.md #81). É modo de VISUALIZAÇÃO: não
+            entra no undo, não viaja no `.glb` e não muda pose nem limites — por
+            isso mora na Toolbar, ao lado do fundo e da régua, e não no painel de
+            Propriedades do boneco selecionado. */}
+        <label className="toolbar__field" title={t('toolbar.figureStyleHint')}>
+          {t('toolbar.figureStyle')}
+          <select value={figureStyle} onChange={handleFigureStyleChange}>
+            <option value="wooden">{t('toolbar.figureStyleWooden')}</option>
+            <option value="stick">{t('toolbar.figureStyleStick')}</option>
+          </select>
         </label>
 
         {/* Um controle só para as duas saídas: o instantâneo e a animação têm

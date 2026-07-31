@@ -1,11 +1,18 @@
 import '../../i18n'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resolvePosePreset } from '../../figure/posePresets'
 import { AXIS_COLORS } from '../../scene/axisColors'
 import { useFiguresStore } from '../../store/figuresStore'
 import { useUIStore } from '../../store/uiStore'
+
+vi.mock('../../persistence/fileIO', () => ({
+  writeFileToDirectoryOrDownload: vi.fn().mockResolvedValue(undefined),
+  pickFile: vi.fn(),
+}))
+
+import { pickFile, writeFileToDirectoryOrDownload } from '../../persistence/fileIO'
 import { PropertiesPanel } from '../PropertiesPanel'
 
 async function renderPropertiesPanel() {
@@ -14,10 +21,24 @@ async function renderPropertiesPanel() {
   return utils
 }
 
+/**
+ * As seções de uso ocasional do painel (guardar/copiar pose e simetria) nascem
+ * RECOLHIDAS — uma escolha de layout, `uiPreferences.ts`. Estes testes são
+ * sobre o conteúdo, então começam todas abertas.
+ */
+function abrirSecoes() {
+  useUIStore.setState((state) => ({
+    collapsedSections: Object.fromEntries(
+      Object.keys(state.collapsedSections).map((key) => [key, false]),
+    ) as typeof state.collapsedSections,
+  }))
+}
+
 describe('PropertiesPanel', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
+    abrirSecoes()
   })
 
   it('shows the panel title and the empty-state message when nothing is selected', async () => {
@@ -546,6 +567,7 @@ describe('PropertiesPanel — resetar junta e cores de eixo (fase 9, itens 6 e 9
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
+    abrirSecoes()
   })
 
   it('reseta só a junta selecionada, preservando as demais', async () => {
@@ -593,6 +615,7 @@ describe('PropertiesPanel — biblioteca de poses e travamento (DECISOES.md #42)
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
+    abrirSecoes()
   })
 
   async function comBonecoSelecionado(nome = 'Herói') {
@@ -655,6 +678,56 @@ describe('PropertiesPanel — biblioteca de poses e travamento (DECISOES.md #42)
     expect(screen.queryByRole('button', { name: 'Remover da biblioteca' })).not.toBeInTheDocument()
   })
 
+  /**
+   * Renomear existia no store desde sempre, testado, e nunca tinha ganhado
+   * botão: dava para salvar e apagar uma pose, mas não para corrigir o nome
+   * dela — enquanto animações, trechos e cenas renomeiam.
+   */
+  it('renomeia a pose escolhida da biblioteca, pelo mesmo campo de nome', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    let poseSalva = ''
+    act(() => {
+      poseSalva = useFiguresStore.getState().saveFigurePose(id, 'Corrida') as string
+    })
+
+    // Só para poses do usuário: as de fábrica não são renomeáveis.
+    expect(screen.queryByRole('button', { name: 'Renomear' })).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), `saved:${poseSalva}`)
+    await user.click(screen.getByRole('button', { name: 'Renomear' }))
+
+    // O campo abre JÁ com o nome atual — renomear é corrigir, não redigitar.
+    const campo = screen.getByLabelText('Nome da pose')
+    expect(campo).toHaveValue('Corrida')
+
+    await user.clear(campo)
+    await user.type(campo, 'Corrida rápida')
+    await user.click(screen.getByRole('button', { name: 'Salvar pose' }))
+
+    expect(useFiguresStore.getState().poseLibrary.map((pose) => pose.name)).toEqual(['Corrida rápida'])
+    // A pose continua escolhida no combo, com o nome novo.
+    const combo = screen.getByRole('combobox', { name: 'Poses predefinidas' }) as HTMLSelectElement
+    expect(combo.value).toBe(`saved:${poseSalva}`)
+    expect(screen.queryByLabelText('Nome da pose')).not.toBeInTheDocument()
+  })
+
+  it('cancelar o renomear não mexe no nome guardado', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    let poseSalva = ''
+    act(() => {
+      poseSalva = useFiguresStore.getState().saveFigurePose(id, 'Corrida') as string
+    })
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Poses predefinidas' }), `saved:${poseSalva}`)
+    await user.click(screen.getByRole('button', { name: 'Renomear' }))
+    await user.type(screen.getByLabelText('Nome da pose'), ' e mais')
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(useFiguresStore.getState().poseLibrary[0].name).toBe('Corrida')
+  })
+
   it('trava a junta selecionada e desabilita os controles dela', async () => {
     const user = userEvent.setup()
     const { id } = await comBonecoSelecionado()
@@ -702,6 +775,7 @@ describe('PropertiesPanel — mistura entre poses (DECISOES.md #43)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
+    abrirSecoes()
   })
 
   async function comBoneco() {
@@ -806,6 +880,7 @@ describe('PropertiesPanel — apoiar no chão e espelho ao vivo (DECISOES.md #58
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
+    abrirSecoes()
   })
 
   const bonecoSelecionado = () => {
@@ -863,6 +938,7 @@ describe('PropertiesPanel — zerar por grupo e copiar um membro (DECISOES.md #5
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useUIStore.setState(useUIStore.getInitialState())
+    abrirSecoes()
   })
 
   const bonecoSelecionado = (nome = 'Herói') => {
@@ -914,5 +990,262 @@ describe('PropertiesPanel — zerar por grupo e copiar um membro (DECISOES.md #5
     // Só o braço: a perna e o lugar no chão ficam como estavam.
     expect(alvo.pose['knee.L'].x).toBe(0)
     expect(alvo.position).toEqual([2, 0, 0])
+  })
+})
+
+/**
+ * Pose em arquivo JSON (DECISOES.md #81) — a ponte com o celular. Aqui só a
+ * fiação do painel; o contrato do formato é testado em
+ * `persistence/__tests__/figurePoseFile.test.ts`.
+ */
+describe('PropertiesPanel — pose em arquivo (.json)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+    abrirSecoes()
+    vi.mocked(pickFile).mockReset()
+    vi.mocked(writeFileToDirectoryOrDownload).mockClear()
+  })
+
+  const selecionarBoneco = (nome = 'Original') => {
+    const id = useFiguresStore.getState().addFigure(nome) as string
+    useFiguresStore.getState().selectFigure(id)
+    return id
+  }
+
+  it('não aparece sem boneco selecionado', async () => {
+    await renderPropertiesPanel()
+    expect(screen.queryByRole('group', { name: 'Pose em arquivo (.json)' })).not.toBeInTheDocument()
+  })
+
+  it('aparece na visão da raiz e some com uma junta selecionada — é operação do boneco INTEIRO', async () => {
+    const id = selecionarBoneco()
+    const { rerender } = await renderPropertiesPanel()
+
+    expect(screen.getByRole('group', { name: 'Pose em arquivo (.json)' })).toBeInTheDocument()
+
+    act(() => {
+      useFiguresStore.getState().selectJoint('elbow.L')
+    })
+    rerender(<PropertiesPanel />)
+
+    expect(screen.queryByRole('group', { name: 'Pose em arquivo (.json)' })).not.toBeInTheDocument()
+    expect(id).toBeTruthy()
+  })
+
+  it('exporta a pose num .json com o boneco no (0,0) do plano', async () => {
+    const id = selecionarBoneco('Herói')
+    useFiguresStore.getState().setPosition(id, [3, 0.5, -2])
+
+    const user = userEvent.setup()
+    await renderPropertiesPanel()
+    await user.click(screen.getByRole('button', { name: 'Exportar pose' }))
+
+    await vi.waitFor(() => {
+      expect(vi.mocked(writeFileToDirectoryOrDownload)).toHaveBeenCalledTimes(1)
+    })
+    const [directoryHandle, filename, blob] = vi.mocked(writeFileToDirectoryOrDownload).mock.calls[0]
+    expect(directoryHandle).toBeNull()
+    expect(filename).toMatch(/-pose\.json$/)
+
+    const gravado = JSON.parse(await (blob as Blob).text())
+    expect(gravado.figure.position).toEqual([0, 0.5, 0])
+    expect(gravado.figure.pose['elbow.L']).toBeDefined()
+    // A cena em si não muda ao exportar.
+    expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.position).toEqual([3, 0.5, -2])
+  })
+
+  it('carrega uma pose mantendo X/Z do boneco e trazendo só o Y do arquivo', async () => {
+    const id = selecionarBoneco()
+    useFiguresStore.getState().setPosition(id, [4, 0, 4])
+
+    const arquivo = {
+      version: 1,
+      figure: {
+        id: 'figure-do-celular',
+        name: 'Vindo do celular',
+        color: '#4060e0',
+        visible: true,
+        height: 1.55,
+        position: [0, 0.3, 0],
+        rotation: { x: 0, y: 45, z: 0 },
+        pose: { 'knee.L': { x: 90, y: 0, z: 0 } },
+      },
+    }
+    vi.mocked(pickFile).mockResolvedValue({
+      file: new File([], 'pose.json'),
+      data: new TextEncoder().encode(JSON.stringify(arquivo)).buffer as ArrayBuffer,
+    })
+
+    const user = userEvent.setup()
+    await renderPropertiesPanel()
+    await user.click(screen.getByRole('button', { name: 'Carregar pose' }))
+
+    await vi.waitFor(() => {
+      expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.pose['knee.L']).toEqual({
+        x: 90,
+        y: 0,
+        z: 0,
+      })
+    })
+    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
+    expect(figure?.position).toEqual([4, 0.3, 4])
+    expect(figure?.height).toBe(1.55)
+    expect(figure?.rotation).toEqual({ x: 0, y: 45, z: 0 })
+    // Nome e cor são do boneco de destino, não do arquivo.
+    expect(figure?.name).toBe('Original')
+  })
+
+  it('avisa quando o arquivo não é JSON válido, sem mexer na pose', async () => {
+    const id = selecionarBoneco()
+    const poseAntes = useFiguresStore.getState().figures.find((f) => f.id === id)?.pose
+
+    vi.mocked(pickFile).mockResolvedValue({
+      file: new File([], 'ruim.json'),
+      data: new TextEncoder().encode('{ isto não é json').buffer as ArrayBuffer,
+    })
+
+    const user = userEvent.setup()
+    await renderPropertiesPanel()
+    await user.click(screen.getByRole('button', { name: 'Carregar pose' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('não é um JSON válido')
+    expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.pose).toEqual(poseAntes)
+  })
+
+  it('avisa quando o JSON é válido mas não tem pose aproveitável', async () => {
+    selecionarBoneco()
+
+    vi.mocked(pickFile).mockResolvedValue({
+      file: new File([], 'outro.json'),
+      data: new TextEncoder().encode('{"algo":"que não é pose"}').buffer as ArrayBuffer,
+    })
+
+    const user = userEvent.setup()
+    await renderPropertiesPanel()
+    await user.click(screen.getByRole('button', { name: 'Carregar pose' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('não tem nenhuma pose aproveitável')
+  })
+})
+
+/**
+ * Reorganização do painel (pedido do usuário, 2026-07-31): a colocação sobe
+ * para junto do gizmo que a arrasta, as poses ficam separadas de guardar/copiar
+ * e as duas vistas terminam na mesma ordem.
+ */
+describe('PropertiesPanel — ordem e seções', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  async function comBoneco() {
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    useFiguresStore.getState().selectFigure(id)
+    await renderPropertiesPanel()
+    return id
+  }
+
+  /** Ordem de leitura dos blocos, pela posição no DOM. */
+  function ordemDe(nomes: readonly string[]): string[] {
+    const encontrados = nomes
+      .map((nome) => {
+        const el =
+          screen.queryByRole('group', { name: nome }) ??
+          screen.queryByRole('button', { name: nome }) ??
+          screen.queryByRole('slider', { name: nome })
+        return el ? { nome, el } : null
+      })
+      .filter((entry): entry is { nome: string; el: HTMLElement } => entry !== null)
+    return encontrados
+      .sort((a, b) =>
+        a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+      )
+      .map((entry) => entry.nome)
+  }
+
+  it('na raiz, a colocação vem antes das poses — e o gizmo junto dela', async () => {
+    await comBoneco()
+
+    expect(ordemDe(['Gizmo', 'Posição (m)', 'Rotação (°)', 'Poses predefinidas'])).toEqual([
+      'Gizmo',
+      'Posição (m)',
+      'Rotação (°)',
+      'Poses predefinidas',
+    ])
+  })
+
+  it('as seções ocasionais nascem recolhidas; a de poses, aberta', async () => {
+    await comBoneco()
+
+    expect(screen.getByRole('button', { name: 'Poses predefinidas' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    for (const titulo of ['Guardar e copiar', 'Simetria']) {
+      expect(screen.getByRole('button', { name: titulo })).toHaveAttribute('aria-expanded', 'false')
+    }
+    // Recolhida, "Guardar e copiar" não deixa nada no DOM.
+    expect(screen.queryByRole('button', { name: 'Salvar pose atual' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Pose em arquivo (.json)' })).not.toBeInTheDocument()
+  })
+
+  it('as duas vistas terminam na mesma ordem: simetria e depois zerar por grupo', async () => {
+    const id = await comBoneco()
+    expect(ordemDe(['Simetria', 'Zerar por grupo'])).toEqual(['Simetria', 'Zerar por grupo'])
+
+    act(() => {
+      useFiguresStore.getState().selectJoint('elbow.L')
+    })
+
+    // Antes, a dupla aparecia invertida na junta — trocar de junta reordenava
+    // o painel sem que nada tivesse mudado de assunto.
+    expect(ordemDe(['Simetria', 'Zerar por grupo'])).toEqual(['Simetria', 'Zerar por grupo'])
+    expect(id).toBeTruthy()
+  })
+
+  /**
+   * Escolher a ferramenta do gizmo é o que se faz ANTES de mexer nos números —
+   * a mesma ordem que a raiz já tinha (pedido do usuário, 2026-07-31).
+   */
+  it('na junta, o gizmo vem antes da rotação, como na raiz', async () => {
+    await comBoneco()
+    act(() => {
+      useFiguresStore.getState().selectJoint('wrist.L')
+    })
+
+    expect(ordemDe(['Gizmo', 'Rotação (°)', 'Poses da mão esquerda'])).toEqual([
+      'Gizmo',
+      'Rotação (°)',
+      'Poses da mão esquerda',
+    ])
+  })
+
+  /**
+   * A fila de cima é a da pose ESCOLHIDA no combo (aplicar, renomear, remover);
+   * o sorteio não tem nada a ver com ela e desce para depois da mistura
+   * (pedido do usuário, 2026-07-31).
+   */
+  it('na raiz, "Aleatória" fica depois da mistura', async () => {
+    await comBoneco()
+
+    expect(ordemDe(['Aplicar pose', 'Mistura com a pose escolhida', 'Aleatória'])).toEqual([
+      'Aplicar pose',
+      'Mistura com a pose escolhida',
+      'Aleatória',
+    ])
+  })
+
+  /** "Guardar e copiar" fecha o painel: é o fim de uma sessão, não o meio. */
+  it('na raiz, guardar e copiar é o último bloco', async () => {
+    await comBoneco()
+
+    expect(ordemDe(['Poses predefinidas', 'Simetria', 'Zerar por grupo', 'Guardar e copiar'])).toEqual([
+      'Poses predefinidas',
+      'Simetria',
+      'Zerar por grupo',
+      'Guardar e copiar',
+    ])
   })
 })

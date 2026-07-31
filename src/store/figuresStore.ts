@@ -40,7 +40,7 @@ import {
   type AnimationKeyframe,
 } from '../animation/animation'
 import { sampleAnimation, splitCameraView } from '../animation/animationSampler'
-import { remapImportedKeyframes } from '../animation/animationRemap'
+import { remapImportedKeyframes, substituteImportedKeyframes } from '../animation/animationRemap'
 import type { ImportedAnimation } from '../persistence/animationsFile'
 import {
   ANIMATION_CLIPS,
@@ -95,9 +95,11 @@ export const MAX_FIGURES = 5
 
 /**
  * O que fazer com a animação lida de um arquivo (fase 12): trocar a da bancada
- * por ela, ou emendá-la no fim do que já está lá.
+ * por ela, emendá-la no fim do que já está lá, ou ENXERTÁ-LA a partir de um
+ * keyframe, trocando só as poses dos bonecos escolhidos (e, se quiserem, as
+ * câmeras) — pedido do usuário, 2026-07-31, ver `substituteImportedKeyframes`.
  */
-export type AnimationImportMode = 'replace' | 'append'
+export type AnimationImportMode = 'replace' | 'append' | 'substitute'
 
 export type BackgroundTone = 'light' | 'medium' | 'dark'
 
@@ -368,12 +370,37 @@ export interface FiguresState {
   saveOrUpdateActiveScene: () => string
   /** Substitui o estado de trabalho pelo snapshot indicado; retorna `false` se o id não existir. */
   loadSceneSnapshot: (id: string) => boolean
+  /**
+   * Renomeia um snapshot do catálogo. **Sem botão no painel de Cenas** — a
+   * ação existe, é testada, e renomear uma cena salva continua sendo feito
+   * salvando por cima com outro nome. Mesmo caso do `renameSavedPose`, que em
+   * 2026-07-31 ganhou o botão que faltava; este continua na fila.
+   */
   renameSceneSnapshot: (id: string, name: string) => void
   removeSceneSnapshot: (id: string) => void
   /** Substitui a cena de trabalho por dados lidos de um `.glb` importado — não é um snapshot salvo do catálogo. */
   loadSceneWorkingState: (data: SceneSnapshotData & { name: string }) => void
   /** Aplica altura/pose importadas a um boneco existente, mantendo identidade/cor/posição — ver PLANO.md > "Exportação/importação de um boneco individual". */
   applyImportedPose: (id: string, imported: { height: number; pose: Record<string, JointRotation> }) => void
+  /**
+   * Aplica uma pose lida de um arquivo de pose avulsa (`figurePoseFile.ts`,
+   * DECISOES.md #81) — o formato que faz a ponte com o celular.
+   *
+   * Difere de `applyImportedPose` em dois pontos, os dois vindos do contrato
+   * daquele arquivo: a inclinação do boneco (`rotation`) também vem da pose, e a
+   * colocação recebe o Y do arquivo mantendo X/Z onde estão (agachar e pular são
+   * pose; andar para o lado é composição). Identidade, cor e visibilidade
+   * continuam sendo do boneco de destino.
+   */
+  applyImportedFigurePose: (
+    id: string,
+    imported: {
+      height: number
+      positionY: number
+      rotation: JointRotation
+      pose: Record<string, JointRotation>
+    },
+  ) => void
   /** Cria um boneco novo a partir de um boneco importado — sujeito ao limite de 5 bonecos e a uma cor livre da paleta. */
   importFigureAsNew: (imported: Omit<Figure, 'id'>) => string | null
   /** Adiciona bookmarks importados aos já existentes (nunca substitui); nomes duplicados recebem um sufixo automático. */
@@ -432,9 +459,25 @@ export interface FiguresState {
   blendPose: (figureId: string, base: BlendablePose, target: BlendablePose, amount: number) => void
   renameSavedPose: (poseId: string, name: string) => void
   removeSavedPose: (poseId: string) => void
-  /** Substitui a biblioteca pela lida de um workspace (já sanitizada). */
+  /**
+   * Substitui a biblioteca pela lida de um workspace (já sanitizada). Como
+   * `loadClipLibrary` e `loadAnimationLibrary`, só os testes chamam: no app o
+   * autosave entra pelo estado INICIAL do store e a pasta de workspace entra
+   * por `loadWorkspaceCatalog`, que traz tudo num passo só.
+   */
   loadPoseLibrary: (poses: readonly SavedPose[]) => void
-  /** Cria uma animação vazia e devolve o id gerado. */
+  /**
+   * Cria uma animação vazia e devolve o id gerado.
+   *
+   * **Nenhum botão chama isto** desde o item 36: o gesto "criar animação antes
+   * de capturar" deixou de existir, e quem cria a de trabalho é a própria
+   * captura (`withTargetAnimation`). Continua aqui porque é como os testes
+   * montam uma animação de BIBLIOTECA para exercitar as ações por id — pela UI
+   * isso exige capturar e depois `saveAnimationToLibrary`.
+   *
+   * Não ligue de volta a um botão sem reabrir o item 36: era ele que obrigava a
+   * batizar uma animação antes de poder capturar o primeiro keyframe.
+   */
   createAnimation: (name?: string) => string
   renameAnimation: (id: string, name: string) => void
   removeAnimation: (id: string) => void
@@ -485,6 +528,18 @@ export interface FiguresState {
    * segurar a pose e deixar só a câmera se mover. Nas pontas não faz nada.
    */
   copyAnimationKeyframeFigures: (animationId: string, keyframeId: string, offset: -1 | 1) => void
+  /**
+   * Carimba a câmera de cena ATUAL numa faixa de keyframes, de `fromIndex` a
+   * `toIndex` inclusive (pedido do usuário, 2026-07-31). É o gesto de "achei o
+   * enquadramento certo, quero ele na animação inteira" — sem ele, a única
+   * saída era regravar keyframe a keyframe, e regravar troca a pose junto.
+   *
+   * A faixa é normalizada (invertida se vier ao contrário) e grampeada à lista;
+   * a padrão, no painel, é a animação toda. Poses e durações não são tocadas.
+   * Devolve `false` sem mexer em nada quando a animação não existe ou está
+   * vazia.
+   */
+  applySceneCameraToKeyframes: (animationId: string, fromIndex: number, toIndex: number) => boolean
   /**
    * Duplica um keyframe logo depois dele (item 28). Dois retratos iguais em
    * sequência são uma PAUSA — a única forma de fazer uma hoje é recapturar a
@@ -581,9 +636,15 @@ export interface FiguresState {
     casts: readonly (readonly string[])[],
     label?: string,
   ) => boolean
-  /** Substitui a biblioteca de trechos pela lida de um workspace (já sanitizada). */
+  /**
+   * Substitui a biblioteca de trechos pela lida de um workspace (já
+   * sanitizada). Como `loadAnimationLibrary`, só os testes chamam: no app, o
+   * autosave entra pelo estado INICIAL do store e a pasta de workspace entra
+   * por `loadWorkspaceCatalog`, que traz cenas, poses, trechos e animações num
+   * passo só. São o caminho de granularidade fina do mesmo carregamento.
+   */
   loadClipLibrary: (clips: readonly SavedClip[]) => void
-  /** Substitui as animações pelas lidas de um workspace (já sanitizadas). */
+  /** Substitui as animações pelas lidas de um workspace (já sanitizadas) — ver `loadClipLibrary`. */
   loadAnimationLibrary: (animations: readonly Animation[]) => void
   /**
    * Traz para a bancada a animação lida de um arquivo JSON (fase 12). A
@@ -597,13 +658,28 @@ export interface FiguresState {
    * a nomes, cores e alturas de origem e a única saída quando a cena não tem
    * bonecos suficientes.
    *
+   * No modo `substitute` (pedido do usuário, 2026-07-31) o arquivo não escreve
+   * a linha do tempo: ele é ENXERTADO nela a partir de `startIndex`, trocando
+   * as poses dos bonecos que receberam papel — e as câmeras, se
+   * `replaceCamera`. Tudo o mais fica como estava. Esse modo exige `assignment`
+   * (é ele que diz quem sai e quem entra) e uma bancada com keyframes.
+   *
    * Tudo num `set` só: importar é UM passo de undo, como abrir uma animação da
    * biblioteca. Devolve `false` sem mexer em nada quando não há o que importar
    * (arquivo sem keyframes, ou remapeamento sem nenhum papel com boneco).
    */
   importAnimation: (
     imported: ImportedAnimation,
-    options: { mode: AnimationImportMode; assignment?: readonly string[] | null },
+    options: {
+      mode: AnimationImportMode
+      assignment?: readonly string[] | null
+      /**
+       * Só no modo `substitute`: índice do keyframe da bancada onde o arquivo
+       * começa a entrar, e se as câmeras gravadas entram junto com as poses.
+       */
+      startIndex?: number
+      replaceCamera?: boolean
+    },
   ) => boolean
   /**
    * Põe a cena de trabalho no retrato de um keyframe — é o "ir para" do
@@ -1487,6 +1563,26 @@ export const useFiguresStore = create<FiguresState>()(
         })
       },
 
+      applyImportedFigurePose: (id, imported) => {
+        const height = clampHeight(imported.height)
+        set((state) => {
+          const locked = getLockedJoints(state.jointLocks, id)
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              height,
+              // O Y entra CRU, sem a escala por altura que `withPose` aplica ao
+              // `groundOffsetM` de uma pose salva: aqui a altura do boneco vem do
+              // mesmo arquivo, então o boneco fica do tamanho em que aquele Y foi
+              // medido e a medida absoluta já é a certa.
+              position: [figure.position[0], imported.positionY, figure.position[2]],
+              rotation: { ...imported.rotation },
+              pose: mergeLockedJoints(figure.pose, imported.pose, locked),
+            })),
+          }
+        })
+      },
+
       importFigureAsNew: (imported) => {
         const { figures, nextFigureSeq } = get()
         if (figures.length >= MAX_FIGURES) return null
@@ -2055,6 +2151,32 @@ export const useFiguresStore = create<FiguresState>()(
         })
       },
 
+      applySceneCameraToKeyframes: (animationId, fromIndex, toIndex) => {
+        const animation = get().animations.find((candidate) => candidate.id === animationId)
+        if (!animation || animation.keyframes.length === 0) return false
+        if (!Number.isFinite(fromIndex) || !Number.isFinite(toIndex)) return false
+
+        const last = animation.keyframes.length - 1
+        const clamp = (index: number) => Math.min(last, Math.max(0, Math.round(index)))
+        // A faixa é normalizada: quem escolhe "do 5 ao 2" no painel quer os
+        // keyframes 2 a 5, não uma faixa vazia.
+        const from = Math.min(clamp(fromIndex), clamp(toIndex))
+        const to = Math.max(clamp(fromIndex), clamp(toIndex))
+
+        set((state) => ({
+          animations: updateAnimation(state.animations, animationId, (current) => ({
+            ...current,
+            keyframes: current.keyframes.map((keyframe, index) =>
+              // Só a câmera — o retrato dos bonecos e a duração do trecho ficam
+              // intactos, como no `copyAnimationKeyframeCamera`. A diferença é
+              // a fonte: ali é o keyframe vizinho, aqui é a câmera viva.
+              index >= from && index <= to ? { ...keyframe, camera: state.sceneCamera } : keyframe,
+            ),
+          })),
+        }))
+        return true
+      },
+
       duplicateAnimationKeyframe: (animationId, keyframeId) => {
         const animation = get().animations.find((candidate) => candidate.id === animationId)
         if (!animation) return null
@@ -2398,6 +2520,39 @@ export const useFiguresStore = create<FiguresState>()(
         const { animations, target } = withTargetAnimation(state.animations, WORKING_ANIMATION_ID)
         const appending = options.mode === 'append'
         const assignment = options.assignment ?? null
+
+        // Enxertar numa linha do tempo que já existe (pedido do usuário): nada
+        // além do escolhido muda — nem o nome, nem a velocidade, nem os
+        // keyframes de fora da faixa. Por isso ele sai antes dos outros dois
+        // modos, que reescrevem a bancada inteira.
+        if (options.mode === 'substitute') {
+          if (!assignment || target.keyframes.length === 0) return false
+
+          const substituted = substituteImportedKeyframes({
+            keyframes: imported.keyframes,
+            target: target.keyframes,
+            sceneFigures: state.figures,
+            assignment,
+            startIndex: options.startIndex ?? 0,
+            replaceCamera: options.replaceCamera ?? true,
+            baseSeq: maxKeyframeSeq(target),
+          })
+          if (!substituted) return false
+
+          // Só os keyframes que SOBRARAM para o fim trazem rótulo de fora e
+          // podem colidir com um grupo da bancada; os enxertados mantêm o
+          // rótulo que já tinham, que é o do grupo onde eles estão.
+          const kept = substituted.keyframes.slice(0, substituted.keyframes.length - substituted.appended)
+          const extras = substituted.keyframes.slice(kept.length)
+
+          set({
+            animations: updateAnimation(animations, target.id, (working) => ({
+              ...working,
+              keyframes: [...kept, ...withFreeGroupLabels(kept, extras)],
+            })),
+          })
+          return true
+        }
 
         const baseSeq = appending ? maxKeyframeSeq(target) : 0
         const keyframes = assignment

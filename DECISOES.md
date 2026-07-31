@@ -2327,3 +2327,214 @@ Até aqui havia duas coisas selecionáveis e a exclusividade era feita à mão a
 ### Verificação
 
 **77 testes novos** (`propGeometry.test.ts`: contagem travada por forma, soldagem cobrindo todo vértice sem sobra, tamanho em metros, plano sem Z, sentido da rampa, malha que não rasga, desvio absoluto, normais recalculadas, geometria por objeto, apoio no chão com rotação e com vértice puxado, sanitização; `propsStore.test.ts`: criação/limite/duplicação, as três chaves independentes, objeto travado inerte a tudo, tamanho grampeado, desvio guardado e revertido, troca de forma descartando vértices e preservando tamanho, exclusividade da seleção nos três sentidos, undo, snapshot de cena, reset do workspace, cor livre; `propSerialization.test.ts`: ida e volta, campo aditivo em arquivo antigo, forma desconhecida virando caixa, desvio fora da forma descartado, `.glb` com malha real e nome de nó seguro, "oculto na bancada" não tirando o objeto do arquivo; `sceneCapture.test.ts`: reacender e restaurar, objeto desligado intocado, e a trava de que o passe **não** faz parte do `hideSceneOverlays`; `PropsSection.test.tsx`: lista, limite, cor, as três chaves, chave geral, medidas em metros, ferramenta de vértice, contador e aviso de descarte, controles inertes com objeto travado). Suíte de 2.090 para **2.167**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. Os arrastos em si não são testáveis por automação (ressalva de sempre dos gizmos) — **falta a conferência visual no navegador pelo usuário**.
+
+## 81. Casca de palito e pose em arquivo JSON — a ponte com o celular
+
+Duas entregas de um pedido só (2026-07-30): preparar o terreno para editar poses em dispositivo touch. O usuário pediu antes três avaliações — a viabilidade de cascas alternativas do boneco, a de uma visão de celular em quadrante 2×2, e como implementá-la sem afetar o que já existe — e só então mandou implementar a parte que cabe **na aplicação atual**: a casca de palito e o arquivo de pose. A visão 2×2 não foi implementada e acabou **descartada** no mesmo dia — a versão de celular passou a ser planejada com um viewport único que alterna entre as vistas, em qualquer aparelho (PLANO.md > grupo J, item 44).
+
+### Por que as duas coisas são a mesma entrega
+
+O palito sozinho é só um desenho diferente. O que ele resolve é a **seleção por dedo**: as bolas de junta do manequim vão de 0,011 m (nós dos dedos) a 0,052 (ombro), e os blocos entalhados (peito, pelve, pé) não têm bola nenhuma para mirar. O arquivo de pose sozinho seria mais uma exportação. Juntos são a tomada: posa-se onde o dedo alcança, grava-se num JSON, refina-se no computador.
+
+### A casca é dado, não código
+
+A separação que o #32 deixou pronta (cinemática em `JOINTS`/limites, aparência em `JOINT_PARTS`/`BONE_STYLES`) fez a variante custar **uma tabela**, não um renderizador. `getJointParts`/`getBoneStyle` ganharam um segundo parâmetro `FigureStyle` cujo default é `wooden` — e é esse default que manteve intactos o enquadramento de câmera (`shotFraming.topOfJointParts`), a exportação e todos os testes que já existiam. Nenhuma pose, nenhum limite, nenhum arquivo e nenhum solver sabem que a variante existe.
+
+As tabelas do palito são **geradas** a partir de `JOINT_NAMES`, e não escritas à mão como as do manequim: a casca é regular (uma esfera por junta, um cilindro por osso), e uma tabela literal de 32+31 entradas só criaria a chance de esquecer uma. As medidas ficam em dois mapas por nome sem lado, exportados para o teste poder cobrar medida explícita de cada junta — o valor de emergência existe para uma junta nova não derrubar a aplicação, não para ser usado.
+
+### Três coisas do dimensionamento que não eram óbvias
+
+- **Nem toda junta pode engordar.** A regra ingênua ("junta grande = alvo bom") quebra nos trechos apertados do esqueleto. `upperChest` e `neck` estão a 4 cm um do outro; com o raio das juntas grandes (0,045) viravam uma bola só, sem dois alvos distintos. Pior: com `chest` em 0,045 a esfera do peito **continha o centro** do `upperChest`, que virava uma calota protuberante em vez de um alvo — o peito caiu para 0,038 por causa disso. O invariante virou teste ("nenhuma esfera contém o centro da vizinha"), que é o que impede a regressão silenciosa; sobreposição parcial continua bem-vinda, é o que emenda as peças num corpo só.
+- **Os dedos NÃO são dimensionados para o dedo.** Eles estão fora do arrasto de cadeia (`HAND_JOINTS` em `dragSolver.ts`), então engordá-los não daria alvo novo nenhum e só transformaria a mão num bloco.
+- **Nenhum osso é `hidden` aqui.** Os três trechos escondidos no manequim (root→hip, ankle→ball, wrist→indexBase) só estavam cobertos pelos blocos da pelve, do pé e da palma. Sem eles, esconder deixaria vãos no quadril, no pé e na mão.
+
+A cabeça é a única peça própria: esfera deslocada para cima em exatamente o próprio raio (base encostando na junta, topo fechando os mesmos 1,70 m do ovo do manequim) mais um **marcador escuro à frente**. Numa esfera lisa não há como saber para onde o boneco olha, e é justamente isso que orienta quem posa numa tela pequena; reusa o `tint: 'eye'` em vez de inventar tom novo.
+
+### A casca é modo de tela, e por isso vale para todos
+
+`figureStyle` mora no `uiStore` e persiste em `uiPreferences`, ao lado da régua e da máscara — não no `environment` da cena. Guardá-la lá a faria viajar no `extras` do `.glb` e no `workspace.json`, mudando um contrato de arquivo que o Blender também lê para descrever algo que nem existe fora da tela. Fica fora do undo pela mesma razão.
+
+Consequência assumida: vale para **todos** os bonecos ao mesmo tempo — dois bonecos em cascas diferentes na mesma cena seriam dois desenhos do mesmo objeto, sem uso nenhum. Os fantasmas do papel-cebola seguem a casca da cena de trabalho, senão um palito rodeado de manequins translúcidos leria como dois modelos diferentes.
+
+### O arquivo de pose é o keyframe, não um formato novo
+
+Pedido explícito do usuário: "usar a mesma estrutura usada internamente nas animações". O campo `figure` do arquivo é **exatamente** o objeto que vive dentro de `keyframes[].figures[]` do `animations.json`, e a leitura passa pelo `sanitizeFigure` da própria animação — que teve de deixar de ser interno e virar exportado. Uma regra só de validação e grampeamento para os dois caminhos, e a promessa de que uma pose vinda do celular emenda como keyframe sem conversão.
+
+A leitura aceita **seis formatos** da mesma família (arquivo de pose, boneco cru, keyframe solto, animação solta, `animations.json` inteiro, e array cru de qualquer um deles). É o que faz o arquivo ser ponte de verdade: uma animação exportada no computador serve de fonte de pose sem ser recortada à mão antes.
+
+**Colocação no chão não é pose** — a regra que o usuário definiu, e a razão dela:
+
+- Ao **gravar**, o boneco é considerado sempre no (0,0) do plano horizontal: X e Z saem zerados. Onde ele pisa é composição da cena de origem, e não tem por que viajar junto.
+- Ao **carregar**, X e Z do boneco de destino são preservados e só o **Y** vem do arquivo. Quem recebe a pose já colocou o boneco no lugar; arrastá-lo para a origem seria desfazer esse trabalho. O Y, ao contrário, é pose: é ele que distingue agachado de pulando.
+
+Já havia precedente exato disso no código — `withPose` e o blend de poses fazem `[figure.position[0], <novo Y>, figure.position[2]]` há tempos.
+
+O Y entra **cru**, sem a escala por altura que `withPose` aplica ao `groundOffsetM` de uma pose salva: aqui a altura do boneco vem do mesmo arquivo, então o boneco fica do tamanho em que aquele Y foi medido e a medida absoluta já é a certa.
+
+`id`, `name`, `color` e `visible` viajam no arquivo (para o objeto continuar sendo um `figures[]` válido de animação) mas **não são aplicados**: identidade e aparência são do boneco de destino, mesma regra do `poses.json` e do `applyImportedPose`. Juntas travadas também são respeitadas.
+
+**Uma armadilha que virou regra:** `sanitizeFigure` nunca falha — preenche tudo com padrões. Um `{}` passaria como pose vazia e **apagaria a pose de destino sem avisar**. Exigir ao menos uma junta conhecida é o que distingue "pose lida" de "arquivo que por acaso é um objeto", e é o que faz o painel dizer "não tem pose aproveitável" em vez de zerar o boneco em silêncio.
+
+A ação de store é nova (`applyImportedFigurePose`) em vez de estender `applyImportedPose`: aquela é do fluxo do `.glb` e não deve passar a mexer em colocação e rotação por tabela.
+
+### Onde os botões moram (corrigido no mesmo dia)
+
+Nasceram no painel de **Bonecos**, ao lado da área de transferência de poses, pela semelhança de propósito: as duas seções movem a pose do boneco selecionado para outro lugar, mudando só o alcance (memória da sessão × arquivo). O usuário pediu para movê-los ao painel de **Propriedades**, e o argumento que sustenta a mudança é mais forte que a semelhança original:
+
+- Propriedades é o painel **do boneco selecionado**, e todas as demais operações sobre a pose do boneco INTEIRO já vivem lá — aplicar preset, misturar, salvar na biblioteca, copiar para outro boneco, simetria. A pose em arquivo é a mesma família de operação e estava sozinha do outro lado.
+- A área de transferência tinha um motivo **próprio** para ficar em Bonecos, que não se aplicava aqui: a lista dela é da SESSÃO, não da seleção, e em Propriedades sumiria a cada troca de boneco — que é exatamente o gesto feito entre copiar e colar.
+
+Consequência: a seção passou a aparecer só na **visão da raiz**, como as outras operações de boneco inteiro, e o estado "nenhum boneco selecionado" deixou de existir (o painel inteiro já não é renderizado sem seleção). Some com isso a chave `poseFileNoSelection` e a necessidade dos botões desabilitados; as chaves saíram de `panels.figures` para `panels.properties` e os rótulos perderam o "do selecionado", que virou redundante ao lado do nome do boneco exibido no topo do painel.
+
+### Verificação
+
+**50 testes novos**: `skeletonStick.test.ts` 18 (cobertura das duas tabelas, medidas explícitas, piso de alvo de toque, ossos mais finos que as juntas, o invariante de vizinhança, cabeça fechando 1,70 m e encostando na junta, marcador de direção, simetria L/R, e a trava de que o default continua sendo o manequim); `figurePoseFile.test.ts` 19; `PropertiesPanel.test.tsx` 6 (incluindo as duas travas de onde a seção aparece: nunca sem boneco, e só na visão da raiz); `uiStore.test.ts` 3; `figuresStore.test.ts` 2; `uiPreferences.test.ts` 2. Suíte em **2.218 testes**, toda verde; `tsc -b` e `eslint .` limpos.
+
+**Conferido no navegador** (Playwright headless), diferente das entregas anteriores que ficaram dependendo de conferência manual:
+
+- o palito renderiza com a mesma altura e proporções do manequim, juntas destacadas dos ossos, marcador de direção visível, e **nenhum erro de página**; a troca ida e volta pela Toolbar funciona e a preferência é gravada;
+- o círculo completo do JSON foi exercitado pela UI real: exportar com o boneco em (3, 0.5, -2) gravou `position: [0, 0.5, 0]`; depois de mover o boneco para (-4, 0, 7), trocar a pose e a altura, carregar o arquivo devolveu `[-4, 0.5, 7]`, altura 1,55, nome e cor preservados — e a pose **reexportada saiu idêntica** à original nas 37 juntas.
+
+## 82. Enxertar uma animação importada, carimbar a câmera atual e a confirmação de regravar em `<dialog>`
+
+Pedido do usuário em 2026-07-31, em três partes: na importação de JSON, poder **substituir poses e câmeras a partir de um keyframe**, escolhendo os bonecos de origem e os de destino; um botão para **aplicar a câmera atual a todas as keyframes**; e tirar a confirmação de "Regravar" de dentro do card, levando-a para um `<dialog>`. Quatro decisões de desenho foram levadas ao usuário antes de escrever código, e ele respondeu as quatro (anexar o excedente; caixa para desligar a troca das câmeras; colocação absoluta; e — ampliando o pedido — faixa escolhível no carimbo da câmera, com confirmação em diálogo).
+
+### Enxertar é um terceiro modo, não uma variação dos outros dois
+
+`replace` e `append` **escrevem** uma linha do tempo; `substitute` **reescreve parte** de uma que já existe. A diferença não é de grau: no enxerto, tudo o que não foi escolhido tem de sobreviver — os keyframes anteriores ao ponto de entrada, os bonecos sem papel em cada keyframe atingido, as durações de cada trecho, os rótulos de grupo, o nome e a velocidade da bancada. É o que permite trocar a coreografia de um figurante no meio de uma cena montada sem remontar o resto dela.
+
+Por isso o modo sai **antes** dos outros dois em `importAnimation` e não passa por `renumberKeyframes` nem reescreve nome/velocidade. Os ids dos keyframes atingidos são preservados de propósito: são os mesmos keyframes, editados.
+
+**Os papéis já respondiam "de quem para quem".** O diálogo de importação (#79) já mapeia papel gravado → boneco da cena, com "— ninguém —" para deixar um de fora. Um papel em branco é um boneco de ORIGEM que não entra; o combo escolhe o boneco de DESTINO. Não foi preciso mecanismo novo — só dizer isso por escrito no diálogo, que antes não precisava dizer.
+
+**Por isso "recriar os gravados" não enxerta.** Sem `assignment` não há mapa, e trazer o elenco do arquivo para o meio de uma linha do tempo montada não é enxerto: é outra animação. O botão fica desabilitado com o motivo à vista.
+
+**Colocação absoluta** (decisão do usuário): o boneco de destino assume a posição e o giro gravados, como no modo "Substituir". Transportar para onde ele está no keyframe inicial é o contrato do "Anexar", que existe para emendar.
+
+**O que sobra vai para o fim** (decisão do usuário): arquivo mais comprido do que o que resta da bancada estende a linha do tempo, com as durações e os rótulos gravados — estes desconflitados por `withFreeGroupLabels`, e **só eles**, porque os keyframes enxertados mantêm o rótulo do grupo onde já estavam. Nos keyframes novos, os bonecos sem papel congelam no estado do ÚLTIMO keyframe da bancada: é onde eles pararam.
+
+**Boneco de destino ausente do retrato entra nele.** Um keyframe anterior à entrada do boneco em cena não o tem na lista de `figures`; sem acrescentá-lo, a substituição não teria efeito nenhum ali — justamente no boneco que se pediu para trocar.
+
+**A caixa "substituir também as câmeras"** (decisão do usuário, marcada por padrão) existe porque as duas coisas se separam na prática: trocar a coreografia de um boneco raramente quer dizer jogar fora o enquadramento montado keyframe a keyframe. Desmarcada, só as poses entram.
+
+O miolo do remapeamento (#79) foi **extraído**, não duplicado: `remapPosedKeyframes` devolve, por keyframe do arquivo, o mapa `boneco da cena → estado` e a câmera já transportada. `remapImportedKeyframes` monta o retrato a partir da CENA (não há linha do tempo anterior de onde tirá-lo); `substituteImportedKeyframes` monta a partir do keyframe da BANCADA. É exatamente aí que os dois modos divergem, e agora é a única coisa que os separa.
+
+### Carimbar a câmera: faixa, não só "todas"
+
+O gesto que faltava era achar um enquadramento e querer ele na animação inteira. Sem isso, a única saída era regravar keyframe a keyframe — e **regravar troca a pose junto**, o que obriga a passar por "Ir para" antes de cada um só para não perder o retrato. `applySceneCameraToKeyframes` mexe **só** na câmera, como o `copyAnimationKeyframeCamera` (#52); a diferença é a fonte (a câmera de cena viva, não o keyframe vizinho) e o alcance (uma faixa).
+
+O usuário pediu a faixa escolhível, com 1..n preenchido por padrão: o gesto de um clique continua sendo "a animação toda", e quem quer segurar o enquadramento só num trecho aperta os dois combos. A faixa é normalizada (do 5 ao 2 é a faixa 2–5) e grampeada à lista.
+
+**Fica no store, não no `AnimationPlayer`.** A câmera dos keyframes é a **câmera de cena** (`figuresStore.sceneCamera`), que o gizmo, o painel de câmera e o "Ir para" já mantêm em dia — é a mesma que o `readCameraView()` do player lê. Então não há nada a ler de dentro do `<Canvas>`, e a ação é uma edição de store comum: testável sem GPU e num passo de undo só.
+
+**Desabilitado tocando.** Durante a reprodução quem anda é o objeto vivo da câmera; o store só é sincronizado ao parar (#52). Carimbar ali gravaria o enquadramento de antes do play, calado. O botão desabilita com o motivo à vista, em vez de tentar sincronizar sozinho — pausar por conta própria criaria uma corrida com o `setSceneCamera(lastView)` que o player faz ao parar.
+
+### A confirmação de regravar saiu do card
+
+A confirmação em linha (#69) ocupava a primeira fila de botões do keyframe: o aviso vermelho aparecia no meio de uma lista de cards iguais, colado nos botões dos keyframes **vizinhos**, que continuavam clicáveis — que é o clique indevido de que a confirmação deveria proteger. Num modal, o aviso é a única coisa na tela e o clique seguinte só pode ser "Confirmar" ou "Cancelar".
+
+Como o card que originou o clique sai de vista, o diálogo repete **número e instante** do keyframe. O estado continua sendo um id só (`confirmingUpdateId`): abrir a confirmação de outro card fecha a anterior sozinho, e um keyframe removido enquanto o diálogo esperava faz a caixa desaparecer sem estado a limpar — o casamento é por id, não por posição.
+
+**`ModalDialog.tsx`** nasceu aqui: eram três caixas com a mesma dança de `showModal`/`close`/Escape/`uiStore.modalOpen`. A ressalva do jsdom continua valendo palavra por palavra (#79): `<dialog open>` controlado pelo React, `showModal()` só quando a função existe. O CSS acompanhou — `.modal-dialog` leva a caixa e o `::backdrop`, e cada diálogo acrescenta só o que é dele.
+
+### Verificação
+
+**+25 testes**: `animationRemap.test.ts` (7) — o que muda e o que não muda no enxerto, a caixa da câmera, o excedente no fim, o boneco ausente do retrato, recusas e grampeamento do índice; `animationImport.test.ts` (5) — enxerto pelo store com bancada montada por captura, câmeras, rótulo desconflitado, um passo de undo e as recusas; `animationsStore.test.ts` (4) — carimbo da faixa, faixa invertida/fora da lista, recusas e undo; `AnimationPanel.test.tsx` (9) — seção de enxerto ausente na bancada vazia, enxerto pela UI real, "recriar" desabilitando o botão, faixa padrão 1..n e carimbo, faixa escolhida e cancelar, botão indisponível sem keyframes e tocando, o diálogo de regravar com o keyframe identificado, e a caixa que some com o keyframe removido. Suíte de 2.218 para **2.243**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual do usuário no navegador** — as três caixas modais e o botão novo.
+
+## 83. Reorganização do painel de Animação: teto na lista, seções recolhíveis e as ações da linha do tempo juntas
+
+Pedido do usuário em 2026-07-31, logo depois do item anterior: revisar a ordem dos controles, aproximar o que é do mesmo assunto, e achar redundâncias e coisa sem uso. A revisão apontou um problema estrutural que a ordem sozinha não resolvia, e ele virou a primeira decisão.
+
+### A lista de keyframes não tinha teto — e por isso a ordem não era real
+
+`.animation-panel__keyframes` crescia sem limite: com quinze keyframes ela sozinha passava de 3.000 px, e **tudo o que vinha depois deixava de existir na prática** — a velocidade, "Fechar o ciclo", "Gerar miniaturas", a configuração de vídeo, o `Exportar MP4` e a biblioteca inteira. Era o mesmo efeito que obrigou a fixar o `Capturar` no topo (#69), só que nunca tratado para o resto do painel: dos doze blocos, apenas os quatro primeiros tinham ordem observável.
+
+A lista passou a rolar DENTRO de si (`max-height: 45vh`). É o que devolve sentido a qualquer ordenação — sem isso, mover um botão para depois da lista é escondê-lo.
+
+### Três seções recolhíveis, e por que não `<details>`
+
+Trechos prontos (um combo de 21 opções que se escolhe uma vez por sessão), configuração de vídeo e biblioteca somam ~25 linhas de coisa ocasional. Recolhidas, somam três. Elas nascem **fechadas** e o estado persiste junto das preferências de painel: abrir "Trechos prontos" a cada sessão seria pior do que o problema que a seção resolve.
+
+`CollapsibleSection` é um componente próprio, e **não** `<details>`/`<summary>`: o jsdom não aplica a regra de folha de estilo que esconde o conteúdo de um `<details>` fechado, então os testes veriam botões que o usuário não vê — o oposto do que um teste de painel deve garantir. Com renderização condicional (o mesmo padrão dos grupos de keyframe), o que não está na tela não está no DOM. O triângulo fica `aria-hidden`: sem isso o nome acessível do botão seria "▸ Trechos prontos", um rótulo que muda de texto ao ser clicado.
+
+Também **não** é o `CollapsiblePanel`: aquele é o envelope da COLUNA (encolhe o painel e devolve espaço ao viewport). Este é um bloco interno. Por isso as chaves novas ficaram em `ANIMATION_SECTION_KEYS`, e não em `PANEL_KEYS` — que é, por definição, a lista de painéis do `AppShell`.
+
+### "Ações da linha do tempo": um fieldset para o que age sobre a lista inteira
+
+`Fechar o ciclo`, `Aplicar a câmera atual`, `Gerar miniaturas` e `Salvar faixa como trecho` fazem todas a mesma coisa — agem sobre a lista, não sobre um keyframe —, e estavam em três pontos diferentes do painel; duas delas depois do bloco de vídeo. Agora são um bloco só, logo abaixo da lista de que falam, fechado pela `Velocidade`, que é a outra propriedade da linha do tempo como um todo.
+
+O "salvar faixa como trecho" saiu de dentro de "Trechos prontos" (onde estava desde o item 39) porque ele **lê a lista**: os dois combos são de keyframes da bancada. Dentro do catálogo, era saída disfarçada de entrada.
+
+### Ordem final
+
+Capturar (fixo) → papel-cebola + lista (rolando) → ações da linha do tempo → ▸ trechos prontos → ▸ vídeo → ▸ biblioteca e arquivos. As decisões já fechadas com o usuário ficaram de pé: capturar no topo e o nome da animação junto da biblioteca (#69), régua/transporte/⏮⏭ na barra do rodapé (item 29), quatro linhas fixas de botões por card.
+
+### Redundâncias resolvidas
+
+- **Leitura de tempo duplicada.** O painel mostrava `0,0s de 3,0s` e a barra do rodapé mostra exatamente o mesmo (`timeline.position`). A do painel era um cartaz apontando para outro lugar; saiu, com a chave `timelineMoved`. O que responde "e se eu puser 0,5?" continua no `speedHint`.
+- **Dois seletores de faixa com rótulos quase iguais.** `até o keyframe` aparecia no salvar-trecho e no aplicar-câmera. Viraram "Salvar até o keyframe" e "Aplicar de/até o keyframe" — a ambiguidade tinha aparecido primeiro nos testes (`getByLabelText` achava dois), que é onde ela costuma dar sinal antes de dar no usuário.
+- **"Regravar" com dois sentidos.** `Regravar` (um keyframe) e `Regravar a salva` (uma animação da biblioteca) são operações sem nada em comum. A segunda virou **"Atualizar a salva"**.
+- **Proteção invertida.** `Regravar` (1 keyframe) confirmava em diálogo; `Limpar`, que apaga a linha do tempo inteira, não pedia nada — e ficava colado em "Salvar na biblioteca". Agora confirma pelo mesmo caminho, dizendo o nome da animação e quantos keyframes serão perdidos.
+- **Dois sistemas de guarda no mesmo bloco.** Biblioteca interna e arquivo JSON estavam intercalados. O JSON virou um fieldset próprio ("Arquivo JSON avulso"), no fim da seção, levando junto a mensagem de erro de leitura/gravação — que é dele.
+- **`KeyframeUpdateDialog` virou `ConfirmDialog`.** Com o "Limpar" confirmando também, o diálogo específico deu lugar a um genérico (título, linha de identificação do alvo, aviso, rótulo do botão).
+- **Classe que mentia.** `animation-panel__insert` vestia três botões que não inserem nada — mesmo problema do `__row` que renderizava coluna. Virou `animation-panel__wide`.
+
+### Sem uso: o que saiu e o que ficou, com a razão
+
+Saiu a chave **`repeatHint`** (traduzida em pt-BR e en, nunca renderizada: a caixa "Repetir" da barra do rodapé não a mostra).
+
+**Ficaram, documentados, `createAnimation`, `loadAnimationLibrary` e `loadClipLibrary`** — sem chamador de produção, só testes. Apagá-los custaria reescrever ~35 pontos de `animationsStore.test.ts` para montar animações por outro caminho, o que mudaria o que aqueles testes exercitam; e `loadWorkspaceCatalog` (o caminho real) é a versão grossa do mesmo carregamento, não um substituto exato. O risco real do código morto — alguém religar `createAnimation` a um botão e ressuscitar o "criar antes de capturar" que o item 36 matou — foi tratado onde ele acontece: no comentário da própria ação.
+
+**`Câm ↑`/`Câm ↓` não foram removidos.** Depois de "Aplicar a câmera atual" numa faixa, eles perderam o caso comum (segurar o enquadramento ao longo de um trecho era N cliques, agora é um diálogo), mas continuam sendo a única forma de copiar a câmera de UM vizinho. Perder função não é o mesmo que não ter nenhuma.
+
+### Verificação
+
+**+4 testes** (as duas seções em `AnimationPanel.test.tsx`: o painel abre com capturar, lista e ações à vista e os três blocos fechados; abrir um mostra o conteúdo e grava a escolha. E duas em `uiPreferences.test.ts`: padrão recolhido com round-trip do `false`, e arquivo antigo sem o campo). **~45 pontos de teste ajustados** aos rótulos novos e ao estado inicial das seções, via um helper `abrirPainel()` — o mesmo gesto que os testes já faziam para o painel. Suíte de 2.243 para **2.247**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual do usuário no navegador** — a rolagem da lista, as três seções e a moldura dos dois fieldsets novos.
+
+## 84. Reorganização dos painéis de Propriedades e Câmera
+
+Pedido do usuário em 2026-07-31, na sequência do item anterior: avaliar os dois painéis e reorganizá-los. O mecanismo de seções recolhíveis criado para o animador (#83) foi generalizado aqui — `ANIMATION_SECTION_KEYS` virou `SECTION_KEYS`, com prefixo por painel, porque um tipo chamado "seção de animação" descrevendo a simetria do boneco seria mentira de nome.
+
+**Diferença de diagnóstico em relação ao animador.** Lá o problema era estrutural: a lista de keyframes crescia sem teto e escondia metade do painel. Aqui não há lista sem limite (as poses moram num combo) — **exceto a de bookmarks**, que ganhou o mesmo `max-height`. O problema destes dois painéis é de agrupamento e ordem, e por isso a reorganização é mais de mover do que de esconder.
+
+### Propriedades: a colocação estava atrás de cinco blocos de pose
+
+Posição e Rotação da raiz eram os últimos blocos do painel, e o **gizmo W/E — que é a versão arrastável desses mesmos números** — ficava separado deles por três fieldsets. Montar a cena é o que se faz antes de posar, e é para cá que a lista de bonecos manda. Os três subiram, juntos, para logo abaixo do combo de junta.
+
+**Um fieldset com cinco assuntos.** "Poses predefinidas" tinha 193 linhas e abrigava aplicar, sortear, misturar, salvar na biblioteca, remover e **copiar a pose para outro boneco** — que não é uma pose predefinida em sentido nenhum. Virou duas seções: `poses` (escolher e aplicar; nasce ABERTA, é o motivo de o painel existir) e `poseTransfer` ("Guardar e copiar": salvar, copiar para outro boneco e o arquivo `.json` — tudo o que tira a pose daqui e a leva para outro lugar).
+
+**Renomear e remover ficaram com o combo, e não na seção de guardar** — ajuste em relação ao que foi proposto ao usuário. As duas ações agem sobre a pose ESCOLHIDA no combo; na outra seção elas mirariam algo que pode estar recolhido e fora de vista.
+
+**A dupla invertida.** Simetria e "Zerar por grupo" apareciam em ordem trocada entre a vista da raiz e a da junta: trocar a junta selecionada reordenava o painel sem que nada tivesse mudado de assunto. As duas vistas agora terminam igual — simetria (recolhível) e depois zerar por grupo —, e na vista de junta a **rotação subiu**: ela é O controle da junta, e presets de mão e gizmo são ajustes de contexto.
+
+**`renameSavedPose` ganhou o botão que nunca teve.** A ação existia no store, testada, desde a biblioteca de poses (#42): dava para salvar e apagar uma pose, mas não para corrigir o nome dela — enquanto animações, trechos e cenas renomeiam. Não era código morto; era funcionalidade pronta sem porta. O formulário de nome virou um componente só (`PoseNameForm`) com um `namingMode: 'save' | 'rename' | null`, porque é o mesmo gesto e os dois nunca aparecem ao mesmo tempo.
+
+### Câmera: três modelos de interação no mesmo bloco
+
+"Planos e ângulos" tinha (a) quatro combos que só agem no `Aplicar enquadramento`, (b) um combo de vistas com um SEGUNDO `Aplicar` no mesmo fieldset, e (c) o slider de inclinação holandesa, que aplica **ao vivo**. Três contratos diferentes sob uma legenda só.
+
+- A **inclinação subiu para o bloco da lente**, que passou a se chamar "Lente e inclinação": são as duas propriedades contínuas da câmera, e agora os controles ao vivo estão juntos. A dica do roll foi junto; o que sobrou no enquadramento é só a dica de enquadramento, sem o encadeamento de três condições que existia para servir aos dois.
+- **Vistas prontas** viraram seção própria, com o seu `Aplicar` — um por bloco.
+- **"Bancada: vistas ortográficas"**: o comentário do topo do arquivo avisava que aquele bloco era a exceção do painel (comanda a câmera de TRABALHO, não a de cena). Um bloco que precisa de aviso para não ser confundido está com o nome errado; o aviso virou o título.
+
+### Redundâncias e sem uso
+
+- **`setViewMode` removida** do `cameraStore`: só `toggleViewMode` era usada em produção, e os quatro pontos de teste que a chamavam passaram a alternar pelo mesmo caminho do usuário.
+- **Rótulos do gizmo num namespace comum.** O painel de Câmera chamava `t('panels.properties.gizmoTranslate')`: mudar o rótulo num painel mudava no outro sem querer. Viraram `common.gizmoTranslate`/`common.gizmoRotate`.
+- **`loadPoseLibrary` e `renameSceneSnapshot` documentadas**, não removidas — mesmo raciocínio de #83. A segunda é o `renameSavedPose` de ontem: ação pronta esperando um botão no painel de Cenas.
+- **Recuos tortos** deixados por edições antigas em duas linhas do `PropertiesPanel` (o nome do boneco e o estado vazio) — cosmético, mas era ruído em toda leitura do arquivo.
+- **`Câm ↑`/`Câm ↓` do animador continuam de pé** (#83), e aqui a decisão simétrica: nada foi removido dos dois painéis por "ter perdido importância".
+
+**Duas chaves nasceram órfãs e foram apagadas antes de fechar** (`properties.placement` e `properties.restore`): elas seriam legendas de caixas novas, e a reorganização acabou sendo por ADJACÊNCIA — agrupar sem desenhar mais uma moldura em volta de blocos que já têm a sua. Deixá-las seria repetir exatamente o defeito que este trabalho foi caçar.
+
+### Ajuste no mesmo dia, depois de ver o painel
+
+Três correções de ordem pedidas pelo usuário ao usar o resultado:
+
+- **"Guardar e copiar" foi para o RODAPÉ do painel da raiz**, depois de simetria e do zerar por grupo. Salvar na biblioteca, copiar para outro boneco e exportar o `.json` são o fim de uma sessão de trabalho, não o meio dela — no meio, empurravam para baixo blocos que se usam enquanto se posa.
+- **"Aleatória" desceu para depois da mistura.** A fila de cima é a da pose ESCOLHIDA no combo (aplicar, renomear, remover); o sorteio não olha para o combo — cada clique dá uma pose diferente —, e estar ali sugeria que ele sorteava dentro da seleção.
+- **Na junta, o gizmo Mover/Girar subiu para antes da rotação**, como já estava na raiz. Escolher a ferramenta é o que se faz ANTES de mexer nos números, e ter a mesma ordem nas duas vistas é o que faz trocar de junta não reordenar o painel (a mesma razão da dupla simetria/zerar).
+
+### Verificação
+
+**+12 testes**: renomear pose (aplicado e cancelado, e ausente nas poses de fábrica); ordem dos blocos na raiz, seções recolhidas por padrão, as duas vistas terminando igual e a rotação antes do gizmo na junta; a inclinação dentro do bloco da lente, um `Aplicar` por bloco e as quatro seções recolhidas do painel de Câmera; e o novo padrão de recolhimento em `uiPreferences`. **~13 pontos de teste ajustados** ao estado inicial das seções, via um helper `abrirSecoes()` em cada arquivo — o mesmo gesto do `abrirPainel()` do animador. Suíte de 2.247 para **2.259**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual do usuário no navegador** — as sete seções novas, a lista de bookmarks rolando e a ordem dos blocos nas duas vistas do painel de Propriedades.

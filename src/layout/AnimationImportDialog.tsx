@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { animationDurationMs } from '../animation/animation'
+import { animationDurationMs, keyframeStartTimesMs, type AnimationKeyframe } from '../animation/animation'
 import { importedAnimationRoles } from '../animation/animationRemap'
 import type { ImportedAnimation } from '../persistence/animationsFile'
-import { useUIStore } from '../store/uiStore'
 import type { AnimationImportMode, Figure } from '../store/figuresStore'
+import { ModalDialog } from './ModalDialog'
 
 /**
  * O que fazer com a animação lida de um arquivo (fase 12). O arquivo não entra
@@ -16,6 +16,14 @@ import type { AnimationImportMode, Figure } from '../store/figuresStore'
  * bonecos) ou **recriar** os bonecos gravados, que é o modo fiel aos nomes,
  * cores e alturas de origem e a única saída quando a cena tem menos bonecos do
  * que a animação usa.
+ *
+ * **Terceira saída (pedido do usuário, 2026-07-31): enxertar.** Em vez de
+ * escrever a linha do tempo, o arquivo entra A PARTIR de um keyframe escolhido,
+ * trocando só as poses dos bonecos que receberam papel — e as câmeras, se a
+ * caixa estiver marcada. Os papéis sem boneco ("— ninguém —") são justamente os
+ * bonecos de ORIGEM que ficam de fora; o combo de cada papel é quem escolhe o
+ * boneco de DESTINO. É o gesto de trocar a coreografia de um figurante no meio
+ * de uma cena já montada, sem remontar o resto dela.
  */
 
 /** Segundos com uma casa, como no resto do painel de animação. */
@@ -23,79 +31,67 @@ function formatSeconds(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+/** As opções extras do enxerto — só valem no modo `substitute`. */
+export interface SubstituteChoice {
+  startIndex: number
+  replaceCamera: boolean
+}
+
 interface AnimationImportDialogProps {
   imported: ImportedAnimation
   sceneFigures: readonly Figure[]
-  /** Há keyframes na bancada? Sem eles não há onde anexar. */
-  hasWorkingKeyframes: boolean
-  onConfirm: (mode: AnimationImportMode, assignment: readonly string[] | null) => void
+  /** Os keyframes da bancada: sem eles não há onde anexar nem o que enxertar. */
+  workingKeyframes: readonly AnimationKeyframe[]
+  onConfirm: (
+    mode: AnimationImportMode,
+    assignment: readonly string[] | null,
+    substitute?: SubstituteChoice,
+  ) => void
   onCancel: () => void
 }
 
 export function AnimationImportDialog({
   imported,
   sceneFigures,
-  hasWorkingKeyframes,
+  workingKeyframes,
   onConfirm,
   onCancel,
 }: AnimationImportDialogProps) {
   const { t } = useTranslation()
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  const setModalOpen = useUIStore((state) => state.setModalOpen)
 
   const roles = importedAnimationRoles(imported.keyframes)
   const enoughFigures = sceneFigures.length >= roles.length && roles.length > 0
+  const hasWorkingKeyframes = workingKeyframes.length > 0
 
   const [remap, setRemap] = useState(enoughFigures)
   const [assignment, setAssignment] = useState<string[]>(() =>
     roles.map((_, role) => sceneFigures[role]?.id ?? ''),
   )
-
-  useEffect(() => {
-    setModalOpen(true)
-    return () => setModalOpen(false)
-  }, [setModalOpen])
-
-  useEffect(() => {
-    const dialog = dialogRef.current
-    // `showModal` dá modalidade e backdrop de verdade no navegador; o jsdom
-    // (29) não o implementa, e ali o `open` do JSX já basta para o diálogo
-    // existir na árvore. Um só caminho de código, os dois ambientes atendidos.
-    if (!dialog || typeof dialog.showModal !== 'function') return
-    if (dialog.open) dialog.close()
-    dialog.showModal()
-    return () => {
-      if (dialog.open) dialog.close()
-    }
-  }, [])
+  /** Onde o enxerto começa, e se as câmeras gravadas entram junto com as poses. */
+  const [startIndex, setStartIndex] = useState(0)
+  const [replaceCamera, setReplaceCamera] = useState(true)
 
   const durationMs = animationDurationMs({ id: '', name: imported.name, speed: imported.speed, keyframes: imported.keyframes })
+  const startTimes = keyframeStartTimesMs({ id: '', name: '', speed: 1, keyframes: [...workingKeyframes] })
+
+  // Enxertar precisa do remapeamento: é o mapa papel → boneco que diz quem sai
+  // e quem entra. "Recriar os gravados" traz o elenco do arquivo, e trocar o
+  // elenco no meio de uma linha do tempo não é enxerto, é outra animação.
+  const canSubstitute = hasWorkingKeyframes && remap && assignment.some((id) => id !== '')
+  // Quanto o enxerto passa do fim da linha do tempo — o que não couber vira
+  // keyframe novo, e é melhor dizer isso antes do clique.
+  const overflow = Math.max(0, startIndex + imported.keyframes.length - workingKeyframes.length)
 
   const confirm = (mode: AnimationImportMode) => {
-    onConfirm(mode, remap ? assignment : null)
-  }
-
-  // Escape cancela também quando o diálogo não é modal de verdade (jsdom, ou
-  // navegador sem `showModal`); `stopPropagation` impede que a mesma tecla
-  // escape para os atalhos globais.
-  const handleKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
-    if (event.key !== 'Escape') return
-    event.stopPropagation()
-    event.preventDefault()
-    onCancel()
+    onConfirm(mode, remap ? assignment : null, { startIndex, replaceCamera })
   }
 
   return (
-    <dialog
-      open
-      ref={dialogRef}
+    <ModalDialog
+      title={t('panels.animation.importTitle')}
       className="animation-import"
-      aria-label={t('panels.animation.importTitle')}
       onCancel={onCancel}
-      onKeyDown={handleKeyDown}
     >
-      <h2 className="animation-import__title">{t('panels.animation.importTitle')}</h2>
-
       <p className="animation-import__summary">
         {t('panels.animation.importSummary', {
           name: imported.name,
@@ -170,6 +166,56 @@ export function AnimationImportDialog({
               </select>
             </label>
           ))}
+          <p className="animation-panel__hint">{t('panels.animation.importRolesHint')}</p>
+        </fieldset>
+      )}
+
+      {/* Enxerto (pedido do usuário): a faixa começa no keyframe escolhido e
+          vai até onde o arquivo alcançar. Só aparece com bancada montada —
+          sobre a linha do tempo vazia não há o que substituir. */}
+      {hasWorkingKeyframes && (
+        <fieldset className="animation-import__graft">
+          <legend>{t('panels.animation.importSubstituteFrom')}</legend>
+
+          <label htmlFor="animation-import-start" className="animation-panel__field">
+            {t('panels.animation.importStartKeyframe')}
+            <select
+              id="animation-import-start"
+              value={startIndex}
+              onChange={(event) => setStartIndex(Number(event.target.value))}
+            >
+              {workingKeyframes.map((keyframe, index) => (
+                <option key={keyframe.id} value={index}>
+                  {`${index + 1} — ${formatSeconds(startTimes[index])}`}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="animation-import__option">
+            <input
+              type="checkbox"
+              checked={replaceCamera}
+              onChange={(event) => setReplaceCamera(event.target.checked)}
+            />
+            {t('panels.animation.importSubstituteCamera')}
+          </label>
+
+          <p className="animation-panel__hint">
+            {replaceCamera
+              ? t('panels.animation.importSubstituteHint')
+              : t('panels.animation.importSubstituteKeepCameraHint')}
+          </p>
+
+          {overflow > 0 && (
+            <p className="animation-panel__hint">
+              {t('panels.animation.importSubstituteOverflow', { count: overflow })}
+            </p>
+          )}
+
+          {!remap && (
+            <p className="animation-panel__hint">{t('panels.animation.importSubstituteNeedsRemap')}</p>
+          )}
         </fieldset>
       )}
 
@@ -185,6 +231,16 @@ export function AnimationImportDialog({
         >
           {t('panels.animation.importAppend')}
         </button>
+        {hasWorkingKeyframes && (
+          <button
+            type="button"
+            onClick={() => confirm('substitute')}
+            disabled={!canSubstitute}
+            title={t('panels.animation.importSubstituteHint')}
+          >
+            {t('panels.animation.importSubstitute', { index: startIndex + 1 })}
+          </button>
+        )}
         <button type="button" onClick={onCancel}>
           {t('panels.animation.importCancel')}
         </button>
@@ -193,6 +249,6 @@ export function AnimationImportDialog({
       {!hasWorkingKeyframes && (
         <p className="animation-panel__hint">{t('panels.animation.importAppendEmpty')}</p>
       )}
-    </dialog>
+    </ModalDialog>
   )
 }

@@ -247,7 +247,7 @@ describe('cameraStore — modo de visão (fase 11)', () => {
   it('uma vista ortográfica volta ao modo edição — e não apaga o plano da câmera de cena', () => {
     useCameraStore.getState().applyShot('closeUp')
     useCameraStore.getState().clearPendingCommand()
-    useCameraStore.getState().setViewMode('camera')
+    useCameraStore.getState().toggleViewMode()
 
     useCameraStore.getState().applyPreset('front')
 
@@ -273,7 +273,7 @@ describe('cameraStore — modo de visão (fase 11)', () => {
       zoom: 1,
     })
 
-    useCameraStore.getState().setViewMode('camera')
+    useCameraStore.getState().toggleViewMode()
     useCameraStore.getState().applyShot('closeUp')
     useCameraStore.getState().clearPendingCommand()
 
@@ -288,7 +288,7 @@ describe('cameraStore — modo de visão (fase 11)', () => {
   it('enquadrar com F volta ao modo edição e mantém o plano da câmera de cena', () => {
     useCameraStore.getState().applyShot('medium')
     useCameraStore.getState().clearPendingCommand()
-    useCameraStore.getState().setViewMode('camera')
+    useCameraStore.getState().toggleViewMode()
 
     useCameraStore.getState().frameFigure('figure-1')
 

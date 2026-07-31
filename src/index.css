@@ -342,6 +342,21 @@ h2 {
   opacity: 0.8;
 }
 
+/* Botões em bloco, como os das demais seções de pose do painel de Propriedades
+   (aplicar preset, salvar na biblioteca, copiar para outro boneco) — a moldura do
+   `fieldset` já vem do estilo comum do painel. */
+.properties-panel__pose-file > button {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+/* Só entre os dois botões: o primeiro encosta na legenda do fieldset. */
+.properties-panel__pose-file > button + button {
+  margin-top: 0.3rem;
+}
+
 .figures-panel__clipboard-list {
   list-style: none;
   margin: 0.5rem 0 0;
@@ -718,6 +733,9 @@ h2 {
   opacity: 0.5;
 }
 
+/* Rola dentro de si (pedido do usuário, 2026-07-31): era a única lista sem
+   teto que sobrou nos painéis, e com trinta bookmarks empurrava o resto do
+   painel para fora da tela — o mesmo problema que a lista de keyframes tinha. */
 .camera-panel__bookmark-list {
   list-style: none;
   margin: 0 0 0.5rem;
@@ -725,6 +743,8 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  max-height: 30vh;
+  overflow-y: auto;
 }
 
 .camera-panel__bookmark-row {
@@ -977,10 +997,39 @@ code {
   font-family: var(--mono);
 }
 
-/* Diálogo de importação de animação (fase 12) — `<dialog>` nativo: a
+/* Seção recolhível dentro de um painel (`CollapsibleSection.tsx`). O cabeçalho
+   é um botão de largura cheia, discreto: ele não compete com o `Capturar` nem
+   com os botões de ação, porque não FAZ nada — só mostra e esconde. */
+.panel-section {
+  margin-bottom: 0.6rem;
+}
+
+.panel-section__toggle {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.panel-section--collapsed .panel-section__toggle {
+  font-weight: 500;
+}
+
+.panel-section__body {
+  padding-top: 0.5rem;
+}
+
+/* Caixa modal dos painéis (`ModalDialog.tsx`) — `<dialog>` nativo: a
    modalidade e o fundo escurecido são do navegador (`::backdrop`), e só a
-   caixa precisa de estilo. */
-.animation-import {
+   caixa precisa de estilo. Cada diálogo acrescenta a própria classe para o que
+   for específico dele (largura, grade de campos). */
+.modal-dialog {
   background: var(--bg);
   color: inherit;
   border: 1px solid var(--border);
@@ -991,13 +1040,21 @@ code {
   overflow-y: auto;
 }
 
-.animation-import::backdrop {
+.modal-dialog::backdrop {
   background: rgb(0 0 0 / 50%);
 }
 
-.animation-import__title {
+.modal-dialog__title {
   font-size: 1.05rem;
   margin-bottom: 0.5rem;
+}
+
+/* Os dois diálogos de confirmação são só texto e dois botões: sem os combos do
+   de importação, a caixa larga ficaria com uma linha de aviso perdida no meio
+   de espaço vazio. */
+.confirm-dialog,
+.apply-camera {
+  max-width: 22rem;
 }
 
 .animation-import__summary {
@@ -1006,7 +1063,8 @@ code {
 }
 
 .animation-import__cast,
-.animation-import__roles {
+.animation-import__roles,
+.animation-import__graft {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -1222,7 +1280,11 @@ code {
   font-size: 0.78rem;
 }
 
-.animation-panel__insert,
+/* Botão de largura cheia do painel. Chamava-se `__insert` de quando "Inserir
+   keyframe aqui" era o único: hoje veste "Fechar o ciclo", "Aplicar a câmera" e
+   "Gerar miniaturas", que não inserem nada — e um seletor que mente é o mesmo
+   problema do `__row` que renderizava coluna. */
+.animation-panel__wide,
 .animation-panel__export {
   display: block;
   width: 100%;
@@ -1303,6 +1365,8 @@ code {
 }
 
 /* Trechos prontos (DECISOES.md #60) — mesmo visual dos fieldsets dos outros painéis. */
+.animation-panel__timeline-actions,
+.animation-panel__files,
 .animation-panel__clips {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1310,18 +1374,26 @@ code {
   margin: 0 0 0.6rem;
 }
 
+.animation-panel__timeline-actions legend,
+.animation-panel__files legend,
 .animation-panel__clips legend {
   font-size: 0.8rem;
   font-weight: 500;
   padding: 0 0.3rem;
 }
 
+.animation-panel__timeline-actions button,
 .animation-panel__clips button {
   display: block;
   width: 100%;
   min-width: 0;
 }
 
+/* A lista rola DENTRO de si (pedido do usuário, 2026-07-31). Sem teto, quinze
+   keyframes passavam de 3.000 px e empurravam para fora da tela tudo o que vem
+   depois — inclusive os botões que agem sobre a linha do tempo inteira e o
+   "Exportar MP4". Era o mesmo efeito que obrigou a fixar o "Capturar" no topo;
+   o teto resolve para o resto do painel de uma vez. */
 .animation-panel__keyframes {
   list-style: none;
   margin: 0 0 0.6rem;
@@ -1329,6 +1401,10 @@ code {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  max-height: 45vh;
+  overflow-y: auto;
+  /* Sem a folga, a barra de rolagem encosta na borda dos cards. */
+  padding-right: 0.2rem;
 }
 
 .animation-panel__keyframe {

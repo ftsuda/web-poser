@@ -1,6 +1,6 @@
 import '../../i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../persistence/fileIO', () => ({
@@ -37,15 +37,27 @@ function comAnimacao(count: number): string {
   return WORKING_ANIMATION_ID
 }
 
+/**
+ * Painel aberto E as três seções recolhíveis abertas. Na tela o painel nasce
+ * recolhido (é o único fora do fluxo de posar e capturar, e são sete colunas)
+ * e as seções também — trechos prontos, vídeo e biblioteca são blocos que se
+ * usam de vez em quando (`uiPreferences.ts`). Estes testes são sobre o
+ * CONTEÚDO, então tudo começa aberto aqui.
+ */
+function abrirPainel() {
+  useUIStore.setState((state) => ({
+    collapsedPanels: { ...state.collapsedPanels, animation: false },
+    collapsedSections: { ...state.collapsedSections, animationClips: false, animationVideo: false, animationLibrary: false },
+    modalOpen: false,
+  }))
+}
+
 describe('AnimationPanel', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useAnimationStore.setState(useAnimationStore.getInitialState())
     useCameraStore.setState(useCameraStore.getInitialState())
-    // O painel NASCE RECOLHIDO (é o único fora do fluxo de posar e capturar, e
-    // são sete colunas — ver `uiPreferences.ts`). Estes testes são sobre o
-    // conteúdo, então ele começa aberto aqui.
-    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, animation: false } }))
+    abrirPainel()
   })
 
   it('nasce recolhido: só o título aparece até alguém expandir', async () => {
@@ -176,7 +188,7 @@ describe('AnimationPanel', () => {
 
     await user.tab()
     expect(animacao().keyframes[1].durationMs).toBe(2500)
-    expect(screen.getByText(/de 2\.5s/)).toBeInTheDocument()
+    expect(screen.getByText(/Vídeo final: 2\.5s/)).toBeInTheDocument()
   })
 
   it('a velocidade só vale ao sair do campo, e muda o comprimento do vídeo sem mexer na linha do tempo', async () => {
@@ -195,7 +207,7 @@ describe('AnimationPanel', () => {
     await user.tab()
     expect(animacao().speed).toBe(0.5)
     // A linha do tempo não se mexe — o que dobra é o vídeo.
-    expect(screen.getByText(/de 1\.0s/)).toBeInTheDocument()
+    expect(animacao().keyframes[1].durationMs).toBe(1000)
     expect(screen.getByText(/Vídeo final: 2\.0s/)).toBeInTheDocument()
   })
 
@@ -321,13 +333,21 @@ describe('AnimationPanel', () => {
     expect(screen.getByText(/não consegue codificar vídeo/)).toBeInTheDocument()
   })
 
-  it('limpar esvazia a bancada e fecha a lista de keyframes', async () => {
+  it('limpar confirma em diálogo antes de esvaziar a bancada', async () => {
     const user = userEvent.setup()
     comAnimacao(2)
     useAnimationStore.setState({ timeMs: 700, playing: true })
     await renderAnimationPanel()
 
     await user.click(screen.getByRole('button', { name: 'Limpar' }))
+
+    // Apagar a linha do tempo inteira sem pedir nada, enquanto regravar UM
+    // keyframe confirmava, era a proteção invertida.
+    const dialog = await screen.findByRole('dialog', { name: 'Limpar a animação de trabalho' })
+    expect(within(dialog).getByText('Corrida — 2 keyframe(s) na bancada.')).toBeInTheDocument()
+    expect(useFiguresStore.getState().animations).toHaveLength(1)
+
+    await user.click(within(dialog).getByRole('button', { name: 'Limpar' }))
 
     expect(useFiguresStore.getState().animations).toEqual([])
     expect(useAnimationStore.getState().timeMs).toBe(0)
@@ -341,7 +361,7 @@ describe('AnimationPanel — biblioteca de animações', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useAnimationStore.setState(useAnimationStore.getInitialState())
     useCameraStore.setState(useCameraStore.getInitialState())
-    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, animation: false } }))
+    abrirPainel()
   })
 
   it('sem nada salvo, a biblioteca diz que está vazia e não oferece o combo', async () => {
@@ -412,7 +432,7 @@ describe('AnimationPanel — biblioteca de animações', () => {
     act(() => {
       useFiguresStore.getState().addAnimationKeyframe(null, camera)
     })
-    await user.click(screen.getByRole('button', { name: 'Regravar a salva' }))
+    await user.click(screen.getByRole('button', { name: 'Atualizar a salva' }))
 
     const salva = useFiguresStore.getState().animations[1]
     expect(salva.name).toBe('Tomada 1')
@@ -440,7 +460,7 @@ describe('AnimationPanel — trechos prontos', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useAnimationStore.setState(useAnimationStore.getInitialState())
     useCameraStore.setState(useCameraStore.getInitialState())
-    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, animation: false } }))
+    abrirPainel()
   })
 
   it('trecho individual pede o comando ao player com o boneco do papel A', async () => {
@@ -520,7 +540,7 @@ describe('AnimationPanel — pausa, pose do vizinho e ciclo', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useAnimationStore.setState(useAnimationStore.getInitialState())
     useCameraStore.setState(useCameraStore.getInitialState())
-    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, animation: false } }))
+    abrirPainel()
   })
 
   it('duplicar cria a cópia logo depois — dois retratos iguais são uma pausa', async () => {
@@ -581,7 +601,7 @@ describe('AnimationPanel — bonecos do trecho e grupos', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useAnimationStore.setState(useAnimationStore.getInitialState())
     useCameraStore.setState(useCameraStore.getInitialState())
-    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, animation: false } }))
+    abrirPainel()
   })
 
   it('trecho individual: checkboxes, com o boneco selecionado já marcado', async () => {
@@ -678,7 +698,7 @@ describe('AnimationPanel — biblioteca de trechos', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useAnimationStore.setState(useAnimationStore.getInitialState())
     useCameraStore.setState(useCameraStore.getInitialState())
-    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, animation: false } }))
+    abrirPainel()
   })
 
   it('salvar a faixa escolhida guarda o trecho e o oferece no mesmo combo', async () => {
@@ -687,7 +707,7 @@ describe('AnimationPanel — biblioteca de trechos', () => {
     await renderAnimationPanel()
 
     await user.selectOptions(screen.getByLabelText('Salvar do keyframe'), '0')
-    await user.selectOptions(screen.getByLabelText('até o keyframe'), '2')
+    await user.selectOptions(screen.getByLabelText('Salvar até o keyframe'), '2')
     await user.type(screen.getByLabelText('Nome do trecho'), 'Caminhada')
     await user.click(screen.getByRole('button', { name: 'Salvar trecho' }))
 
@@ -705,7 +725,7 @@ describe('AnimationPanel — biblioteca de trechos', () => {
     await renderAnimationPanel()
 
     await user.selectOptions(screen.getByLabelText('Salvar do keyframe'), '1')
-    await user.selectOptions(screen.getByLabelText('até o keyframe'), '1')
+    await user.selectOptions(screen.getByLabelText('Salvar até o keyframe'), '1')
 
     expect(screen.getByRole('button', { name: 'Salvar trecho' })).toBeDisabled()
     expect(screen.getByText('A faixa precisa de pelo menos dois keyframes.')).toBeInTheDocument()
@@ -756,7 +776,7 @@ describe('AnimationPanel — miniaturas', () => {
     useAnimationStore.setState(useAnimationStore.getInitialState())
     useCameraStore.setState(useCameraStore.getInitialState())
     useKeyframeThumbnailStore.setState({ thumbnails: {} })
-    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, animation: false } }))
+    abrirPainel()
   })
 
   it('pede o comando ao player — quem renderiza é ele, no canvas vivo', async () => {
@@ -955,7 +975,7 @@ describe('AnimationPanel — keyframe na bancada', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useAnimationStore.setState(useAnimationStore.getInitialState())
     useCameraStore.setState(useCameraStore.getInitialState())
-    useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, animation: false } }))
+    abrirPainel()
   })
 
   /** O `aria-current` é o gancho: "o item atual do conjunto". */
@@ -1117,10 +1137,7 @@ describe('AnimationPanel — exportar e importar JSON', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useAnimationStore.setState(useAnimationStore.getInitialState())
-    useUIStore.setState((state) => ({
-      collapsedPanels: { ...state.collapsedPanels, animation: false },
-      modalOpen: false,
-    }))
+    abrirPainel()
     vi.mocked(pickFile).mockReset()
     vi.mocked(writeFileToDirectoryOrDownload).mockClear()
   })
@@ -1279,5 +1296,264 @@ describe('AnimationPanel — exportar e importar JSON', () => {
       'O arquivo foi lido, mas não tem nenhuma animação aproveitável',
     )
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  // -------------------------------------------------------------------------
+  // Enxertar a partir de um keyframe (pedido do usuário, 2026-07-31)
+  // -------------------------------------------------------------------------
+
+  it('com a bancada vazia não há o que enxertar: a seção nem aparece', async () => {
+    const user = userEvent.setup()
+    useFiguresStore.getState().addFigure()
+    arquivoEscolhido(arquivoDeAnimacao())
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Importar JSON' }))
+    await screen.findByRole('dialog', { name: 'Importar animação' })
+
+    expect(screen.queryByLabelText('A partir do keyframe')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Substituir a partir do/ })).not.toBeInTheDocument()
+  })
+
+  it('enxerta a partir do keyframe escolhido, mantendo os anteriores', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    arquivoEscolhido(arquivoDeAnimacao())
+    await renderAnimationPanel()
+    const antes = useFiguresStore.getState().animations[0].keyframes[0]
+
+    await user.click(screen.getByRole('button', { name: 'Importar JSON' }))
+    await screen.findByRole('dialog', { name: 'Importar animação' })
+    await user.selectOptions(screen.getByLabelText('A partir do keyframe'), '1')
+
+    await user.click(screen.getByRole('button', { name: 'Substituir a partir do 2' }))
+
+    const working = useFiguresStore.getState().animations.find((a) => a.id === WORKING_ANIMATION_ID)!
+    // A linha do tempo continua sendo a da bancada — nome, tamanho e o keyframe
+    // anterior ao enxerto, todos intactos.
+    expect(working.name).toBe('Corrida')
+    expect(working.keyframes).toHaveLength(3)
+    expect(working.keyframes[0]).toEqual(antes)
+    // Quem executa é o boneco da CENA, com o nome dele — e não o gravado.
+    expect(working.keyframes[1].figures[0].name).toBe('Figure 1')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('sem remapeamento não dá para enxertar — é o mapa que diz quem entra no lugar de quem', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    arquivoEscolhido(arquivoDeAnimacao())
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Importar JSON' }))
+    await screen.findByRole('dialog', { name: 'Importar animação' })
+    await user.click(screen.getByRole('radio', { name: 'Recriar os bonecos gravados' }))
+
+    expect(screen.getByRole('button', { name: 'Substituir a partir do 1' })).toBeDisabled()
+    expect(screen.getByText(/precisa do remapeamento/)).toBeInTheDocument()
+  })
+
+  it('avisa quanto o arquivo passa do fim da linha do tempo', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    arquivoEscolhido(arquivoDeAnimacao())
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Importar JSON' }))
+    await screen.findByRole('dialog', { name: 'Importar animação' })
+    // Um arquivo de um keyframe começando no último: nada sobra.
+    expect(screen.queryByText(/entram no fim da linha do tempo/)).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('A partir do keyframe'), '1')
+    await user.click(screen.getByRole('button', { name: 'Substituir a partir do 2' }))
+
+    expect(useFiguresStore.getState().animations[0].keyframes).toHaveLength(2)
+  })
+})
+
+/**
+ * Carimbar a câmera atual numa faixa de keyframes (pedido do usuário,
+ * 2026-07-31) e a confirmação de "Regravar" em `<dialog>` — as duas caixas
+ * modais do painel.
+ */
+describe('AnimationPanel — diálogos de câmera e de regravar', () => {
+  const outraCamera: CameraViewState = {
+    position: [-4, 2, 8],
+    target: [0, 1, 0],
+    up: [0, 1, 0],
+    focalMm: 135,
+  }
+
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    abrirPainel()
+  })
+
+  const camerasDaAnimacao = () =>
+    useFiguresStore.getState().animations[0].keyframes.map((keyframe) => keyframe.camera)
+
+  it('a faixa nasce na animação inteira, e aplicar carimba a câmera de cena em todos', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    act(() => {
+      useFiguresStore.getState().setSceneCamera(outraCamera)
+    })
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Aplicar a câmera atual aos keyframes' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Aplicar a câmera atual' })
+    expect(useUIStore.getState().modalOpen).toBe(true)
+    expect(within(dialog).getByLabelText('Aplicar do keyframe')).toHaveValue('0')
+    expect(within(dialog).getByLabelText('Aplicar até o keyframe')).toHaveValue('2')
+    expect(
+      within(dialog).getByText('Isto substitui a câmera de 3 keyframe(s). Só o Ctrl+Z desfaz.'),
+    ).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Aplicar' }))
+
+    expect(camerasDaAnimacao()).toEqual([outraCamera, outraCamera, outraCamera])
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(useUIStore.getState().modalOpen).toBe(false)
+  })
+
+  it('a faixa escolhida limita o carimbo, e cancelar não muda nada', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    act(() => {
+      useFiguresStore.getState().setSceneCamera(outraCamera)
+    })
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Aplicar a câmera atual aos keyframes' }))
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(camerasDaAnimacao()).toEqual([camera, camera, camera])
+
+    await user.click(screen.getByRole('button', { name: 'Aplicar a câmera atual aos keyframes' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Aplicar a câmera atual' })
+    await user.selectOptions(within(dialog).getByLabelText('Aplicar do keyframe'), '1')
+    await user.selectOptions(within(dialog).getByLabelText('Aplicar até o keyframe'), '1')
+    await user.click(within(dialog).getByRole('button', { name: 'Aplicar' }))
+
+    expect(camerasDaAnimacao()).toEqual([camera, outraCamera, camera])
+  })
+
+  it('sem keyframes, e tocando, o botão fica indisponível', async () => {
+    const user = userEvent.setup()
+    useFiguresStore.getState().addFigure()
+    await renderAnimationPanel()
+    expect(screen.getByRole('button', { name: 'Aplicar a câmera atual aos keyframes' })).toBeDisabled()
+
+    act(() => {
+      comAnimacao(2)
+      useAnimationStore.getState().play()
+    })
+
+    expect(screen.getByRole('button', { name: 'Aplicar a câmera atual aos keyframes' })).toBeDisabled()
+    // Tocando, o que está na tela é o enquadramento da animação, não o da
+    // bancada — e o motivo fica à vista.
+    expect(screen.getByText(/Pare a reprodução para aplicar a câmera/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Capturar keyframe' }))
+  })
+
+  /**
+   * A confirmação de "Regravar" saiu do card para um modal: dentro da lista ela
+   * ficava colada nos botões dos keyframes vizinhos, que seguiam clicáveis.
+   */
+  it('regravar confirma num diálogo modal, dizendo qual keyframe será reescrito', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Regravar' })[1])
+
+    const dialog = await screen.findByRole('dialog', { name: 'Regravar keyframe' })
+    expect(useUIStore.getState().modalOpen).toBe(true)
+    expect(within(dialog).getByText('Keyframe 2 — 1.0s')).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Confirmar' }))
+
+    expect(useAnimationStore.getState().pendingCommand).toEqual({
+      type: 'updateKeyframe',
+      keyframeId: 'k2',
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(useUIStore.getState().modalOpen).toBe(false)
+  })
+
+  it('keyframe removido enquanto o diálogo esperava fecha a confirmação', async () => {
+    const user = userEvent.setup()
+    const id = comAnimacao(2)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Regravar' })[1])
+    await screen.findByRole('dialog', { name: 'Regravar keyframe' })
+
+    act(() => {
+      useFiguresStore.getState().removeAnimationKeyframe(id, 'k2')
+    })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(useAnimationStore.getState().pendingCommand).toBeNull()
+  })
+})
+
+/**
+ * Reorganização do painel (pedido do usuário, 2026-07-31): o que se usa o tempo
+ * todo — capturar e a lista de keyframes — fica à vista, e os três blocos de
+ * uso ocasional nascem recolhidos. Sem isso, ~25 linhas de trechos prontos,
+ * vídeo e biblioteca empurravam a lista para fora da tela.
+ */
+describe('AnimationPanel — seções recolhíveis', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    // Só o PAINEL aberto: as seções ficam no estado de fábrica, que é o que
+    // estes testes medem.
+    useUIStore.setState((state) => ({
+      collapsedPanels: { ...state.collapsedPanels, animation: false },
+      collapsedSections: useUIStore.getInitialState().collapsedSections,
+      modalOpen: false,
+    }))
+  })
+
+  it('o painel abre mostrando capturar e a lista, com os três blocos recolhidos', async () => {
+    comAnimacao(2)
+    await renderAnimationPanel()
+
+    expect(screen.getByRole('button', { name: 'Capturar keyframe' })).toBeInTheDocument()
+    expect(screen.getAllByLabelText('Duração (ms)')).toHaveLength(2)
+    // Ações da linha do tempo ficam junto da lista, sempre à vista.
+    expect(screen.getByRole('button', { name: 'Fechar o ciclo' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Aplicar a câmera atual aos keyframes' })).toBeInTheDocument()
+
+    // E os três blocos de uso ocasional não ocupam espaço nenhum.
+    for (const titulo of ['Trechos prontos', 'Vídeo', 'Biblioteca e arquivos']) {
+      expect(screen.getByRole('button', { name: titulo })).toHaveAttribute('aria-expanded', 'false')
+    }
+    expect(screen.queryByLabelText('Trecho')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Exportar MP4' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Nome da animação')).not.toBeInTheDocument()
+  })
+
+  it('abrir uma seção mostra o conteúdo dela e grava a escolha', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    await renderAnimationPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Vídeo' }))
+
+    expect(screen.getByRole('button', { name: 'Exportar MP4' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Vídeo' })).toHaveAttribute('aria-expanded', 'true')
+    // Persistida como o recolhimento dos painéis: abrir "Vídeo" a cada sessão
+    // seria pior do que o problema que a seção resolve.
+    expect(useUIStore.getState().collapsedSections.animationVideo).toBe(false)
+    expect(useUIStore.getState().collapsedSections.animationClips).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Vídeo' }))
+    expect(screen.queryByRole('button', { name: 'Exportar MP4' })).not.toBeInTheDocument()
   })
 })

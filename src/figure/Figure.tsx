@@ -10,9 +10,11 @@ import {
   type JointRotation,
 } from './skeleton'
 import {
+  DEFAULT_FIGURE_STYLE,
   getBoneStyle,
   getJointParts,
   type BoneStyle,
+  type FigureStyle,
   type SegmentPart,
   type Vec3,
 } from './skeleton'
@@ -54,6 +56,12 @@ export interface FigureProps {
   onJointRef?: (jointName: string, object: THREE.Group | null) => void
   /** Quando presente, o boneco vira fantasma: sem sombra, sem clique, sem gizmo. */
   ghost?: GhostStyle | null
+  /**
+   * Casca visual (`skeleton.ts`): manequim de madeira ou palito de juntas
+   * grandes para toque. É só APARÊNCIA — o esqueleto, a pose e os limites são os
+   * mesmos nas duas, então trocar de casca não mexe em nada da cena.
+   */
+  style?: FigureStyle
 }
 
 /**
@@ -319,12 +327,13 @@ interface JointBodyProps {
   selected: boolean
   locked?: boolean
   ghost?: GhostStyle | null
+  style: FigureStyle
   onSelect?: () => void
 }
 
 /** Todas as peças da junta. O destaque emissivo cobre a peça inteira (ovo+nariz/orelhas na cabeça); os olhos ficam sempre pretos e sem destaque. */
-function JointBody({ name, color, selected, locked, ghost, onSelect }: JointBodyProps) {
-  const parts = getJointParts(name)
+function JointBody({ name, color, selected, locked, ghost, style, onSelect }: JointBodyProps) {
+  const parts = getJointParts(name, style)
   const handleClick = createSelectHandler(onSelect)
 
   return (
@@ -351,6 +360,7 @@ interface JointNodeProps {
   selectedJointName?: string | null
   lockedJointNames?: readonly string[] | null
   ghost?: GhostStyle | null
+  style: FigureStyle
   onSelectJoint?: (jointName: string) => void
   onJointRef?: (jointName: string, object: THREE.Group | null) => void
 }
@@ -361,6 +371,7 @@ function JointNode({
   selectedJointName,
   lockedJointNames,
   ghost,
+  style,
   onSelectJoint,
   onJointRef,
 }: JointNodeProps) {
@@ -398,16 +409,17 @@ function JointNode({
         selected={name === selectedJointName}
         locked={lockedJointNames?.includes(name) ?? false}
         ghost={ghost}
+        style={style}
         onSelect={onSelectJoint && interactive ? () => onSelectJoint(name) : undefined}
       />
       {children.map((child) => {
-        const style = getBoneStyle(child.name)
-        if (style.kind === 'hidden') return null
+        const boneStyle = getBoneStyle(child.name, style)
+        if (boneStyle.kind === 'hidden') return null
         return (
           <Bone
             key={child.name}
             to={child.position}
-            style={style}
+            style={boneStyle}
             color={figure.color}
             ghost={ghost}
           />
@@ -421,6 +433,7 @@ function JointNode({
           selectedJointName={selectedJointName}
           lockedJointNames={lockedJointNames}
           ghost={ghost}
+          style={style}
           onSelectJoint={onSelectJoint}
           onJointRef={onJointRef}
         />
@@ -459,6 +472,7 @@ export function Figure({
   onSelectJoint,
   onJointRef,
   ghost,
+  style = DEFAULT_FIGURE_STYLE,
 }: FigureProps) {
   const scale = getHeightScale(figure.height)
   const [x, , z] = figure.position
@@ -491,6 +505,7 @@ export function Figure({
           selectedJointName={selected}
           lockedJointNames={locked}
           ghost={ghost}
+          style={style}
           onSelectJoint={handleSelectJoint}
           onJointRef={handleJointRef}
         />

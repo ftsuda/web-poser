@@ -39,6 +39,7 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
   const selectJoint = useFiguresStore((state) => state.selectJoint)
   const jointLocks = useFiguresStore((state) => state.jointLocks)
   const gizmoMode = useUIStore((state) => state.gizmoMode)
+  const figureStyle = useUIStore((state) => state.figureStyle)
   const previewFigures = useAnimationStore((state) => state.preview?.figures ?? null)
 
   const rendered = previewFigures ?? figures
@@ -70,6 +71,7 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
               ? getLockedJoints(jointLocks, figure.id)
               : null
           }
+          style={figureStyle}
           onSelectJoint={(jointName) => handleSelectJoint(figure.id, jointName)}
           onJointRef={(jointName, object) => onJointRef(figure.id, jointName, object)}
         />

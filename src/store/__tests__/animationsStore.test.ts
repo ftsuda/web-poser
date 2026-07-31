@@ -504,6 +504,70 @@ describe('figuresStore — copiar câmera do keyframe vizinho', () => {
     useFiguresStore.temporal.getState().undo()
     expect(animacao(id).keyframes[1].camera).toEqual(outraCamera)
   })
+
+  /**
+   * Carimbar a câmera VIVA numa faixa (pedido do usuário, 2026-07-31) — o
+   * mesmo "segura o enquadramento", só que a fonte é a câmera de cena e o
+   * alcance é uma faixa, não o vizinho.
+   */
+  describe('aplicar a câmera de cena a uma faixa', () => {
+    const daCena: CameraViewState = {
+      position: [-4, 2, 8],
+      target: [0, 1, 0],
+      up: [0, 1, 0],
+      focalMm: 135,
+    }
+
+    it('carimba a câmera de cena na faixa, sem tocar em poses nem durações', () => {
+      const id = comTresKeyframes()
+      useFiguresStore.getState().setSceneCamera(daCena)
+      const antes = animacao(id).keyframes[0]
+
+      const ok = useFiguresStore.getState().applySceneCameraToKeyframes(id, 0, 1)
+
+      expect(ok).toBe(true)
+      const keyframes = animacao(id).keyframes
+      expect(keyframes[0].camera).toEqual(daCena)
+      expect(keyframes[1].camera).toEqual(daCena)
+      // Fora da faixa, nada muda.
+      expect(keyframes[2].camera).toEqual({ ...camera, focalMm: 24 })
+      expect(keyframes[0].figures).toBe(antes.figures)
+      expect(keyframes[0].durationMs).toBe(antes.durationMs)
+    })
+
+    it('faixa ao contrário é a mesma faixa, e índices fora da lista são grampeados', () => {
+      const id = comTresKeyframes()
+      useFiguresStore.getState().setSceneCamera(daCena)
+
+      useFiguresStore.getState().applySceneCameraToKeyframes(id, 99, -5)
+
+      expect(animacao(id).keyframes.every((keyframe) => keyframe.camera === daCena)).toBe(true)
+    })
+
+    it('animação inexistente ou vazia é recusada sem mexer em nada', () => {
+      const id = comTresKeyframes()
+      const vazia = useFiguresStore.getState().createAnimation('Sem keyframes')
+
+      expect(useFiguresStore.getState().applySceneCameraToKeyframes('nao-existe', 0, 0)).toBe(false)
+      expect(useFiguresStore.getState().applySceneCameraToKeyframes(vazia, 0, 0)).toBe(false)
+      expect(animacao(id).keyframes[0].camera).toEqual(camera)
+    })
+
+    it('entra no histórico como uma edição só', () => {
+      const id = comTresKeyframes()
+      useFiguresStore.getState().setSceneCamera(daCena)
+      useFiguresStore.temporal.getState().clear()
+
+      useFiguresStore.getState().applySceneCameraToKeyframes(id, 0, 2)
+      useFiguresStore.temporal.getState().undo()
+
+      expect(animacao(id).keyframes.map((keyframe) => keyframe.camera)).toEqual([
+        camera,
+        outraCamera,
+        { ...camera, focalMm: 24 },
+      ])
+    })
+  })
 })
 
 /**

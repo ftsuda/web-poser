@@ -129,17 +129,29 @@ export interface RemapOptions {
 }
 
 /**
- * A animação importada executada pelos bonecos da cena. Devolve `[]` quando
- * nenhum papel tem boneco — quem chama trata isso como "não dá para remapear",
- * e não como uma animação vazia.
+ * Um keyframe do arquivo já traduzido para o elenco da cena, mas ainda SEM
+ * decidir onde ele entra: quem monta o keyframe final é quem chama.
  *
- * Os keyframes saem com a duração e o rótulo gravados; renumerar rótulos
- * repetidos é de quem insere na linha do tempo (`figuresStore`), que é quem
- * sabe o que já está lá.
+ * `posed` traz só os bonecos que têm papel — os demais dependem do destino, e
+ * é justamente aí que remapear (que parte da cena) e substituir (que parte do
+ * keyframe da bancada) divergem.
  */
-export function remapImportedKeyframes(options: RemapOptions): AnimationKeyframe[] {
-  const { keyframes, sceneFigures, assignment, anchoring, baseSeq } = options
-  if (keyframes.length === 0) return []
+interface RemappedKeyframe {
+  /** `id do boneco da cena -> estado que ele assume neste keyframe`. */
+  posed: Map<string, Figure>
+  camera: CameraViewState
+  durationMs: number
+  label?: string
+}
+
+/**
+ * O miolo do remapeamento, compartilhado pelos dois modos. Devolve `null`
+ * quando nenhum papel tem boneco — quem chama trata isso como "não dá para
+ * remapear", e não como uma animação vazia.
+ */
+function remapPosedKeyframes(options: Omit<RemapOptions, 'baseSeq'>): RemappedKeyframe[] | null {
+  const { keyframes, sceneFigures, assignment, anchoring } = options
+  if (keyframes.length === 0) return null
 
   const roles = importedAnimationRoles(keyframes)
   /** `id gravado -> boneco da cena que o executa`. */
@@ -148,7 +160,7 @@ export function remapImportedKeyframes(options: RemapOptions): AnimationKeyframe
     const figure = sceneFigures.find((candidate) => candidate.id === assignment[index])
     if (figure) cast.set(role.id, figure)
   })
-  if (cast.size === 0) return []
+  if (cast.size === 0) return null
 
   // Âncora: o papel 0 como ele foi gravado no PRIMEIRO keyframe, e o boneco da
   // cena que o executa. Sem papel 0 mapeado não há de onde transportar, e o
@@ -178,7 +190,7 @@ export function remapImportedKeyframes(options: RemapOptions): AnimationKeyframe
    */
   const lastKnown = new Map<string, Figure>(roles.map((role) => [role.id, role]))
 
-  return keyframes.map((keyframe, index) => {
+  return keyframes.map((keyframe) => {
     for (const figure of keyframe.figures) {
       if (lastKnown.has(figure.id)) lastKnown.set(figure.id, figure)
     }
@@ -222,13 +234,155 @@ export function remapImportedKeyframes(options: RemapOptions): AnimationKeyframe
     }
 
     return {
-      id: `k${baseSeq + index + 1}`,
+      posed,
       durationMs: keyframe.durationMs,
-      figures: sceneFigures.map((figure) => posed.get(figure.id) ?? figure),
       camera: transported
         ? transportCameraView(keyframe.camera, anchorPoints, headingDeltaDeg)
         : keyframe.camera,
       ...(keyframe.label ? { label: keyframe.label } : {}),
     }
   })
+}
+
+/**
+ * A animação importada executada pelos bonecos da cena. Devolve `[]` quando
+ * nenhum papel tem boneco — quem chama trata isso como "não dá para remapear",
+ * e não como uma animação vazia.
+ *
+ * Os keyframes saem com a duração e o rótulo gravados; renumerar rótulos
+ * repetidos é de quem insere na linha do tempo (`figuresStore`), que é quem
+ * sabe o que já está lá.
+ *
+ * O retrato de cada keyframe é a CENA INTEIRA: quem não tem papel aparece
+ * parado onde está agora, porque não há linha do tempo anterior de onde tirá-lo
+ * — a animação toda está sendo escrita do zero.
+ */
+export function remapImportedKeyframes(options: RemapOptions): AnimationKeyframe[] {
+  const remapped = remapPosedKeyframes(options)
+  if (!remapped) return []
+
+  return remapped.map((frame, index) => ({
+    id: `k${options.baseSeq + index + 1}`,
+    durationMs: frame.durationMs,
+    figures: options.sceneFigures.map((figure) => frame.posed.get(figure.id) ?? figure),
+    camera: frame.camera,
+    ...(frame.label ? { label: frame.label } : {}),
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// Substituição a partir de um keyframe (pedido do usuário, 2026-07-31)
+// ---------------------------------------------------------------------------
+
+export interface SubstituteOptions {
+  /** A linha do tempo lida do arquivo. */
+  keyframes: readonly AnimationKeyframe[]
+  /** A linha do tempo da BANCADA — é ela que está sendo reescrita em parte. */
+  target: readonly AnimationKeyframe[]
+  sceneFigures: readonly Figure[]
+  /** Id do boneco da cena que faz cada papel. Papel em branco não é substituído. */
+  assignment: readonly string[]
+  /** Índice, na bancada, do primeiro keyframe a receber o arquivo. */
+  startIndex: number
+  /** Se a câmera gravada também entra, ou se as da bancada ficam como estão. */
+  replaceCamera: boolean
+  /** Id dos keyframes que sobrarem para o fim: `k<baseSeq + n>`. */
+  baseSeq: number
+}
+
+export interface SubstituteResult {
+  /** A linha do tempo INTEIRA da bancada, já com a substituição feita. */
+  keyframes: AnimationKeyframe[]
+  /** Quantos keyframes entraram DEPOIS do antigo fim — os que não couberam. */
+  appended: number
+}
+
+/**
+ * Enxerta a animação do arquivo na linha do tempo da bancada a partir de
+ * `startIndex`, trocando só o que foi escolhido (decisão do usuário,
+ * 2026-07-31): as poses dos bonecos de destino e, opcionalmente, a câmera.
+ *
+ * **Por que é enxerto e não importação.** Substituir e anexar escrevem uma
+ * linha do tempo; isto reescreve PARTE de uma que já existe. Tudo o que não foi
+ * escolhido continua exatamente como estava — os keyframes anteriores a
+ * `startIndex`, os bonecos sem papel em cada keyframe atingido, as durações de
+ * cada trecho e (se a caixa da câmera estiver desmarcada) o enquadramento
+ * montado. É o que permite trocar a coreografia de um boneco no meio de uma
+ * cena montada sem remontar o resto.
+ *
+ * **A colocação é a ABSOLUTA do arquivo** (decisão do usuário): o boneco de
+ * destino assume a posição e o giro gravados, como no modo "Substituir". A
+ * alternativa — transportar para onde ele está no keyframe inicial — foi
+ * descartada por ser o contrato do "Anexar", que existe para emendar, não para
+ * enxertar.
+ *
+ * **O que sobra vai para o fim** (decisão do usuário): arquivo mais comprido do
+ * que o que resta da bancada estende a linha do tempo, com as durações e os
+ * rótulos gravados. Os bonecos sem papel congelam no estado do último keyframe
+ * da bancada — é onde eles pararam.
+ *
+ * Devolve `null` quando não há o que enxertar: arquivo vazio, bancada vazia ou
+ * nenhum papel com boneco de destino.
+ */
+export function substituteImportedKeyframes(options: SubstituteOptions): SubstituteResult | null {
+  const { keyframes, target, sceneFigures, assignment, startIndex, replaceCamera, baseSeq } = options
+  if (keyframes.length === 0 || target.length === 0) return null
+
+  const remapped = remapPosedKeyframes({
+    keyframes,
+    sceneFigures,
+    assignment,
+    // Ver o cabeçalho: enxertar leva a colocação gravada, como "Substituir".
+    anchoring: 'absolute',
+  })
+  if (!remapped) return null
+
+  const start = Math.min(Math.max(0, Math.round(startIndex) || 0), target.length - 1)
+
+  /**
+   * O retrato do keyframe com os bonecos de destino trocados. Quem tem papel
+   * mas ainda NÃO aparecia naquele retrato entra na lista: o keyframe pode ser
+   * anterior à entrada do boneco na cena, e sem isto a substituição não teria
+   * efeito nenhum ali — justamente no boneco que se pediu para trocar.
+   */
+  const merge = (base: AnimationKeyframe, posed: Map<string, Figure>): Figure[] => {
+    const known = new Set(base.figures.map((figure) => figure.id))
+    return [
+      ...base.figures.map((figure) => posed.get(figure.id) ?? figure),
+      ...[...posed.values()].filter((figure) => !known.has(figure.id)),
+    ]
+  }
+
+  const last = target[target.length - 1]
+  const body: AnimationKeyframe[] = []
+  let appended = 0
+
+  remapped.forEach((frame, index) => {
+    const at = start + index
+    const existing = target[at]
+    if (existing) {
+      // Id, duração e rótulo são do keyframe da bancada: o trecho que chega até
+      // ele e o grupo a que ele pertence não são assunto do arquivo.
+      body.push({
+        ...existing,
+        figures: merge(existing, frame.posed),
+        camera: replaceCamera ? frame.camera : existing.camera,
+      })
+      return
+    }
+
+    appended += 1
+    body.push({
+      id: `k${baseSeq + appended}`,
+      durationMs: frame.durationMs,
+      figures: merge(last, frame.posed),
+      camera: replaceCamera ? frame.camera : last.camera,
+      ...(frame.label ? { label: frame.label } : {}),
+    })
+  })
+
+  return {
+    keyframes: [...target.slice(0, start), ...body, ...target.slice(start + remapped.length)],
+    appended,
+  }
 }

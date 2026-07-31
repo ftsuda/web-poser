@@ -159,6 +159,132 @@ describe('figuresStore — importar animação de arquivo', () => {
     expect(trabalho()).toBeNull()
   })
 
+  // -------------------------------------------------------------------------
+  // Enxertar a partir de um keyframe (pedido do usuário, 2026-07-31)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Uma bancada de três keyframes com dois bonecos, montada pelo caminho normal
+   * (capturar), para que o enxerto seja medido contra o que o app produz.
+   */
+  function bancadaDeTres(): { a: string; b: string } {
+    const a = useFiguresStore.getState().addFigure()!
+    const b = useFiguresStore.getState().addFigure()!
+    for (let i = 0; i < 3; i += 1) {
+      useFiguresStore.getState().setPosition(a, [i, 0, 0])
+      useFiguresStore.getState().addAnimationKeyframe(null, { ...camera, position: [i, 5, 5] })
+    }
+    return { a, b }
+  }
+
+  it('enxertar troca as poses do keyframe escolhido em diante e mantém o resto', () => {
+    const { a, b } = bancadaDeTres()
+    const primeiroAntes = trabalho()!.keyframes[0]
+
+    const ok = useFiguresStore.getState().importAnimation(arquivo(), {
+      mode: 'substitute',
+      assignment: [b],
+      startIndex: 1,
+      replaceCamera: true,
+    })
+
+    expect(ok).toBe(true)
+    const working = trabalho()!
+    // Nome e velocidade da bancada continuam: o arquivo não escreveu a animação.
+    expect(working.name).not.toBe('Corrida')
+    expect(working.speed).toBe(1)
+    expect(working.keyframes).toHaveLength(3)
+
+    const posicaoDe = (index: number, id: string) =>
+      working.keyframes[index].figures.find((figure) => figure.id === id)!.position
+
+    // Keyframe 1 intacto; do 2 em diante o boneco B executa o arquivo.
+    expect(working.keyframes[0]).toEqual(primeiroAntes)
+    expect(posicaoDe(1, b)[2]).toBeCloseTo(0, 6)
+    expect(posicaoDe(2, b)[2]).toBeCloseTo(2, 6)
+    // E o boneco A, sem papel, continua no caminho que ele já fazia.
+    expect(posicaoDe(0, a)[0]).toBeCloseTo(0, 6)
+    expect(posicaoDe(2, a)[0]).toBeCloseTo(2, 6)
+  })
+
+  it('a caixa da câmera decide se o enquadramento montado sobrevive', () => {
+    const { b } = bancadaDeTres()
+
+    useFiguresStore.getState().importAnimation(arquivo(), {
+      mode: 'substitute',
+      assignment: [b],
+      startIndex: 0,
+      replaceCamera: false,
+    })
+
+    const comCameraDaBancada = trabalho()!.keyframes.map((keyframe) => keyframe.camera.position[0])
+    expect(comCameraDaBancada).toEqual([0, 1, 2])
+
+    useFiguresStore.getState().importAnimation(arquivo(), {
+      mode: 'substitute',
+      assignment: [b],
+      startIndex: 0,
+      replaceCamera: true,
+    })
+
+    expect(trabalho()!.keyframes[0].camera).toEqual(camera)
+  })
+
+  it('o que passa do fim vira keyframe novo, com rótulo desconflitado', () => {
+    const { b } = bancadaDeTres()
+    // A bancada já tem um grupo "Andando" — o rótulo que o arquivo traz.
+    useFiguresStore.getState().setAnimationKeyframeLabel(WORKING_ANIMATION_ID, 'k1', 'Andando')
+
+    useFiguresStore.getState().importAnimation(arquivo(), {
+      mode: 'substitute',
+      assignment: [b],
+      startIndex: 2,
+      replaceCamera: true,
+    })
+
+    const working = trabalho()!
+    expect(working.keyframes).toHaveLength(4)
+    expect(working.keyframes[3].id).toBe('k4')
+    expect(working.keyframes[3].durationMs).toBe(800)
+    expect(working.keyframes[3].label).toBe('Andando 2')
+  })
+
+  it('enxertar é um passo de undo só, e o Ctrl+Z devolve a linha do tempo inteira', () => {
+    const { b } = bancadaDeTres()
+    const antes = trabalho()!
+
+    useFiguresStore.getState().importAnimation(arquivo(), {
+      mode: 'substitute',
+      assignment: [b],
+      startIndex: 0,
+      replaceCamera: true,
+    })
+    useFiguresStore.temporal.getState().undo()
+
+    expect(trabalho()).toEqual(antes)
+  })
+
+  it('sem bancada, sem papéis ou sem remapeamento, o enxerto é recusado', () => {
+    const semBancada = useFiguresStore
+      .getState()
+      .importAnimation(arquivo(), { mode: 'substitute', assignment: ['figure-1'], startIndex: 0 })
+    expect(semBancada).toBe(false)
+    expect(trabalho()).toBeNull()
+
+    const { b } = bancadaDeTres()
+    const antes = trabalho()!
+
+    // Sem `assignment` não há de quem para quem — é o mapa que define o enxerto.
+    expect(useFiguresStore.getState().importAnimation(arquivo(), { mode: 'substitute' })).toBe(false)
+    expect(
+      useFiguresStore
+        .getState()
+        .importAnimation(arquivo(), { mode: 'substitute', assignment: ['figure-fantasma'] }),
+    ).toBe(false)
+    expect(trabalho()).toBe(antes)
+    expect(b).toBeTruthy()
+  })
+
   it('a biblioteca não entra na história: importar não cria nem mexe em animação salva', () => {
     useFiguresStore.getState().importAnimation(arquivo(), { mode: 'replace' })
     useFiguresStore.getState().saveAnimationToLibrary('Guardada')

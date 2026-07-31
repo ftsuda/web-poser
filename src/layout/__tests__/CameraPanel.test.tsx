@@ -1,6 +1,6 @@
 import '../../i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useCameraStore } from '../../store/cameraStore'
 import { useFiguresStore } from '../../store/figuresStore'
@@ -32,10 +32,24 @@ async function renderCameraPanel() {
   return utils
 }
 
+/**
+ * As quatro seções de uso ocasional do painel (vistas prontas, movimento,
+ * vistas ortográficas e bookmarks) nascem RECOLHIDAS — escolha de layout,
+ * `uiPreferences.ts`. Estes testes falam do conteúdo, então abrem todas.
+ */
+function abrirSecoes() {
+  useUIStore.setState((state) => ({
+    collapsedSections: Object.fromEntries(
+      Object.keys(state.collapsedSections).map((key) => [key, false]),
+    ) as typeof state.collapsedSections,
+  }))
+}
+
 describe('CameraPanel', () => {
   beforeEach(() => {
     useCameraStore.setState(useCameraStore.getInitialState())
     useFiguresStore.setState(useFiguresStore.getInitialState())
+    abrirSecoes()
     useFiguresStore.temporal.getState().clear()
     vi.mocked(exportCameraBookmarksToGlb).mockClear()
     vi.mocked(importCameraBookmarksFromGlb).mockReset()
@@ -202,6 +216,7 @@ describe('CameraPanel', () => {
 describe('CameraPanel — erro de importação (fase 9, item 4)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
+    abrirSecoes()
     vi.mocked(importCameraBookmarksFromGlb).mockReset()
     vi.mocked(pickFile).mockReset()
   })
@@ -227,6 +242,7 @@ describe('CameraPanel — lente, enquadramento e movimento', () => {
   beforeEach(() => {
     useCameraStore.setState(useCameraStore.getInitialState())
     useFiguresStore.setState(useFiguresStore.getInitialState())
+    abrirSecoes()
     useFiguresStore.temporal.getState().clear()
   })
 
@@ -538,6 +554,7 @@ describe('CameraPanel — posição e rotação da câmera de cena', () => {
   beforeEach(() => {
     useCameraStore.setState(useCameraStore.getInitialState())
     useFiguresStore.setState(useFiguresStore.getInitialState())
+    abrirSecoes()
     useUIStore.setState(useUIStore.getInitialState())
     useFiguresStore.temporal.getState().clear()
   })
@@ -564,7 +581,7 @@ describe('CameraPanel — posição e rotação da câmera de cena', () => {
 
   it('Mover/Girar ficam desabilitados no modo visão-câmera (o gizmo não está na tela)', async () => {
     act(() => {
-      useCameraStore.getState().setViewMode('camera')
+      useCameraStore.getState().toggleViewMode()
     })
     await renderCameraPanel()
 
@@ -629,5 +646,56 @@ describe('CameraPanel — posição e rotação da câmera de cena', () => {
     expect(sceneCamera.target[2]).toBeCloseTo(5, 4)
     // Girar pelo painel não empilha undo: câmera fica fora do histórico.
     expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
+  })
+})
+
+/**
+ * Reorganização do painel (pedido do usuário, 2026-07-31): a inclinação sai do
+ * bloco de enquadramento (era o único controle AO VIVO num bloco que espera o
+ * "Aplicar"), as vistas prontas ganham bloco próprio (eram o segundo "Aplicar"
+ * do mesmo fieldset) e as vistas ortográficas dizem no título que são da
+ * bancada.
+ */
+describe('CameraPanel — ordem e seções', () => {
+  beforeEach(() => {
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  it('a inclinação mora com a lente, e não no bloco de enquadramento', async () => {
+    render(<CameraPanel />)
+    await act(async () => {})
+
+    const lente = screen.getByRole('group', { name: 'Lente e inclinação' })
+    expect(within(lente).getByRole('slider')).toBeInTheDocument()
+    expect(within(lente).getByRole('button', { name: 'Endireitar' })).toBeInTheDocument()
+  })
+
+  it('enquadramento e vistas prontas são blocos separados, um Aplicar em cada', async () => {
+    render(<CameraPanel />)
+    await act(async () => {})
+
+    const enquadramento = screen.getByRole('group', { name: 'Enquadramento' })
+    expect(within(enquadramento).getByRole('button', { name: 'Aplicar enquadramento' })).toBeInTheDocument()
+    expect(within(enquadramento).queryByRole('button', { name: 'Aplicar vista' })).not.toBeInTheDocument()
+
+    // "Vistas prontas" nasce recolhida — o botão do bloco existe, o conteúdo não.
+    expect(screen.getByRole('button', { name: 'Vistas prontas' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByRole('button', { name: 'Aplicar vista' })).not.toBeInTheDocument()
+  })
+
+  it('as quatro seções ocasionais nascem recolhidas; o enquadramento, aberto', async () => {
+    render(<CameraPanel />)
+    await act(async () => {})
+
+    expect(screen.getByRole('button', { name: 'Enquadramento' })).toHaveAttribute('aria-expanded', 'true')
+    for (const titulo of ['Vistas prontas', 'Movimento', 'Bancada: vistas ortográficas', 'Bookmarks']) {
+      expect(screen.getByRole('button', { name: titulo })).toHaveAttribute('aria-expanded', 'false')
+    }
+    expect(screen.queryByRole('button', { name: 'Voltar à perspectiva' })).not.toBeInTheDocument()
   })
 })

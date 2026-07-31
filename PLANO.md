@@ -1301,6 +1301,120 @@ Pedido do usuário: identificar no boneco selecionado as juntas travadas durante
     - **Seleção generalizada**, pedida junto: com o objeto, passavam a ser três coisas selecionáveis e a exclusividade era mantida à mão aos pares.
     - **Duas funcionalidades acrescentadas pelo usuário depois da avaliação:** "ocultar na bancada" (some da tela de trabalho, **continua saindo** no PNG e no MP4 — o simétrico exato dos `OVERLAY_NAMES`) e "travar" (visível, mas fora do alcance do clique, para não selecionar o cenário por engano ao posar).
 
+
+### J. Edição em dispositivo touch
+
+*(grupo e itens 43-44 acrescentados em 2026-07-30, a pedido do usuário — a numeração continua do fim, sem renumerar o que já existe)*
+
+43. ✅ **Casca de palito e pose em arquivo JSON** (concluído em 2026-07-30, ver `DECISOES.md` #81). Primeira etapa, dentro da aplicação atual, do objetivo maior de posar o boneco no celular. O usuário pediu três avaliações antes de qualquer código — cascas alternativas do boneco, a visão de celular em quadrante 2×2, e como implementá-la sem afetar o existente — e mandou implementar só o que cabe aqui.
+    - **Casca de palito**, escolhida na Toolbar (`Boneco` > `Palito (juntas grandes)`): juntas como esferas grandes e ossos como cilindros finos, invertendo a proporção do manequim para o que se toca ficar gordo e o que só liga ficar magro. É **só aparência** — mesmo esqueleto, mesmas poses, mesmos limites, e o default de todo consumidor continua sendo o manequim de madeira.
+    - **Pose em arquivo (.json)**, no painel de Propriedades, junto das demais operações de pose do boneco inteiro: exportar e carregar a pose do boneco selecionado. O arquivo usa **a estrutura interna das animações** (o objeto de `keyframes[].figures[]`), e a leitura aceita também um `animations.json` inteiro, um keyframe solto ou uma animação solta. *(A seção nasceu no painel de Bonecos e foi movida para cá no mesmo dia, a pedido do usuário — ver `DECISOES.md` #81.)*
+    - **Contrato de colocação**, definido pelo usuário: grava como se o boneco estivesse no (0,0) do plano horizontal (X/Z zerados, Y preservado) e carrega mantendo X/Z do boneco de destino, trazendo do arquivo apenas o Y. Onde ele pisa é composição; agachar e pular são pose.
+    - **Preferência de tela, não de cena:** a casca vale para todos os bonecos, fica fora do undo e não viaja no `.glb` nem no `workspace.json` — mesmo tratamento da régua e da máscara de enquadramento.
+
+44. ⏳ **Versão "Lite" — PWA de posagem para celular e tablet** (registrado em 2026-07-30 a pedido do usuário; **nada implementado**). Uma segunda casca de UI sobre o mesmo núcleo, desenhada para o dedo e para tela pequena.
+
+    **Uma vista por vez, em qualquer aparelho.** A ideia de dividir o viewport — o quadrante 2×2 avaliado antes, e depois a grade 2×3/3×2 em tablet — está **descartada**, inclusive em tablet e computador (decisão do usuário). O viewport é sempre um só, ocupando a tela toda, e o usuário ALTERNA entre as vistas. A razão vale para telas grandes também: cada vista ortográfica precisa de área para a junta virar alvo de dedo, e seis painéis pequenos entregam seis alvos ruins em vez de um bom. Uma vista grande com troca rápida também mantém uma única casca a manter, em vez de dois modos de viewport com regras próprias de foco e de gizmo.
+
+    **O que a Lite é para, e o que ela deliberadamente não é.** O objetivo é gerar POSES e keyframes; refinamento de câmera, duração entre keyframes, enquadramento, instantâneos e vídeo continuam sendo trabalho da aplicação completa. A ponte entre as duas é o JSON no formato de animação, que já existe e já vai e volta (item 43 / `DECISOES.md` #81).
+
+    #### As seis vistas e a dimensão travada
+
+    Cinco vistas ortográficas de edição, cada uma travando um eixo, mais uma de navegação livre sem edição nenhuma:
+
+    | Vista | Trava | Edita | Serve para |
+    |---|---|---|---|
+    | Frente | Z (profundidade) | X, Y | silhueta frontal, braços e pernas abertos |
+    | Trás | Z (profundidade) | X, Y | alcançar o que a frente esconde |
+    | Lado esquerdo | X (lateral) | Z, Y | flexão/extensão, o perfil da pose |
+    | Lado direito | X (lateral) | Z, Y | o mesmo, pelo outro lado |
+    | Cima | Y (altura) | X, Z | torções do tronco e a colocação no chão |
+    | Livre | — | nada | conferir a pose em 3D, sem risco de mexer nela |
+
+    São seis, e como só uma aparece de cada vez, acrescentar ou remover uma vista depois custa apenas uma entrada a mais no seletor — não há layout a rever junto.
+
+    **A trava não toca no solver.** `dragSolver.solveJointDrag` recebe um alvo em coordenadas de MUNDO e devolve rotações já grampeadas, sem saber nada de câmera nem de ponteiro. Travar uma dimensão é só projetar o toque no plano que passa pela junta e é perpendicular ao eixo da vista — a profundidade fica a que já era. Vale escrever a projeção a partir da BASE DA CÂMERA da vista, e não com eixos escritos à mão: assim as vistas "trás" e "direito", em que arrastar para a direita na tela move o boneco no sentido oposto do mundo, saem certas de graça em vez de virarem dois casos especiais.
+
+    #### Troca de vista e layout responsivo
+
+    A vista ativa é simplesmente **a que está na tela** — não há vista em segundo plano nem foco a disputar, e por isso também não existe a regra de "promover a vista tocada". Tocar numa junta seleciona a junta, e só.
+
+    - **Troca:** abas com o nome da vista, mais setas de avançar/voltar para percorrer as seis em sequência sem mirar numa aba específica. Deslizar o dedo na horizontal sobre o viewport é o gesto natural para o mesmo fim e vale considerar — com o cuidado de não brigar com o arrasto de junta (só a partir da borda, ou com dois dedos).
+    - **O responsivo é o CROMO, não o viewport:** o que muda entre celular, tablet e computador é a barra de vistas (ícone só × ícone com rótulo), a altura e a densidade das abas do rodapé, e quanto texto de ajuda cabe. O viewport ocupa o resto em todos eles.
+    - **Implementação:** um único `<Canvas>` com uma câmera que troca de posição/projeção ao mudar de vista. Sem `<View>` do drei, sem renderização por *scissor*, sem vários contextos WebGL — nada disso é necessário quando só há uma vista viva.
+    - **Vantagem de manutenção:** com uma vista por vez, a vista ativa vira estado único e simples (`viewKey`), e o arrasto tem sempre um só plano de projeção em vigor. Era exatamente aí que a grade cobraria caro: seis vistas simultâneas exigiriam decidir, a cada toque, em qual delas o gesto começou e qual plano usar.
+
+    #### Bonecos
+
+    - De **1 a 5**, o mesmo teto da aplicação atual (`MAX_FIGURES`).
+    - O boneco a editar é **escolhido explicitamente** — nada de editar por engano quem estava só passando na frente. Numa tela onde o alvo é o dedo, isso importa mais que no desktop.
+    - Opção para **deixar invisíveis os bonecos que não estão sendo editados** (`toggleVisibility` já existe e já torna o boneco inerte ao clique).
+    - **Edição só no palito** (item 43), nas cinco vistas ortográficas. A vista livre pode mostrar o boneco COMPLETO — o `style` do `<Figure>` já é prop, então isso é escolha por vista, não a preferência global da Toolbar.
+
+    #### Câmera: sai a de CENA, fica a de TRABALHO
+
+    A aplicação já trata as duas como coisas separadas desde a fase 11 (`DECISOES.md` #78), e a Lite simplesmente **fica com uma e descarta a outra** — decisão do usuário:
+
+    - **Sai inteira a CÂMERA DE CENA**, que é a que define o quadro do PNG, do MP4 e dos keyframes: lente/distância focal, bookmarks, "ver pela câmera", posicionar/mover/girar a câmera, máscara de enquadramento e régua. Enquadrar é trabalho da aplicação completa.
+    - **Fica a CÂMERA DE TRABALHO**, a que navega o viewport: deslocar e aproximar dentro de cada vista ortográfica (sem isso não se alcança uma junta pequena no celular) e orbitar livremente na vista de navegação. As cinco vistas de edição são a mesma câmera de trabalho presa a um eixo; a vista livre é ela solta.
+    - **Nada da câmera de trabalho é gravado**, exatamente como no desktop: o keyframe leva valores padrão de câmera (ver o botão flutuante, abaixo), então para onde o usuário estava olhando na Lite não vaza para o arquivo nem atropela o enquadramento que será feito depois.
+
+    #### Botão flutuante: salvar keyframe
+
+    Um botão flutuante grava a pose atual como keyframe novo, com **câmera padrão** (a partir de `CAMERA_DEFAULTS`) e **duração padrão** (`DEFAULT_KEYFRAME_DURATION_MS`, 1 s).
+
+    Dois detalhes verificados que economizam trabalho:
+
+    - A ação de store `addAnimationKeyframe(animationId, camera)` **já recebe a câmera como parâmetro** — a Lite passa a padrão e não precisa de ação nova. O desvio que o desktop faz (um `pendingCommand` consumido pelo `AnimationPlayer` de dentro do `<Canvas>`) existe só porque lá é preciso ler a câmera VIVA; sem câmera de cena, a Lite chama a ação direto.
+    - O keyframe **precisa** de uma câmera: `sanitizeAnimations` descarta keyframe sem ela. Por isso valores padrão, e não campo ausente.
+
+    #### Controles no rodapé, em abas
+
+    Tudo o que é edição mora numa faixa inferior dividida em abas — é a região que o polegar alcança, e abas evitam a barra única que não caberia. O que vem da aplicação atual (todas as ações já existem no store):
+
+    - **Junta:** travar/destravar (`toggleJointLock`, `clearJointLocks`) e **voltar a junta à posição inicial** (`resetJointRotation`).
+    - **Simetria:** copiar esquerda→direita e direita→esquerda (`mirrorSide`), **espelhar o boneco todo** (`mirrorWholeFigure`), inverter lados (`swapSides`) — com escopo de membro ou do boneco inteiro — e **espelhar mudanças ao vivo** (`toggleLiveMirror`).
+    - **Papel-cebola:** anterior, posterior ou ambos. O modo já existe pronto (`OnionSkinMode = 'both' | 'previous' | 'next'`, com `setOnionSkinMode`) e o cálculo dos quadros vizinhos está num módulo puro (`onionSkin.ts`), reaproveitável sem tocar no componente de desktop.
+    - **Translação fina:** setas cima/baixo/esquerda/direita para o ajuste que o dedo não acerta.
+
+    **As setas são o arrasto, em passos.** Elas devem empurrar a junta **no plano da vista ativa**, alimentando o mesmo `solveJointDrag` — não uma segunda rotina de edição. Assim a dimensão travada vale para as setas automaticamente, o resultado é idêntico ao do arrasto e há um caminho de código só a manter.
+
+    #### O que sai da Lite
+
+    Presets de pose e de mão, biblioteca de poses, trechos de animação, importação/exportação `.glb` (boneco, cena e bookmarks), workspace em pasta, instantâneos PNG, exportação de vídeo, objetos de cena, e a **câmera de cena** inteira (ver acima — a câmera de trabalho fica).
+
+    **Ressalva:** `posePresets.ts` sai da UI, **não do código** — `addFigure` usa `resolvePosePreset('tpose')` como pose inicial de todo boneco novo. Remover o módulo quebraria a criação de boneco na própria Lite.
+
+    #### Facilidades de tela sensível ao toque
+
+    Aproveitando o levantamento feito antes; a primeira é escolha explícita do usuário:
+
+    - **Duplo toque numa junta = travar/destravar.** Põe o cadeado no próprio corpo, que é onde a mão já está.
+    - **Alvos de toque invisíveis** maiores que a geometria, por junta — o palito já engordou as juntas, e uma esfera transparente maior fecha o resto.
+    - **`touch-action: none`** no canvas: sem isso o navegador rouba o arrasto para rolar a página. É uma linha de CSS e é o maior atrito de canvas no celular.
+    - **Rotação com dois dedos = torção da junta no próprio eixo.** Vale destacar que isto não é enfeite: com uma dimensão travada por vista, a torção (o eixo Y de pronação/supinação, o giro do ombro) **não é alcançável pelo arrasto planar**. Sem esse gesto — ou um controle equivalente no rodapé — fica um grau de liberdade inacessível na Lite.
+    - **Dois dedos = desfazer, três = refazer** (convenção do Procreate), já que não há Ctrl+Z.
+    - **Vibração ao saturar o limite articular:** o solver já devolve `reached: false` e a posição efetivamente alcançada. Ressalva honesta: a Vibration API funciona no Android e **não** no Safari do iOS, então é reforço, nunca o único aviso.
+    - **Compartilhar (Web Share)** o JSON gerado, que é o substituto natural do "salvar na pasta" — a File System Access API não existe no iOS.
+    - **Wake Lock** para a tela não apagar enquanto se estuda a pose.
+
+    #### Arquitetura e isolamento (avaliação já feita, ver `DECISOES.md` #81)
+
+    - O app **já é um PWA** instalável e offline (`vite-plugin-pwa`, fase 6) e o manifest usa `start_url: '.'` — desktop e celular resolvem para o mesmo `index.html`. Escolher a casca em runtime não exige tocar em **nada** da configuração do PWA, que é o caminho de menor risco.
+    - **Uma única edição em arquivo existente:** `App.tsx` escolhendo entre `AppShell` e a casca Lite. Nenhum teste monta `App`, então essa edição não afeta a suíte. Todo o resto em arquivos novos: estado próprio em store novo (nunca no `uiStore`), CSS próprio sob classe raiz própria, e viewport novo — e **não** o `Viewport.tsx` atual adaptado, que carrega `CameraRig`, máscara, régua, papel-cebola, captura e gizmos.
+    - **Componentes compartilhados só ganham props aditivas e opcionais**, com o default reproduzindo o comportamento de hoje. Se um teste existente precisar mudar para continuar passando, a fronteira foi violada.
+    - **Detecção da casca:** ponteiro grosso **e** viewport estreito (não só a largura), decidida uma vez no carregamento, com override explícito e persistido para testar a Lite no desktop.
+
+    #### ❓ A decidir com o usuário antes de implementar
+
+    - **Autosave:** a Lite compartilha a chave `virtual-mockup:workspace:v1` com o desktop (recomendado — abrir no celular e continuar de onde parou, no mesmo aparelho), usa chave própria, ou não autossalva?
+    - **Quanto de linha do tempo a Lite administra.** O papel-cebola de anterior/posterior implica que existe uma sequência e uma posição corrente nela — então a Lite precisa de ao menos um navegador de keyframes. Fica só em "acrescentar e navegar", ou também reordenar, substituir e apagar?
+    - **A Lite abre um JSON existente** para continuar uma animação começada no desktop, ou só exporta?
+    - **Desfazer:** a Lite tem histórico próprio (o `zundo` do `figuresStore` viria de graça) ou fica sem?
+    - **Altura e colocação no chão:** a Lite deixa mudar a altura do boneco e posicionar os cinco no plano? A vista de cima é o lugar natural para o X/Z, e com cinco bonecos alguma separação é necessária.
+    - **Vista livre:** mostra só o boneco em edição ou a cena toda?
+    - **Torção:** confirmar o gesto de dois dedos como caminho para o eixo que o arrasto planar não alcança, ou preferir um controle no rodapé.
+
 ### Objetos de cena 3D redimensionáveis, com vértice livre ✅ (concluído em 2026-07-30)
 
 Entrega do item 42 acima. Não rompe a decisão de topo "manequim construído por primitivas, **sem assets externos**": as seis formas são geradas em código, como o boneco.
@@ -1319,3 +1433,43 @@ Entrega do item 42 acima. Não rompe a decisão de topo "manequim construído po
 **Sombra mais clara em 2026-07-30** (pedido do usuário, depois de ver os objetos em cena): `SHADOW_INTENSITY = 0.45` em `constants.ts`, aplicado como `shadow-intensity` na `directionalLight` do `SceneContent` (`light.shadow.intensity`, do three r165+). A escuridão da sombra é propriedade da LUZ, não de quem projeta — então clareia junto a sombra dos bonecos, o que é coerente: mesma luz, mesmo chão. Não confundir com a elipse de contato (`FigureShadow`), que é um *mesh* com opacidade própria. +1 teste (`SceneContent.test.tsx`), travando que o valor chega mesmo à luz — `shadow-intensity` é prop aninhada, e um erro de digitação nela passaria em silêncio.
 
 **+77 testes** (geometria e soldagem: 21; store: 27; serialização e `.glb`: 14; captura: 3; painel: 13), suíte de 2.090 para **2.167**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. Os arrastos (mover/girar/medir/vértice) não são testáveis por automação, mesma ressalva de sempre dos gizmos — **falta a conferência visual do usuário no navegador**.
+
+### Enxertar animação importada, carimbar a câmera atual e regravar em `<dialog>` ✅ (concluído em 2026-07-31)
+
+Pedido do usuário em três partes, com quatro decisões de desenho respondidas antes de escrever código. Ver `DECISOES.md` #82 (e #79, de quem esta entrega reaproveita o remapeamento, e #69, de quem ela move a confirmação).
+
+- **Terceiro modo de importação, `substitute`:** o arquivo é ENXERTADO na bancada a partir de um keyframe escolhido, trocando as poses dos bonecos de destino e — se a caixa estiver marcada — as câmeras. Sobrevivem: os keyframes anteriores, os bonecos sem papel, as durações, os rótulos de grupo, o nome e a velocidade da animação de trabalho. Os papéis do diálogo (#79) já respondiam "de quem para quem": papel em "— ninguém —" é o boneco de ORIGEM que fica de fora, e o combo escolhe o de DESTINO.
+- **Decisões do usuário:** excedente vai para o fim da linha do tempo (com as durações gravadas); caixa marcada por padrão para trocar também as câmeras; colocação **absoluta**, como no modo "Substituir"; e o carimbo de câmera com **faixa escolhível** (1..n por padrão), confirmado em diálogo.
+- **`remapPosedKeyframes` extraído:** o miolo de #79 passou a ser compartilhado — `remapImportedKeyframes` monta o retrato a partir da cena, `substituteImportedKeyframes` a partir do keyframe da bancada. É a única diferença entre os dois modos, e agora está num lugar só.
+- **`applySceneCameraToKeyframes`:** carimba a câmera de cena viva numa faixa de keyframes, só a câmera — poses e durações intactas. Vive no store (a câmera de cena já está lá, sincronizada por gizmo, painel e "Ir para"), então é testável sem GPU e entra num passo de undo. Desabilitado **tocando**, com o motivo à vista: durante a reprodução o store guarda o enquadramento de antes do play.
+- **`ModalDialog.tsx`:** a dança de `showModal`/`close`/Escape/`modalOpen` num lugar só, usada pelos três diálogos do painel. A confirmação de "Regravar" saiu do card (onde ficava colada nos botões dos keyframes vizinhos, que seguiam clicáveis) e diz por extenso qual keyframe será reescrito.
+
+**+25 testes**, suíte de 2.218 para **2.243**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual no navegador** — as três caixas modais e o botão novo do painel.
+
+### Reorganização do painel de Animação ✅ (concluído em 2026-07-31)
+
+Pedido do usuário: revisar a ordem dos controles, aproximar o que é do mesmo assunto e achar redundâncias e coisa sem uso. Ver `DECISOES.md` #83.
+
+- **A lista de keyframes ganhou teto e rolagem própria** (`max-height: 45vh`). Era o problema de fundo: sem limite, quinze keyframes empurravam para fora da tela tudo o que vinha depois — velocidade, "Fechar o ciclo", "Gerar miniaturas", vídeo, `Exportar MP4` e a biblioteca inteira. Mesmo efeito que obrigou a fixar o `Capturar` no topo (#69), nunca tratado para o resto do painel.
+- **Nova ordem:** capturar (fixo) → papel-cebola + lista → **Ações da linha do tempo** (fieldset novo) → ▸ Trechos prontos → ▸ Vídeo → ▸ Biblioteca e arquivos.
+- **`CollapsibleSection.tsx`:** seção recolhível DENTRO de um painel, com estado persistido junto das preferências (`ANIMATION_SECTION_KEYS` em `uiPreferences.ts`). Nasce fechada. Não é `<details>` (o jsdom não esconde o conteúdo fechado, e os testes veriam botões que o usuário não vê) nem o `CollapsiblePanel` (aquele encolhe a COLUNA).
+- **"Ações da linha do tempo"** junta o que age sobre a lista inteira: fechar o ciclo, aplicar a câmera, gerar miniaturas e salvar faixa como trecho — este último tirado de dentro de "Trechos prontos", onde era saída disfarçada de entrada (ele lê a lista). A velocidade fecha o bloco.
+- **Redundâncias:** leitura de tempo duplicada com a barra do rodapé (removida), faixas com rótulos ambíguos ("Salvar até…" × "Aplicar de/até…"), "Regravar a salva" → **"Atualizar a salva"**, `Limpar` agora confirma em diálogo (apagava a linha do tempo inteira sem pedir nada, enquanto regravar um keyframe confirmava), arquivo JSON em fieldset próprio, `KeyframeUpdateDialog` → `ConfirmDialog` genérico, e a classe `animation-panel__insert` (que vestia três botões que não inserem nada) → `animation-panel__wide`.
+- **Sem uso:** a chave `repeatHint` saiu. `createAnimation`, `loadAnimationLibrary` e `loadClipLibrary` ficaram — só os testes os chamam, mas apagá-los custaria reescrever ~35 pontos de `animationsStore.test.ts` mudando o que eles exercitam; o risco de alguém religar `createAnimation` a um botão (ressuscitando o "criar antes de capturar" que o item 36 matou) está registrado no comentário da ação. `Câm ↑`/`Câm ↓` também ficaram: perderam o caso comum para o carimbo em faixa, mas continuam sendo a única forma de copiar a câmera de um vizinho.
+
+**+4 testes** e ~45 pontos ajustados aos rótulos e ao estado inicial das seções, suíte de 2.243 para **2.247**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual no navegador** — a rolagem da lista, as três seções e os dois fieldsets novos.
+
+### Reorganização dos painéis de Propriedades e Câmera ✅ (concluído em 2026-07-31)
+
+Pedido do usuário, na sequência da reorganização do animador. Ver `DECISOES.md` #84 (e #83, de quem esta entrega generaliza o mecanismo de seções).
+
+- **`SECTION_KEYS` no lugar de `ANIMATION_SECTION_KEYS`**, com prefixo por painel e onze chaves. As seções nascem recolhidas **menos duas** — `poses` e `cameraFraming` —, que são o motivo de aqueles painéis existirem: recolher o que se usa o tempo todo trocaria rolagem por cliques.
+- **Propriedades — raiz:** gizmo W/E + Posição + Rotação sobem para logo abaixo do combo de junta (estavam no fim, atrás de cinco blocos de pose, e o gizmo era a versão arrastável daqueles mesmos números). O fieldset "Poses predefinidas", que tinha 193 linhas e cinco assuntos, virou ▸**Poses** (escolher e aplicar) e ▸**Guardar e copiar** (salvar, copiar para outro boneco, arquivo `.json`). Renomear/remover ficaram com o combo, que é o que elas miram.
+- **Propriedades — junta:** a rotação sobe (é O controle da junta); presets de mão e gizmo vêm depois. As duas vistas passam a terminar na mesma ordem — ▸Simetria e depois "Zerar por grupo" —, que antes apareciam invertidas entre elas.
+- **`Renomear` pose salva:** a ação existia no store desde #42, testada, e nunca tinha ganhado botão. O formulário de nome virou `PoseNameForm`, um componente só para salvar e renomear.
+- **Câmera:** a inclinação holandesa sai do bloco de enquadramento (era o único controle AO VIVO num bloco que espera o "Aplicar") e vai para o da lente, agora "Lente e inclinação"; ▸**Vistas prontas** ganham bloco próprio (eram o segundo "Aplicar" do mesmo fieldset); ▸**Bancada: vistas ortográficas** diz no título o que o comentário do arquivo avisava; ▸Movimento e ▸Bookmarks recolhem, e a lista de bookmarks ganhou teto e rolagem própria.
+- **Limpezas:** `setViewMode` removida do `cameraStore` (só `toggleViewMode` era usada), rótulos do gizmo em `common.*` (o painel de Câmera puxava a chave do de Propriedades), `loadPoseLibrary` e `renameSceneSnapshot` documentadas como ações sem porta, e dois recuos tortos corrigidos no `PropertiesPanel`.
+
+- **Ajuste no mesmo dia, depois de o usuário ver o painel:** "Guardar e copiar" foi para o rodapé da vista da raiz (é o fim de uma sessão, não o meio); "Aleatória" desceu para depois da mistura (a fila de cima é a da pose escolhida no combo, e o sorteio não olha para ela); e o gizmo Mover/Girar subiu para antes da rotação também na vista de junta, igualando as duas vistas.
+
+**+12 testes**, suíte de 2.247 para **2.259**, todos verdes; `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual no navegador** — as sete seções novas, a lista de bookmarks rolando e a ordem dos blocos nas duas vistas de Propriedades.
