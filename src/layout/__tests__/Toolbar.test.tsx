@@ -4,6 +4,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from '../../i18n'
 import { useFiguresStore } from '../../store/figuresStore'
+import { useDepthStore } from '../../store/depthStore'
 import { useUIStore } from '../../store/uiStore'
 import { Toolbar } from '../Toolbar'
 
@@ -21,6 +22,7 @@ describe('Toolbar', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useFiguresStore.temporal.getState().clear()
     useUIStore.setState(useUIStore.getInitialState())
+    useDepthStore.setState(useDepthStore.getInitialState())
   })
 
   afterEach(async () => {
@@ -160,5 +162,27 @@ describe('Toolbar', () => {
 
     await waitFor(() => expect(i18n.language).toBe('en'))
     expect(await screen.findByLabelText('Background')).toBeInTheDocument()
+  })
+
+  /**
+   * Fase 13. A visualização de profundidade é modo de VISUALIZAÇÃO, como a
+   * régua e a casca do boneco: fora do undo, fora do arquivo, e por isso mora
+   * aqui e não num painel. Ligar a vista NÃO liga a saída — as três escolhas
+   * são independentes.
+   */
+  it('liga e desliga a vista em profundidade sem mexer nas saídas', async () => {
+    const user = userEvent.setup()
+    await renderToolbar()
+
+    const checkbox = screen.getByLabelText('Profundidade')
+    expect(checkbox).not.toBeChecked()
+
+    await user.click(checkbox)
+    expect(useDepthStore.getState().previewEnabled).toBe(true)
+    expect(useDepthStore.getState().snapshotDepth).toBe(false)
+    expect(useDepthStore.getState().videoDepth).toBe(false)
+
+    await user.click(checkbox)
+    expect(useDepthStore.getState().previewEnabled).toBe(false)
   })
 })

@@ -16,7 +16,7 @@ import {
  * as posições do buffer em metros. É o que permite o vértice livre existir:
  * os desvios são metros ABSOLUTOS, e uma escala no nó os multiplicaria junto
  * com a primitiva — puxar um canto 10 cm passaria a valer 20 cm se a caixa
- * dobrasse de tamanho. Como efeito colateral bom, o `.glb` sai com a malha
+ * dobrasse de tamanho. Um caminho de código só para desenhar e para medir a malha
  * deformada de verdade, e não com uma primitiva mais uma escala que o Blender
  * teria de reinterpretar.
  *

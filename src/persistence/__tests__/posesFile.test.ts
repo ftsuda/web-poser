@@ -22,13 +22,35 @@ const deitada: SavedPose = {
 }
 
 describe('posesFile — biblioteca de poses do workspace (DECISOES.md #42)', () => {
-  it('grava versão, leiame e as juntas em tupla de graus', () => {
+  it('grava versão, leiame e as juntas em graus, no formato {x,y,z}', () => {
     const file = buildPosesFile([pose])
 
     expect(file.version).toBe(POSES_VERSION)
     expect(file.leiame.length).toBeGreaterThan(0)
-    expect(file.poses[0].pose['shoulder.L']).toEqual([10, 90, 20])
-    expect(file.poses[0].rotation).toEqual([0, 0, 0])
+    expect(file.poses[0].pose['shoulder.L']).toEqual({ x: 10, y: 90, z: 20 })
+    expect(file.poses[0].rotation).toEqual({ x: 0, y: 0, z: 0 })
+  })
+
+  /**
+   * O `poses.json` gravava tuplas até a unificação do formato do boneco
+   * (DECISOES.md #86). A leitura continua aceitando — sem isso, a biblioteca de
+   * poses de um workspace salvo antes voltaria vazia.
+   */
+  it('lê a codificação antiga em tuplas e chega à mesma pose', () => {
+    const antigo = {
+      version: POSES_VERSION,
+      poses: [
+        {
+          id: 'pose-1',
+          name: 'Guarda alta',
+          rotation: [0, 0, 0],
+          groundOffsetM: 0,
+          pose: { 'shoulder.L': [10, 90, 20], 'elbow.L': [-30, 90, 0] },
+        },
+      ],
+    }
+
+    expect(parsePosesFile(antigo)).toEqual(parsePosesFile(buildPosesFile([pose])))
   })
 
   /** Campo derivado da rotação: gravá-lo só criaria a chance de os dois se contradizerem. */

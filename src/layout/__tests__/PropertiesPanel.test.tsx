@@ -1049,8 +1049,8 @@ describe('PropertiesPanel — pose em arquivo (.json)', () => {
     expect(filename).toMatch(/-pose\.json$/)
 
     const gravado = JSON.parse(await (blob as Blob).text())
-    expect(gravado.figure.position).toEqual([0, 0.5, 0])
-    expect(gravado.figure.pose['elbow.L']).toBeDefined()
+    expect(gravado.figures[0].position).toEqual([0, 0.5, 0])
+    expect(gravado.figures[0].pose['elbow.L']).toBeDefined()
     // A cena em si não muda ao exportar.
     expect(useFiguresStore.getState().figures.find((f) => f.id === id)?.position).toEqual([3, 0.5, -2])
   })

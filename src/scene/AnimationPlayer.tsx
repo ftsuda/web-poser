@@ -20,13 +20,33 @@ import {
 import { writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { useAnimationStore } from '../store/animationStore'
 import { useCameraStore } from '../store/cameraStore'
+import { useDepthStore } from '../store/depthStore'
 import { useFiguresStore } from '../store/figuresStore'
 import { useKeyframeThumbnailStore } from '../store/keyframeThumbnailStore'
 import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
 import type { CameraViewState } from './cameraMove'
-import { CAMERA_DEFAULTS } from './constants'
-import { hideSceneOverlays, renderAtResolution, revealEditorHidden } from './sceneCapture'
+import { BACKGROUND_COLORS, CAMERA_DEFAULTS } from './constants'
+import {
+  DEFAULT_DEPTH_RANGE,
+  applyDepthPass,
+  createDepthMaterials,
+  disposeDepthMaterials,
+  resolveDepthRange,
+  suspendDepthMaterial,
+  updateDepthMaterials,
+} from './depthMap'
+import {
+  hideSceneOverlays,
+  renderAtResolution,
+  revealEditorHidden,
+  type RestoreScene,
+} from './sceneCapture'
 import { applyViewToCamera, getSceneCameraObject } from './sceneCameraObject'
+
+/** A cor de fundo do ambiente, para devolver a saída NORMAL ao que ela sempre foi. */
+function environmentColor(): string {
+  return BACKGROUND_COLORS[useFiguresStore.getState().environment.background]
+}
 
 /** Tamanho da miniatura de keyframe (item 30) — 16:9, pequena o bastante para caber no card. */
 const THUMBNAIL_WIDTH = 160
@@ -198,11 +218,15 @@ export function AnimationPlayer() {
           // O cenário escondido só da bancada (item 42) volta para a miniatura:
           // ela é uma saída, e tem de mostrar o mesmo que o vídeo mostraria.
           const restoreEditorHidden = revealEditorHidden(scene)
+          // A miniatura é sempre NORMAL (fase 13): ela existe para dizer qual
+          // keyframe é qual, e um cartão em cinza de profundidade diria menos.
+          const restoreDepth = suspendDepthMaterial(scene, environmentColor())
           renderAtResolution(gl, scene, thumbnailCamera, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, () => {
             useKeyframeThumbnailStore
               .getState()
               .setThumbnail(keyframe.id, gl.domElement.toDataURL('image/jpeg', 0.6))
           })
+          restoreDepth()
           restoreEditorHidden()
           restoreScene()
         }
@@ -240,6 +264,12 @@ export function AnimationPlayer() {
         CAMERA_DEFAULTS.near,
         CAMERA_DEFAULTS.far,
       )
+
+      // Mapa de profundidade (fase 13). O material é criado UMA vez para o
+      // laço inteiro — um `ShaderMaterial` novo por quadro custaria uma
+      // compilação de shader por quadro —, e a faixa entra por uniforme.
+      const depth = useDepthStore.getState()
+      const depthMaterials = depth.videoDepth ? createDepthMaterials(DEFAULT_DEPTH_RANGE) : null
 
       try {
         const codec = await pickVideoCodec(width, height)
@@ -279,10 +309,24 @@ export function AnimationPlayer() {
             // quadro não pesa nada perto de renderizar a cena.
             const restoreScene = hideSceneOverlays(scene)
             const restoreEditorHidden = revealEditorHidden(scene)
+            // Com a faixa automática, ela é remedida a cada quadro — é o que
+            // faz a rampa acompanhar o boneco que se aproxima, e também o que
+            // faz a escala "respirar". Travar a faixa no painel de Cenas é a
+            // saída para uma sequência com escala estável.
+            let restoreDepth: RestoreScene
+            if (depthMaterials) {
+              updateDepthMaterials(depthMaterials, resolveDepthRange(scene, camera, depth))
+              restoreDepth = applyDepthPass(scene, depthMaterials, depth.groundMode)
+            } else {
+              // Mesmo desligado, o vídeo FORÇA o normal: a vista da tela pode
+              // estar em profundidade, e as três escolhas são independentes.
+              restoreDepth = suspendDepthMaterial(scene, environmentColor())
+            }
             let backpressure: Promise<void> = Promise.resolve()
             renderAtResolution(gl, scene, camera, width, height, () => {
               backpressure = sink.addFrame(frame.timeS, frame.durationS)
             })
+            restoreDepth()
             restoreEditorHidden()
             restoreScene()
             return backpressure
@@ -296,7 +340,7 @@ export function AnimationPlayer() {
           return
         }
 
-        const filename = formatAnimationFilename(animation!.name)
+        const filename = formatAnimationFilename(animation!.name, { depth: depth.videoDepth })
         await writeFileToDirectoryOrDownload(
           useSnapshotCaptureStore.getState().directoryHandle,
           filename,
@@ -308,6 +352,7 @@ export function AnimationPlayer() {
         // painel travado em "exportando".
         useAnimationStore.getState().failExport('panels.animation.errorExport')
       } finally {
+        if (depthMaterials) disposeDepthMaterials(depthMaterials)
         // A tela volta a ser desenhada pela câmera ATIVA (a da bancada ou a de
         // cena, conforme o modo) — a descartável era só do arquivo.
         gl.render(scene, getThree().camera)

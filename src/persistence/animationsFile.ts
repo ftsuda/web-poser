@@ -9,8 +9,8 @@ import { sanitizeAnimations, type Animation } from '../animation/animation'
  *
  * A animação é do WORKSPACE, não de uma cena — decisão do usuário
  * (DECISOES.md #52). Cada keyframe carrega um retrato completo da cena, então
- * uma animação é autossuficiente e vale a partir de qualquer cena; e o `.glb`
- * continua sem canais de animação glTF, preservando a ida e volta com o
+ * uma animação é autossuficiente e vale a partir de qualquer cena; e o arquivo
+ * de cena continua sendo só a cena, sem linha do tempo dentro dele.
  * Blender validada na fase 6.
  */
 

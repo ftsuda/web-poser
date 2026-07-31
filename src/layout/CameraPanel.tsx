@@ -1,7 +1,7 @@
 import { useMemo, useState, type ChangeEvent, type FocusEvent, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
-import { exportCameraBookmarksToGlb, importCameraBookmarksFromGlb } from '../persistence/sceneFile'
+import { parseCameraBookmarksFile, serializeCameraBookmarksFile } from '../persistence/sceneFile'
 import { AXIS_COLORS } from '../scene/axisColors'
 import { ORTHO_PRESET_NAMES, type OrthoPresetName } from '../scene/cameraPresets'
 import {
@@ -333,15 +333,15 @@ export function CameraPanel() {
   }
 
   const handleExportBookmarks = async () => {
-    const glb = await exportCameraBookmarksToGlb(cameraBookmarks)
-    await writeFileToDirectoryOrDownload(null, 'camera-bookmarks.glb', new Blob([glb], { type: 'model/gltf-binary' }))
+    const json = serializeCameraBookmarksFile(cameraBookmarks)
+    await writeFileToDirectoryOrDownload(null, 'camera-bookmarks.json', new Blob([json], { type: 'application/json' }))
   }
 
   const handleImportBookmarks = async () => {
-    const picked = await pickFile('.glb')
+    const picked = await pickFile('.json')
     if (!picked) return
     try {
-      const imported = await importCameraBookmarksFromGlb(picked.data)
+      const imported = parseCameraBookmarksFile(await picked.file.text())
       importCameraBookmarks(
         imported.map((bookmark) => ({
           name: bookmark.name,
@@ -370,7 +370,7 @@ export function CameraPanel() {
 
         <button
           type="button"
-          className="camera-panel__apply"
+          className="panel-action camera-panel__apply"
           aria-pressed={viewMode === 'camera'}
           onClick={toggleViewMode}
         >
@@ -379,6 +379,7 @@ export function CameraPanel() {
 
         <button
           type="button"
+          className="panel-action"
           disabled={viewMode === 'camera'}
           title={t('panels.camera.placeAtViewHint')}
           onClick={requestPlaceCameraAtView}
@@ -389,7 +390,7 @@ export function CameraPanel() {
         {/* Mover/Girar da câmera — mesmo par (e mesmos rótulos) do gizmo das
             juntas, agindo no modo global dos atalhos W/E. Desabilitado no modo
             visão-câmera: ali o gizmo não está na tela. */}
-        <div className="camera-panel__presets">
+        <div className="panel-actions camera-panel__presets">
           <button
             type="button"
             aria-pressed={cameraSelected && gizmoMode === 'translate'}
@@ -506,6 +507,10 @@ export function CameraPanel() {
         <label htmlFor="camera-roll" className="camera-panel__slider-label">
           {DUTCH_ANGLE_TERM} — {t('panels.camera.roll', { value: Math.round(rollDeg) })}
         </label>
+        {/* Slider e "Endireitar" em linhas separadas (pedido do usuário,
+            2026-07-31): dividindo a linha, o slider perdia para o botão a
+            largura de que o ajuste fino precisa. Endireitar é ação isolada e
+            segue a convenção do #88 — `.panel-action`, largura cheia. */}
         <div className="camera-panel__slider-row">
           <input
             id="camera-roll"
@@ -516,10 +521,15 @@ export function CameraPanel() {
             value={rollDeg}
             onChange={(event) => setRoll(Number(event.target.value))}
           />
-          <button type="button" disabled={rollDeg === 0} onClick={() => setRoll(0)}>
-            {t('panels.camera.rollReset')}
-          </button>
         </div>
+        <button
+          type="button"
+          className="panel-action"
+          disabled={rollDeg === 0}
+          onClick={() => setRoll(0)}
+        >
+          {t('panels.camera.rollReset')}
+        </button>
 
         {rollDeg !== 0 && <p className="camera-panel__hint">{t('panels.camera.rollHint')}</p>}
       </fieldset>
@@ -616,7 +626,7 @@ export function CameraPanel() {
 
           <button
             type="button"
-            className="camera-panel__apply"
+            className="panel-action camera-panel__apply"
             disabled={!canApplyShot(shotDraft, figures.length, hasSelection)}
             onClick={applyDraftFraming}
           >
@@ -660,7 +670,7 @@ export function CameraPanel() {
 
           <button
             type="button"
-            className="camera-panel__apply"
+            className="panel-action camera-panel__apply"
             disabled={!canApplyView}
             onClick={applyDraftView}
           >
@@ -675,7 +685,7 @@ export function CameraPanel() {
         {/* Movimento entre dois pontos: as pontas guardam a câmera inteira
             (posição, alvo, inclinação e lente), e o slider anda entre elas. */}
         <fieldset aria-label={t('panels.camera.move')}>
-          <div className="camera-panel__presets">
+          <div className="panel-actions camera-panel__presets">
             <button type="button" aria-pressed={moveA !== null} onClick={() => requestCaptureMovePoint('a')}>
               {t('panels.camera.moveSetA')}
             </button>
@@ -687,7 +697,7 @@ export function CameraPanel() {
             </button>
           </div>
 
-          <div className="camera-panel__presets">
+          <div className="panel-actions camera-panel__presets">
             {MOVE_GENERATOR_KEYS.map((key) => (
               <TermButton
                 key={key}
@@ -724,6 +734,7 @@ export function CameraPanel() {
               tinha de remontá-lo em keyframes. */}
           <button
             type="button"
+            className="panel-action"
             disabled={!canPlayMove || figureCount === 0}
             title={t('panels.camera.moveToKeyframesHint')}
             onClick={() => moveA && moveB && appendCameraMoveKeyframes(null, moveA, moveB)}
@@ -742,7 +753,7 @@ export function CameraPanel() {
           de aviso para não ser confundido estava com o nome errado. */}
       <CollapsibleSection sectionKey="cameraOrtho" title={t('panels.camera.presets')}>
         <fieldset aria-label={t('panels.camera.presets')}>
-          <div className="camera-panel__presets">
+          <div className="panel-actions camera-panel__presets">
             {ORTHO_PRESET_NAMES.map((preset) => (
               <button key={preset} type="button" onClick={() => applyPreset(preset)}>
                 {t(PRESET_LABEL_KEYS[preset])}
@@ -751,7 +762,7 @@ export function CameraPanel() {
           </div>
           <button
             type="button"
-            className="camera-panel__back-to-perspective"
+            className="panel-action camera-panel__back-to-perspective"
             disabled={projection === 'perspective'}
             onClick={requestPerspective}
           >
@@ -810,16 +821,16 @@ export function CameraPanel() {
               </div>
             </form>
           ) : (
-            <button type="button" className="camera-panel__save" onClick={startNamingBookmark}>
+            <button type="button" className="panel-action camera-panel__save" onClick={startNamingBookmark}>
               {t('panels.camera.saveCurrent')}
             </button>
           )}
 
           <div className="camera-panel__bookmark-file-actions">
-            <button type="button" onClick={() => void handleExportBookmarks()}>
+            <button type="button" className="panel-action" onClick={() => void handleExportBookmarks()}>
               {t('panels.camera.exportBookmarks')}
             </button>
-            <button type="button" onClick={() => void handleImportBookmarks()}>
+            <button type="button" className="panel-action" onClick={() => void handleImportBookmarks()}>
               {t('panels.camera.importBookmarks')}
             </button>
           </div>

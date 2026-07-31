@@ -301,7 +301,7 @@ function GizmoModeFieldset({ mode, onSelect }: { mode: GizmoMode; onSelect: (mod
   return (
     <fieldset aria-label={t('panels.properties.gizmoMode')}>
       <legend>{t('panels.properties.gizmoMode')}</legend>
-      <div className="properties-panel__pose-presets">
+      <div className="panel-actions">
         <button type="button" aria-pressed={mode === 'translate'} onClick={() => onSelect('translate')}>
           {t('common.gizmoTranslate')}
         </button>
@@ -404,7 +404,7 @@ function SeatOnGroundButton({ figureId }: { figureId: string }) {
   return (
     <button
       type="button"
-      className="properties-panel__reset"
+      className="panel-action properties-panel__reset"
       onClick={() => seatFigureOnGround(figureId)}
       title={t('panels.properties.seatOnGroundHint')}
     >
@@ -432,7 +432,7 @@ function ResetGroupFieldset({ figureId }: { figureId: string }) {
     <fieldset aria-label={t('panels.properties.resetGroup')}>
       <legend>{t('panels.properties.resetGroup')}</legend>
       <p className="properties-panel__hint">{t('panels.properties.resetGroupHint')}</p>
-      <div className="properties-panel__pose-presets">
+      <div className="panel-actions">
         {JOINT_GROUPS.map((group) => (
           <button
             key={group.key}
@@ -492,17 +492,26 @@ function SymmetryFieldset({ figureId, scopeJoint }: SymmetryFieldsetProps) {
               ? t('panels.properties.symmetryScopeHint', { joint: scopeJoint })
               : t('panels.properties.symmetryHint')}
           </p>
-          <div className="properties-panel__pose-presets">
+          {/* Os dois espelhos são um CONJUNTO — escolhe-se a direção da cópia
+              —, e por isso dividem a linha. "Inverter lados" não é uma terceira
+              direção: troca os dois de uma vez. Era o terceiro item da grade e
+              caía sozinho na segunda fileira, com metade da largura e um buraco
+              ao lado; agora é ação isolada, em largura cheia (#88). */}
+          <div className="panel-actions">
             <button type="button" onClick={() => mirrorSide(figureId, 'R', scopeJoint)}>
               {t('panels.properties.mirrorFromRight')}
             </button>
             <button type="button" onClick={() => mirrorSide(figureId, 'L', scopeJoint)}>
               {t('panels.properties.mirrorFromLeft')}
             </button>
-            <button type="button" onClick={() => swapSides(figureId, scopeJoint)}>
-              {t('panels.properties.swapSides')}
-            </button>
           </div>
+          <button
+            type="button"
+            className="panel-action"
+            onClick={() => swapSides(figureId, scopeJoint)}
+          >
+            {t('panels.properties.swapSides')}
+          </button>
         </>
       )}
 
@@ -516,7 +525,7 @@ function SymmetryFieldset({ figureId, scopeJoint }: SymmetryFieldsetProps) {
           Por isso também o aviso próprio embaixo. */}
       <button
         type="button"
-        className="properties-panel__mirror-all"
+        className="panel-action properties-panel__mirror-all"
         title={t('panels.properties.mirrorWholeHint')}
         onClick={() => mirrorWholeFigure(figureId)}
       >
@@ -598,7 +607,7 @@ function PoseNameForm({ value, onChange, onSubmit, onCancel }: PoseNameFormProps
           autoFocus
         />
       </label>
-      <div className="properties-panel__pose-presets">
+      <div className="panel-actions">
         <button type="submit">{t('panels.properties.savePoseConfirm')}</button>
         <button type="button" onClick={onCancel}>
           {t('panels.properties.savePoseCancel')}
@@ -812,7 +821,10 @@ export function PropertiesPanel() {
     <CollapsiblePanel panelKey="properties" className="panel--properties" title={t('panels.properties.title')}>
       <p className="properties-panel__figure-name">{figure.name}</p>
 
-      <label className="properties-panel__field properties-panel__joint-select" htmlFor="joint-select">
+      {/* Empilhado (pedido do usuário, 2026-07-31): é o único campo do painel
+          cujo rótulo é uma frase, e não uma letra de eixo — lado a lado, o
+          combo ficava com o resto da linha e os nomes de junta não cabiam. */}
+      <label className="properties-panel__field properties-panel__field--stacked" htmlFor="joint-select">
         {t('panels.properties.jointSelect')}
         <select
           id="joint-select"
@@ -883,7 +895,7 @@ export function PropertiesPanel() {
             ))}
             <button
               type="button"
-              className="properties-panel__reset"
+              className="panel-action properties-panel__reset"
               onClick={() => resetJointRotation(figure.id, ROOT_JOINT_NAME)}
             >
               {t('panels.properties.resetRootRotation')}
@@ -946,39 +958,41 @@ export function PropertiesPanel() {
                   </p>
                 </>
               )}
-              <div className="properties-panel__pose-presets">
-                <button type="button" className="properties-panel__apply-pose" onClick={applySelectedPose}>
-                  {t('panels.properties.applyPose')}
-                </button>
-                {/* Renomear e remover só aparecem com uma pose da BIBLIOTECA
-                    escolhida: as de fábrica não são nem uma coisa nem outra.
-                    Renomear existia no store desde sempre, testado, e nunca
-                    tinha ganhado botão — dava para salvar e apagar uma pose,
-                    mas não para corrigir o nome dela. */}
-                {savedPose && (
-                  <>
-                    <button
-                      type="button"
-                      title={t('panels.properties.renameSavedPoseHint')}
-                      onClick={() => {
-                        setNamingMode('rename')
-                        setPoseNameDraft(savedPose.name)
-                      }}
-                    >
-                      {t('panels.properties.renameSavedPose')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        removeSavedPose(savedPose.id)
-                        setSelectedPose('standing')
-                      }}
-                    >
-                      {t('panels.properties.removeSavedPose')}
-                    </button>
-                  </>
-                )}
-              </div>
+              {/* Aplicar é a ação principal do painel e vai em largura cheia
+                  (pedido do usuário). Renomear e remover continuam em par: são
+                  duas ações irmãs sobre a pose escolhida no combo, e só
+                  aparecem com uma pose da BIBLIOTECA selecionada — as de
+                  fábrica não são nem uma coisa nem outra. */}
+              <button
+                type="button"
+                className="panel-action"
+                onClick={applySelectedPose}
+              >
+                {t('panels.properties.applyPose')}
+              </button>
+              {savedPose && (
+                <div className="panel-actions">
+                  <button
+                    type="button"
+                    title={t('panels.properties.renameSavedPoseHint')}
+                    onClick={() => {
+                      setNamingMode('rename')
+                      setPoseNameDraft(savedPose.name)
+                    }}
+                  >
+                    {t('panels.properties.renameSavedPose')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      removeSavedPose(savedPose.id)
+                      setSelectedPose('standing')
+                    }}
+                  >
+                    {t('panels.properties.removeSavedPose')}
+                  </button>
+                </div>
+              )}
 
               {namingMode === 'rename' && savedPose && (
                 <PoseNameForm
@@ -1022,7 +1036,7 @@ export function PropertiesPanel() {
                   tem nada a ver com o que está no combo. */}
               <button
                 type="button"
-                className="properties-panel__random-pose"
+                className="panel-action properties-panel__random-pose"
                 title={t('panels.properties.randomPoseHint')}
                 onClick={() => {
                   applyRandomPose(figure.id)
@@ -1080,7 +1094,7 @@ export function PropertiesPanel() {
             ) : (
               <button
                 type="button"
-                className="properties-panel__save-pose"
+                className="panel-action properties-panel__save-pose"
                 title={t('panels.properties.savePoseHint')}
                 onClick={() => {
                   setNamingMode('save')
@@ -1153,18 +1167,18 @@ export function PropertiesPanel() {
 
           {/* Travar a junta (DECISOES.md #42): fica no topo da junta
               selecionada porque é o que explica os sliders desabilitados logo
-              abaixo. */}
-          <div className="properties-panel__pose-presets">
-            <button
-              type="button"
-              className="properties-panel__lock-joint"
-              aria-pressed={isSelectedJointLocked}
-              title={t('panels.properties.lockJointHint')}
-              onClick={() => toggleJointLock(figure.id, selectedJointName)}
-            >
-              {t(isSelectedJointLocked ? 'panels.properties.unlockJoint' : 'panels.properties.lockJoint')}
-            </button>
-          </div>
+              abaixo. Estava sozinha dentro da grade de duas colunas das
+              operações de pose, e por isso saía com metade da largura e um
+              buraco ao lado — ação isolada é `.panel-action` (#88). */}
+          <button
+            type="button"
+            className="panel-action properties-panel__lock-joint"
+            aria-pressed={isSelectedJointLocked}
+            title={t('panels.properties.lockJointHint')}
+            onClick={() => toggleJointLock(figure.id, selectedJointName)}
+          >
+            {t(isSelectedJointLocked ? 'panels.properties.unlockJoint' : 'panels.properties.lockJoint')}
+          </button>
           {isSelectedJointLocked && (
             <p className="properties-panel__hint properties-panel__hint--warning">
               {t('panels.properties.jointLockedHint')}
@@ -1216,7 +1230,7 @@ export function PropertiesPanel() {
                 ao neutro exigia acertar cada eixo na mão. */}
             <button
               type="button"
-              className="properties-panel__reset"
+              className="panel-action properties-panel__reset"
               title={t('panels.properties.resetJointHint')}
               disabled={isSelectedJointLocked}
               onClick={() => resetJointRotation(figure.id, selectedJointName)}
@@ -1228,7 +1242,7 @@ export function PropertiesPanel() {
           {armSide && (
             <fieldset aria-label={t(HAND_PRESETS_LEGEND_KEYS[armSide])}>
               <legend>{t(HAND_PRESETS_LEGEND_KEYS[armSide])}</legend>
-              <div className="properties-panel__pose-presets">
+              <div className="panel-actions">
                 {HAND_PRESET_KEYS.map((key) => (
                   <button
                     key={key}

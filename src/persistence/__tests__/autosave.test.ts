@@ -92,7 +92,7 @@ describe('autosave — persistência do workspace em localStorage', () => {
 
   /**
    * A animação é do workspace (DECISOES.md #52), então sobrevive a recarregar
-   * a página como a biblioteca de poses — e não viaja no `.glb` da cena.
+   * a página como a biblioteca de poses — e não viaja no arquivo da cena.
    */
   it('faz o round-trip das animações, com poses, câmera e durações', () => {
     const animations: Animation[] = [
@@ -170,13 +170,59 @@ describe('autosave — persistência do workspace em localStorage', () => {
     expect(restored?.poseLibrary).toEqual([])
     expect(restored?.jointLocks).toEqual({})
   })
+
+  /**
+   * O caso de compatibilidade que mais importa (DECISOES.md #86): o autosave
+   * gravava o boneco com `joints:[x,y,z]` e a rotação em tupla, e a biblioteca
+   * de poses idem. Este é o payload que TODO usuário tem no navegador ao abrir
+   * o app pela primeira vez depois da unificação — se ele não for lido, a cena
+   * de trabalho volta em T-pose e a biblioteca volta vazia.
+   */
+  it('restaura um autosave gravado na codificação antiga, sem perder pose nem biblioteca', () => {
+    localStorage.setItem(
+      'virtual-mockup:workspace:v1',
+      JSON.stringify({
+        version: 1,
+        workingScene: {
+          version: 1,
+          name: 'Cena antiga',
+          figures: [
+            {
+              id: 'figure-1',
+              name: 'Boneco 1',
+              color: '#e04040',
+              visible: true,
+              height: 1.75,
+              position: [1, 0, 2],
+              rotation: [0, 45, 0],
+              joints: { 'shoulder.L': [30, 0, 10], 'elbow.L': [-90, 0, 0] },
+            },
+          ],
+        },
+        poseLibrary: [
+          { id: 'pose-1', name: 'Guarda alta', rotation: [0, 0, 0], groundOffsetM: 0, pose: { 'shoulder.L': [10, 90, 20] } },
+        ],
+      }),
+    )
+
+    const restored = loadWorkspaceFromLocalStorage()
+    const figure = restored!.workingScene.figures[0]
+
+    expect(figure.pose['shoulder.L']).toEqual({ x: 30, y: 0, z: 10 })
+    expect(figure.pose['elbow.L']).toEqual({ x: -90, y: 0, z: 0 })
+    expect(figure.rotation).toEqual({ x: 0, y: 45, z: 0 })
+    expect(figure.position).toEqual([1, 0, 2])
+    expect(figure.height).toBe(1.75)
+    expect(restored!.poseLibrary[0].pose['shoulder.L']).toEqual({ x: 10, y: 90, z: 20 })
+    expect(restored!.poseLibrary[0].rotation).toEqual({ x: 0, y: 0, z: 0 })
+  })
 })
 
 /**
  * Biblioteca de poses e travas de junta no autosave (DECISOES.md #42). As duas
- * ficam no NÍVEL DE CIMA do payload, fora do bloco de `extras` que o `.glb`
+ * ficam no NÍVEL DE CIMA do payload, fora do bloco de cena que o arquivo `.json`
  * compartilha: a biblioteca é do workspace (não de uma cena) e a trava é
- * estado de trabalho, que por decisão do usuário não viaja no `.glb`.
+ * estado de trabalho, que por decisão do usuário não viaja no arquivo da cena.
  */
 describe('autosave — biblioteca de poses e travas de junta', () => {
   beforeEach(() => {

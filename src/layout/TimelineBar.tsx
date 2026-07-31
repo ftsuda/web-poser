@@ -65,12 +65,11 @@ export function TimelineBar() {
   const groups = active ? keyframeGroups(active) : []
   const canPlay = totalMs > 0 && exportPhase !== 'running'
 
-  // Onde está, na régua, o keyframe que o painel destaca (item 41). Lê o mesmo
-  // `visitedKeyframeId` do item 40 e o converte em instante com os tempos que a
-  // barra já calcula — sem estado novo, e sumindo sozinho quando o keyframe é
-  // removido, porque o `findIndex` deixa de achá-lo.
+  // Qual marca da régua é a do keyframe que o painel destaca (item 41). Lê o
+  // mesmo `visitedKeyframeId` do item 40 — sem estado novo, e apagando o
+  // destaque sozinho quando o keyframe é removido, porque o `findIndex` deixa
+  // de achá-lo e nenhum índice bate com o -1.
   const visitedIndex = active ? active.keyframes.findIndex((k) => k.id === visitedKeyframeId) : -1
-  const visitedMs = visitedIndex >= 0 ? startTimes[visitedIndex] : null
 
   const previousKeyframeMs = neighbourKeyframeTimeMs(startTimes, currentMs, -1)
   const nextKeyframeMs = neighbourKeyframeTimeMs(startTimes, currentMs, 1)
@@ -235,17 +234,41 @@ export function TimelineBar() {
               ))}
             </datalist>
 
-            {/* O keyframe que está na bancada (item 41), como um traço fino
-                ABAIXO da régua: o `<datalist>` acima é lista nativa do próprio
-                controle e não aceita estilo por marca, e disputar o espaço do
-                polegar atrapalharia justamente o que a mão arrasta. */}
-            {totalMs > 0 && visitedMs !== null && (
+            {/* A régua numerada, ABAIXO do slider: um traço por keyframe com o
+                próprio número embaixo (pedido do usuário, 2026-07-31). O
+                `<datalist>` acima já tenta isso — as `<option>` têm `label` —
+                mas nenhum navegador desenha o rótulo de um `datalist` de
+                `range`: sai o tique e some o número. Redesenhá-los aqui é o
+                que faz "estou no keyframe 3 de 7" ser coisa que se lê, e não
+                que se conta.
+
+                Fica FORA do `<input type=range>` porque ele não deixa
+                estilizar as próprias marcas, e abaixo dele para não disputar o
+                espaço do polegar, que é o que a mão arrasta.
+
+                O keyframe que está na bancada (item 41) continua com marca
+                própria — o mesmo traço, mais grosso e na cor de destaque. */}
+            {totalMs > 0 && startTimes.length > 0 && (
               <div className="timeline-bar__marks">
-                <span
-                  className="timeline-bar__visited"
-                  title={t('timeline.visitedKeyframe', { index: visitedIndex + 1 })}
-                  style={{ left: `${(visitedMs / totalMs) * 100}%` }}
-                />
+                {startTimes.map((start, index) => (
+                  <span
+                    key={index}
+                    className={`timeline-bar__mark${
+                      index === visitedIndex ? ' timeline-bar__mark--visited' : ''
+                    }`}
+                    title={
+                      index === visitedIndex
+                        ? t('timeline.visitedKeyframe', { index: index + 1 })
+                        : t('timeline.keyframeMark', {
+                            index: index + 1,
+                            time: formatSeconds(start),
+                          })
+                    }
+                    style={{ left: `${(start / totalMs) * 100}%` }}
+                  >
+                    {index + 1}
+                  </span>
+                ))}
               </div>
             )}
 

@@ -14,12 +14,12 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/
 /**
  * Aceita só `#rrggbb` minúsculo depois de normalizar — é o formato que o
  * `<input type="color">` produz, o que o `THREE.MeshStandardMaterial` entende
- * e o que vai para o `.glb`. Validar o FORMATO é o que permite cor livre sem
+ * e o que vai para o arquivo da cena. Validar o FORMATO é o que permite cor livre sem
  * deixar entrar string arbitrária vinda de um arquivo de cena ou do
  * `localStorage`.
  *
  * A forma curta `#rgb` é aceita e expandida: é válida em CSS, e um usuário
- * editando um `.glb` à mão pode escrevê-la.
+ * editando o `.json` da cena à mão pode escrevê-la.
  */
 export function normalizeHexColor(value: unknown): string | null {
   if (typeof value !== 'string') return null

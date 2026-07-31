@@ -1,5 +1,6 @@
 import { JOINT_NAMES, ROOT_JOINT_NAME, clampJointRotation, getHeightScale, type JointRotation } from './skeleton'
 import { withLegacyIndexFinger } from './poseCompat'
+import { toRotation } from './figureFormat'
 import type { Figure } from '../store/figuresStore'
 
 /**
@@ -75,8 +76,15 @@ export function captureFigurePose(figure: Figure, id: string, name: string): Sav
 /**
  * Sanitiza uma lista de poses vinda de fora (arquivo da pasta ou autosave —
  * nunca confiável): descarta o que não for pose reconhecível e grampeia cada
- * junta nos limites em vigor, do mesmo jeito que `figureFromExtras` faz com as
+ * junta nos limites em vigor, do mesmo jeito que a leitura de boneco faz com as
  * poses das cenas. Uma pose sem junta nenhuma é descartada: não é pose.
+ *
+ * **O laço é próprio, e não o `sanitizePose` de `figureFormat.ts`**, por duas
+ * regras que só valem aqui (ver DECISOES.md #86): a `root` fica de fora, porque
+ * a inclinação do boneco mora no campo `rotation` da pose; e uma junta ilegível
+ * é DESCARTADA em vez de virar zero, porque é o que permite reconhecer "isto
+ * não é uma pose" quando não sobra junta nenhuma. O que é compartilhado é o
+ * `toRotation`, que aceita as duas codificações.
  */
 export function sanitizeSavedPoses(raw: unknown, fallbackPrefix = 'pose'): SavedPose[] {
   if (!Array.isArray(raw)) return []
@@ -125,16 +133,3 @@ export function sanitizeSavedPoses(raw: unknown, fallbackPrefix = 'pose'): Saved
   return poses
 }
 
-/** Aceita tanto `{x,y,z}` quanto a tupla `[x,y,z]` — a mesma pose pode chegar do JSON da pasta ou do autosave. */
-function toRotation(value: unknown): JointRotation | null {
-  if (Array.isArray(value)) {
-    if (value.length !== 3 || value.some((n) => typeof n !== 'number' || !Number.isFinite(n))) return null
-    const [x, y, z] = value as [number, number, number]
-    return { x, y, z }
-  }
-  if (typeof value !== 'object' || value === null) return null
-  const source = value as Record<string, unknown>
-  const axes = ['x', 'y', 'z'] as const
-  if (axes.some((axis) => typeof source[axis] !== 'number' || !Number.isFinite(source[axis] as number))) return null
-  return { x: source.x as number, y: source.y as number, z: source.z as number }
-}

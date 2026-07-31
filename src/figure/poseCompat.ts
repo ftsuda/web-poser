@@ -3,7 +3,7 @@
  * (DECISOES.md #45).
  *
  * Até o #44 os quatro dedos eram um bloco só (`fingersBase/Mid/Tip`). Arquivos
- * daquela época — cenas, `.glb`, biblioteca de poses, autosave — não têm as
+ * daquela época — cenas, biblioteca de poses, autosave — não têm as
  * juntas `index*`, e a leitura simplesmente ignora junta ausente: o indicador
  * nasceria ESTICADO enquanto os outros três continuam fechados, ou seja um
  * punho salvo reabriria apontando.

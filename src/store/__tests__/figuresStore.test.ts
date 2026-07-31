@@ -829,7 +829,7 @@ describe('figuresStore — câmera de cena (fase 11)', () => {
   })
 })
 
-describe('figuresStore — importação de arquivo (.glb)', () => {
+describe('figuresStore — importação de arquivo (.json)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useFiguresStore.temporal.getState().clear()
@@ -860,19 +860,6 @@ describe('figuresStore — importação de arquivo (.glb)', () => {
     expect(state.nextSnapshotNumber).toBe(9)
     expect(state.activeSceneId).toBeNull() // não é um snapshot salvo do catálogo
     expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(1)
-  })
-
-  it('applyImportedPose aplica altura/pose importadas a um boneco existente, preservando identidade/cor/posição', () => {
-    const id = useFiguresStore.getState().addFigure('Original') as string
-    useFiguresStore.getState().setPosition(id, [2, 0, 1])
-
-    useFiguresStore.getState().applyImportedPose(id, { height: 1.85, pose: { 'elbow.L': { x: 45, y: 0, z: 0 } } })
-
-    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
-    expect(figure?.name).toBe('Original')
-    expect(figure?.position).toEqual([2, 0, 1])
-    expect(figure?.height).toBe(1.85)
-    expect(figure?.pose['elbow.L']).toEqual({ x: 45, y: 0, z: 0 })
   })
 
   it('applyImportedFigurePose mantém X/Z e traz do arquivo só a altura Y, além de pose/rotação/altura', () => {
@@ -916,42 +903,6 @@ describe('figuresStore — importação de arquivo (.glb)', () => {
     const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
     expect(figure?.pose['knee.L']).toEqual({ x: 10, y: 0, z: 0 })
     expect(figure?.pose['elbow.L']).toEqual({ x: -20, y: 90, z: 0 })
-  })
-
-  it('importFigureAsNew cria um novo boneco a partir dos dados importados', () => {
-    const id = useFiguresStore.getState().importFigureAsNew({
-      name: 'Boneco importado',
-      color: '#e04040',
-      visible: true,
-      height: 1.6,
-      position: [3, 0, 0],
-      rotation: { x: 0, y: 0, z: 0 },
-      pose: { 'knee.R': { x: 30, y: 0, z: 0 } },
-    })
-
-    expect(id).not.toBeNull()
-    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
-    expect(figure?.name).toBe('Boneco importado')
-    expect(figure?.height).toBe(1.6)
-    expect(figure?.pose['knee.R']).toEqual({ x: 30, y: 0, z: 0 })
-  })
-
-  it('importFigureAsNew recusa quando já há 5 bonecos e retorna null', () => {
-    const { addFigure, importFigureAsNew } = useFiguresStore.getState()
-    for (let i = 0; i < MAX_FIGURES; i += 1) addFigure()
-
-    const id = importFigureAsNew({
-      name: 'Extra',
-      color: '#e04040',
-      visible: true,
-      height: 1.7,
-      position: [0, 0, 0],
-      rotation: { x: 0, y: 0, z: 0 },
-      pose: {},
-    })
-
-    expect(id).toBeNull()
-    expect(useFiguresStore.getState().figures).toHaveLength(MAX_FIGURES)
   })
 
   it('importCameraBookmarks adiciona bookmarks preservando os existentes', () => {
@@ -1938,11 +1889,17 @@ describe('figuresStore — travamento de juntas', () => {
     expect(figureById(id).pose['fingersBase.R'].x).toBeGreaterThan(60)
   })
 
+  // Entrada da varredura "toda escrita em massa passa por `mergeLockedJoints`"
+  // para o caminho de arquivo. O contrato completo de `applyImportedFigurePose`
+  // (X/Z preservados, Y do arquivo, identidade do destino) é testado no bloco de
+  // importação de arquivo, não aqui.
   it('preserva a junta travada ao aplicar uma pose importada de arquivo', () => {
     const id = figuraComCotoveloTravado()
 
-    useFiguresStore.getState().applyImportedPose(id, {
+    useFiguresStore.getState().applyImportedFigurePose(id, {
       height: 1.8,
+      positionY: 0,
+      rotation: { x: 0, y: 0, z: 0 },
       pose: { ...resolvePosePreset('running'), 'elbow.L': { x: 0, y: 90, z: 0 } },
     })
 

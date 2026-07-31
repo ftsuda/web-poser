@@ -1,5 +1,5 @@
-import { JOINT_NAMES, clampJointRotation, getHeightScale, type JointRotation } from '../figure/skeleton'
-import { withLegacyIndexFinger } from '../figure/poseCompat'
+import { getHeightScale, type JointRotation } from '../figure/skeleton'
+import { asRecord, readRotation, sanitizePose, toVec3 } from '../figure/figureFormat'
 import type { Figure } from '../store/figuresStore'
 import { clampKeyframeDuration, type Animation, type AnimationKeyframe } from './animation'
 
@@ -174,32 +174,6 @@ export function resolveSavedClip(
 // Leitura de dado não confiável (autosave, `clips.json`)
 // ---------------------------------------------------------------------------
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
-}
-
-function sanitizeRotation(value: unknown): JointRotation {
-  const source = asRecord(value)
-  const axis = (name: 'x' | 'y' | 'z') => (typeof source[name] === 'number' ? (source[name] as number) : 0)
-  return { x: axis('x'), y: axis('y'), z: axis('z') }
-}
-
-function sanitizeVec3(value: unknown): [number, number, number] {
-  if (!Array.isArray(value) || value.length !== 3 || value.some((n) => typeof n !== 'number' || Number.isNaN(n))) {
-    return [0, 0, 0]
-  }
-  return [value[0] as number, value[1] as number, value[2] as number]
-}
-
-function sanitizePose(value: unknown): Record<string, JointRotation> {
-  const pose: Record<string, JointRotation> = {}
-  for (const [jointName, rotation] of Object.entries(asRecord(value))) {
-    if (!JOINT_NAMES.includes(jointName)) continue
-    pose[jointName] = clampJointRotation(jointName, sanitizeRotation(rotation))
-  }
-  return withLegacyIndexFinger(pose)
-}
-
 /** Lê uma lista de trechos vinda de fora (autosave ou `clips.json` editado à mão). */
 export function sanitizeSavedClips(value: unknown): SavedClip[] {
   if (!Array.isArray(value)) return []
@@ -222,8 +196,8 @@ export function sanitizeSavedClips(value: unknown): SavedClip[] {
           return {
             role: typeof figure.role === 'number' ? figure.role : roleIndex,
             pose: sanitizePose(figure.pose),
-            rotation: sanitizeRotation(figure.rotation),
-            position: sanitizeVec3(figure.position),
+            rotation: readRotation(figure.rotation),
+            position: toVec3(figure.position, [0, 0, 0]),
           }
         }),
       })

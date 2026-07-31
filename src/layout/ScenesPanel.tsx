@@ -2,17 +2,28 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { slugifySceneName } from '../snapshot/snapshotNaming'
 import { isFileSystemAccessAvailable, pickFile, pickMultipleFiles, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
-import { exportSceneToGlb, importSceneFromGlb } from '../persistence/sceneFile'
+import { parseSceneFile, serializeSceneFile } from '../persistence/sceneFile'
 import { loadWorkspaceFromDirectory, loadWorkspaceFromFiles, saveWorkspaceToDirectory } from '../persistence/workspaceFolder'
+import { GROUND_MODES, type GroundMode } from '../scene/depthMap'
+import { useDepthStore } from '../store/depthStore'
 import { useFiguresStore } from '../store/figuresStore'
 import { importErrorKey } from './fileFeedback'
 import { CollapsiblePanel } from './CollapsiblePanel'
+import { CollapsibleSection } from './CollapsibleSection'
 
 /**
  * Painel do "workspace": catálogo de snapshots de cena (salvar/carregar/
- * remover) + exportar/importar a cena de trabalho atual como `.glb` — ver
- * PLANO.md > "Workspace: catálogo de cenas" e DECISOES.md #11.
+ * remover) + exportar/importar a cena de trabalho atual como `.json` — ver
+ * PLANO.md > "Workspace: catálogo de cenas", DECISOES.md #11 e #85 (a troca
+ * do `.glb` por JSON).
  */
+/** Rótulo de cada modo do chão no mapa de profundidade — chave de i18n, nunca texto. */
+const GROUND_MODE_LABELS: Record<GroundMode, string> = {
+  clipped: 'panels.scenes.depthGroundClipped',
+  hidden: 'panels.scenes.depthGroundHidden',
+  full: 'panels.scenes.depthGroundFull',
+}
+
 export function ScenesPanel() {
   const { t } = useTranslation()
   const scenes = useFiguresStore((state) => state.scenes)
@@ -48,6 +59,32 @@ export function ScenesPanel() {
   const [isConfirmingReset, setIsConfirmingReset] = useState(false)
   const fileSystemAccessAvailable = isFileSystemAccessAvailable()
 
+  // Faixa do mapa de profundidade (fase 13) — ver a seção "Configurações" lá
+  // embaixo. Os campos comitam no `blur`, como os numéricos do instantâneo:
+  // grampear a cada tecla impediria de apagar o campo para digitar outro valor.
+  const depthAutoRange = useDepthStore((state) => state.autoRange)
+  const depthNear = useDepthStore((state) => state.nearM)
+  const depthFar = useDepthStore((state) => state.farM)
+  const toggleDepthAutoRange = useDepthStore((state) => state.toggleAutoRange)
+  const setDepthNear = useDepthStore((state) => state.setNearM)
+  const setDepthFar = useDepthStore((state) => state.setFarM)
+  const groundMode = useDepthStore((state) => state.groundMode)
+  const setGroundMode = useDepthStore((state) => state.setGroundMode)
+
+  const [nearDraft, setNearDraft] = useState(() => String(depthNear))
+  const [lastNear, setLastNear] = useState(depthNear)
+  if (depthNear !== lastNear) {
+    setLastNear(depthNear)
+    setNearDraft(String(depthNear))
+  }
+
+  const [farDraft, setFarDraft] = useState(() => String(depthFar))
+  const [lastFar, setLastFar] = useState(depthFar)
+  if (depthFar !== lastFar) {
+    setLastFar(depthFar)
+    setFarDraft(String(depthFar))
+  }
+
   const startNaming = () => {
     setNameDraft(sceneName)
     setIsNaming(true)
@@ -66,7 +103,7 @@ export function ScenesPanel() {
   }
 
   const handleExport = async () => {
-    const glb = await exportSceneToGlb({
+    const json = serializeSceneFile({
       name: sceneName,
       figures,
       nextFigureSeq,
@@ -78,16 +115,15 @@ export function ScenesPanel() {
       nextSnapshotNumber,
       sceneCamera,
     })
-    const filename = `${slugifySceneName(sceneName)}.glb`
-    await writeFileToDirectoryOrDownload(null, filename, new Blob([glb], { type: 'model/gltf-binary' }))
+    const filename = `${slugifySceneName(sceneName)}.json`
+    await writeFileToDirectoryOrDownload(null, filename, new Blob([json], { type: 'application/json' }))
   }
 
   const handleImport = async () => {
-    const picked = await pickFile('.glb')
+    const picked = await pickFile('.json')
     if (!picked) return
     try {
-      const imported = await importSceneFromGlb(picked.data)
-      loadSceneWorkingState(imported)
+      loadSceneWorkingState(parseSceneFile(await picked.file.text()))
       setErrorKey(null)
     } catch (error) {
       setErrorKey(importErrorKey(error))
@@ -126,7 +162,7 @@ export function ScenesPanel() {
         return
       }
 
-      const files = await pickMultipleFiles('.json,.glb')
+      const files = await pickMultipleFiles('.json')
       if (!files) return
       const loaded = await loadWorkspaceFromFiles(files)
       // `null` = a seleção não incluía o `workspace.json` — não é exceção,
@@ -201,7 +237,7 @@ export function ScenesPanel() {
               autoFocus
             />
           </label>
-          <div className="scenes-panel__save-form-actions">
+          <div className="panel-actions scenes-panel__save-form-actions">
             <button type="submit">{t('panels.scenes.confirmSave')}</button>
             <button type="button" onClick={cancelNaming}>
               {t('panels.scenes.cancelSave')}
@@ -209,7 +245,7 @@ export function ScenesPanel() {
           </div>
         </form>
       ) : (
-        <button type="button" className="scenes-panel__save" onClick={startNaming}>
+        <button type="button" className="panel-action scenes-panel__save" onClick={startNaming}>
           {t('panels.scenes.saveCurrent')}
         </button>
       )}
@@ -221,19 +257,19 @@ export function ScenesPanel() {
       )}
 
       <div className="scenes-panel__file-actions">
-        <button type="button" onClick={() => void handleExport()}>
+        <button type="button" className="panel-action" onClick={() => void handleExport()}>
           {t('panels.scenes.exportScene')}
         </button>
-        <button type="button" onClick={() => void handleImport()}>
+        <button type="button" className="panel-action" onClick={() => void handleImport()}>
           {t('panels.scenes.importScene')}
         </button>
 
         {fileSystemAccessAvailable && (
-          <button type="button" onClick={() => void handleSaveWorkspaceToFolder()}>
+          <button type="button" className="panel-action" onClick={() => void handleSaveWorkspaceToFolder()}>
             {t('panels.scenes.saveWorkspaceToFolder')}
           </button>
         )}
-        <button type="button" onClick={() => void handleOpenWorkspaceFromFolder()}>
+        <button type="button" className="panel-action" onClick={() => void handleOpenWorkspaceFromFolder()}>
           {t('panels.scenes.openWorkspaceFromFolder')}
         </button>
         <p className="scenes-panel__hint">
@@ -250,7 +286,7 @@ export function ScenesPanel() {
             <p className="scenes-panel__hint scenes-panel__hint--warning">
               {t('panels.scenes.newWorkspaceConfirm')}
             </p>
-            <div className="scenes-panel__save-form-actions">
+            <div className="panel-actions scenes-panel__save-form-actions">
               <button
                 type="button"
                 onClick={() => {
@@ -267,10 +303,79 @@ export function ScenesPanel() {
             </div>
           </div>
         ) : (
-          <button type="button" onClick={() => setIsConfirmingReset(true)}>
+          <button type="button" className="panel-action" onClick={() => setIsConfirmingReset(true)}>
             {t('panels.scenes.newWorkspace')}
           </button>
         )}
+
+        {/* Configurações do workspace (fase 13). A faixa do mapa de
+            profundidade é COMPARTILHADA pelas três saídas — tela, PNG e MP4 —,
+            então não podia morar dentro de nenhuma delas; aqui ela fica ao lado
+            das outras opções que valem para o ambiente inteiro. Nasce recolhida,
+            pela regra do #83. */}
+        <CollapsibleSection sectionKey="sceneSettings" title={t('panels.scenes.settings')}>
+          <fieldset className="scenes-panel__settings">
+            <legend>{t('panels.scenes.depthRange')}</legend>
+
+            <label className="scenes-panel__field scenes-panel__field--checkbox">
+              <input type="checkbox" checked={depthAutoRange} onChange={toggleDepthAutoRange} />
+              {t('panels.scenes.depthAutoRange')}
+            </label>
+
+            {/* Desabilitados com a faixa automática em vigor, e não escondidos:
+                os números continuam à vista como o ponto de partida do ajuste. */}
+            <div className="scenes-panel__depth-range">
+              <label htmlFor="depth-near" className="scenes-panel__field">
+                {t('panels.scenes.depthNear')}
+                <input
+                  id="depth-near"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  disabled={depthAutoRange}
+                  value={nearDraft}
+                  onChange={(event) => setNearDraft(event.target.value)}
+                  onBlur={(event) => setDepthNear(Number(event.target.value))}
+                />
+              </label>
+              <label htmlFor="depth-far" className="scenes-panel__field">
+                {t('panels.scenes.depthFar')}
+                <input
+                  id="depth-far"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  disabled={depthAutoRange}
+                  value={farDraft}
+                  onChange={(event) => setFarDraft(event.target.value)}
+                  onBlur={(event) => setDepthFar(Number(event.target.value))}
+                />
+              </label>
+            </div>
+
+            <p className="scenes-panel__hint">{t('panels.scenes.depthRangeHint')}</p>
+
+            {/* O chão fica FORA da conta da faixa (senão espremeria o boneco),
+                e por isso o que está em primeiro plano cai fora dela: grampeado,
+                vira uma cunha branca chapada disputando o branco com a
+                superfície mais próxima do boneco. O recorte pela faixa é o
+                padrão; os outros dois valores ficam à mão. */}
+            <label htmlFor="depth-ground" className="scenes-panel__field" title={t('panels.scenes.depthGroundHint')}>
+              {t('panels.scenes.depthGround')}
+              <select
+                id="depth-ground"
+                value={groundMode}
+                onChange={(event) => setGroundMode(event.target.value as GroundMode)}
+              >
+                {GROUND_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {t(GROUND_MODE_LABELS[mode])}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </fieldset>
+        </CollapsibleSection>
 
         {/* Limites articulares customizados pelo workspace (ver DECISOES.md #29):
             só aparece quando há customização em vigor — sem editor na UI, a
@@ -280,7 +385,7 @@ export function ScenesPanel() {
             <p className="scenes-panel__hint">
               {t('panels.scenes.customJointLimits', { count: customJointLimitCount })}
             </p>
-            <button type="button" onClick={resetJointLimits}>
+            <button type="button" className="panel-action" onClick={resetJointLimits}>
               {t('panels.scenes.resetJointLimits')}
             </button>
           </>

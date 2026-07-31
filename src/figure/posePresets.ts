@@ -763,7 +763,7 @@ const POSE_PRESETS: Record<PosePresetKey, PosePresetDefinition> = {
 
   // ---------------------------------------------------------------------
   // A-pose (DECISOES.md #36). Braços a 45°, o bind pose padrão de quase todo
-  // pipeline de jogo — útil porque este app exporta `.glb`. Como a T-pose, é
+  // pipeline de jogo, e a pose de partida natural para um exportador rigado. Como a T-pose, é
   // pose de referência: mão aberta e nenhum outro ângulo declarado.
   // ---------------------------------------------------------------------
   apose: { pose: symmetric({ shoulder: { z: 45 } }) },

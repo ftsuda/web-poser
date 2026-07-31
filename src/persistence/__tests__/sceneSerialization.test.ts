@@ -55,11 +55,28 @@ const sampleScene: SceneWorkingState = {
 describe('sceneSerialization — figura', () => {
   it('converte uma figura para o formato de extras e de volta sem perda', () => {
     const extras = figureToExtras(sampleFigure)
-    expect(extras.joints['shoulder.L']).toEqual([30, 0, 10])
+    expect(extras.pose['shoulder.L']).toEqual({ x: 30, y: 0, z: 10 })
+    expect(extras.rotation).toEqual({ x: 0, y: 45, z: 0 })
     expect(extras.position).toEqual([1.2, 0, -0.6])
 
     const restored = figureFromExtras(extras, 0)
     expect(restored).toEqual(sampleFigure)
+  })
+
+  /**
+   * O boneco gravado é o `Figure` do store verbatim (DECISOES.md #86) — não uma
+   * segunda codificação. É isso que permite colar um boneco de um `scene.json`
+   * dentro de um keyframe de `animations.json` sem conversão nenhuma.
+   */
+  it('grava o boneco como o objeto do store, sem inventar um segundo formato', () => {
+    expect(figureToExtras(sampleFigure)).toEqual(sampleFigure)
+  })
+
+  it('não devolve as referências do store — editar a cena depois não mexe no que já foi gravado', () => {
+    const extras = figureToExtras(sampleFigure)
+    expect(extras.pose['shoulder.L']).not.toBe(sampleFigure.pose['shoulder.L'])
+    expect(extras.rotation).not.toBe(sampleFigure.rotation)
+    expect(extras.position).not.toBe(sampleFigure.position)
   })
 
   it('aplica defaults e grampeamento de skeleton.ts ao reconstruir uma figura de extras não confiáveis', () => {
@@ -167,7 +184,7 @@ describe('sceneSerialization — cena completa', () => {
 
   it('continua a contagem de cenas gravadas com o nome antigo `keyframeCounter`', () => {
     // Renomeação da fase 10 (DECISOES.md #52): grava-se `snapshotCounter`, mas
-    // um `.glb` salvo antes dela só tem o nome antigo — e reiniciar a sequência
+    // um arquivo salvo antes dela só tem o nome antigo — e reiniciar a sequência
     // do 1 sobrescreveria arquivos já gravados na pasta.
     expect(sceneFromExtras({ keyframeCounter: 13 }).nextSnapshotNumber).toBe(13)
     // Com os dois presentes (arquivo gravado por uma versão nova e editado à
@@ -186,7 +203,7 @@ describe('sceneSerialization — cena completa', () => {
     expect(restored.nextSnapshotNumber).toBe(1)
   })
 
-  it('aplica defaults quando o extras é undefined/não-objeto (ex.: .glb sem o bloco do app)', () => {
+  it('aplica defaults quando o extras é undefined/não-objeto (ex.: arquivo sem o bloco do app)', () => {
     const restored = sceneFromExtras(undefined)
     expect(restored.name).toBe('Cena 1')
     expect(restored.figures).toEqual([])

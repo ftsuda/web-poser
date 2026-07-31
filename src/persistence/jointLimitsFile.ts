@@ -13,7 +13,7 @@ import {
  *
  * Arquivo separado do `workspace.json` (decisão do usuário): o dump completo
  * são 31 juntas e o manifesto continua pequeno e legível. Puro como o resto de
- * `sceneSerialization.ts` — só mapeia objetos JS simples, sem `three`/glTF —,
+ * `sceneSerialization.ts` — só mapeia objetos JS simples, sem `three` —,
  * então é 100% testável sem navegador.
  */
 

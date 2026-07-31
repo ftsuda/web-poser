@@ -11,8 +11,8 @@ import { focalLengthToFov } from '../../scene/lens'
 // `importOriginal` preserva `SceneFileError` real (usado por `instanceof`).
 vi.mock('../../persistence/sceneFile', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../persistence/sceneFile')>()),
-  exportCameraBookmarksToGlb: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
-  importCameraBookmarksFromGlb: vi.fn(),
+  serializeCameraBookmarksFile: vi.fn().mockReturnValue('{}'),
+  parseCameraBookmarksFile: vi.fn(),
 }))
 vi.mock('../../persistence/fileIO', () => ({
   writeFileToDirectoryOrDownload: vi.fn().mockResolvedValue(undefined),
@@ -21,8 +21,8 @@ vi.mock('../../persistence/fileIO', () => ({
 
 import {
   SceneFileError,
-  exportCameraBookmarksToGlb,
-  importCameraBookmarksFromGlb,
+  serializeCameraBookmarksFile,
+  parseCameraBookmarksFile,
 } from '../../persistence/sceneFile'
 import { pickFile, writeFileToDirectoryOrDownload } from '../../persistence/fileIO'
 
@@ -51,8 +51,8 @@ describe('CameraPanel', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     abrirSecoes()
     useFiguresStore.temporal.getState().clear()
-    vi.mocked(exportCameraBookmarksToGlb).mockClear()
-    vi.mocked(importCameraBookmarksFromGlb).mockReset()
+    vi.mocked(serializeCameraBookmarksFile).mockClear()
+    vi.mocked(parseCameraBookmarksFile).mockReset()
     vi.mocked(pickFile).mockReset()
     vi.mocked(writeFileToDirectoryOrDownload).mockClear()
   })
@@ -159,7 +159,7 @@ describe('CameraPanel', () => {
     expect(useCameraStore.getState().pendingCommand).toBeNull()
   })
 
-  it('exports the saved camera bookmarks as a .glb download', async () => {
+  it('exports the saved camera bookmarks as a .json download', async () => {
     useFiguresStore.getState().addCameraBookmark({
       name: 'Vista salva 1',
       position: [3, 2, 4],
@@ -171,17 +171,17 @@ describe('CameraPanel', () => {
     const user = userEvent.setup()
     await renderCameraPanel()
 
-    await user.click(screen.getByRole('button', { name: 'Exportar bookmarks (.glb)' }))
+    await user.click(screen.getByRole('button', { name: 'Exportar bookmarks (.json)' }))
 
-    expect(vi.mocked(exportCameraBookmarksToGlb)).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(exportCameraBookmarksToGlb).mock.calls[0][0]).toHaveLength(1)
+    expect(vi.mocked(serializeCameraBookmarksFile)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(serializeCameraBookmarksFile).mock.calls[0][0]).toHaveLength(1)
     expect(vi.mocked(writeFileToDirectoryOrDownload)).toHaveBeenCalledTimes(1)
     const [directoryHandle, filename] = vi.mocked(writeFileToDirectoryOrDownload).mock.calls[0]
     expect(directoryHandle).toBeNull()
-    expect(filename).toMatch(/\.glb$/)
+    expect(filename).toMatch(/\.json$/)
   })
 
-  it('imports camera bookmarks from a picked .glb file, adding them to the existing list', async () => {
+  it('imports camera bookmarks from a picked .json file, adding them to the existing list', async () => {
     useFiguresStore.getState().addCameraBookmark({
       name: 'Vista A',
       position: [1, 1, 1],
@@ -190,8 +190,8 @@ describe('CameraPanel', () => {
       fov: 50,
       zoom: 1,
     })
-    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'bookmarks.glb'), data: new ArrayBuffer(4) })
-    vi.mocked(importCameraBookmarksFromGlb).mockResolvedValue([
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'bookmarks.json'), data: new ArrayBuffer(4) })
+    vi.mocked(parseCameraBookmarksFile).mockReturnValue([
       {
         id: 'imported-1',
         name: 'Vista B',
@@ -205,7 +205,7 @@ describe('CameraPanel', () => {
 
     const user = userEvent.setup()
     await renderCameraPanel()
-    await user.click(screen.getByRole('button', { name: 'Importar bookmarks (.glb)' }))
+    await user.click(screen.getByRole('button', { name: 'Importar bookmarks (.json)' }))
 
     await vi.waitFor(() => {
       expect(useFiguresStore.getState().cameraBookmarks.map((b) => b.name)).toEqual(['Vista A', 'Vista B'])
@@ -217,19 +217,19 @@ describe('CameraPanel — erro de importação (fase 9, item 4)', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     abrirSecoes()
-    vi.mocked(importCameraBookmarksFromGlb).mockReset()
+    vi.mocked(parseCameraBookmarksFile).mockReset()
     vi.mocked(pickFile).mockReset()
   })
 
-  it('avisa quando o .glb de bookmarks não tem os dados do app', async () => {
-    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'x.glb'), data: new ArrayBuffer(4) })
-    vi.mocked(importCameraBookmarksFromGlb).mockRejectedValue(new SceneFileError('missingAppData'))
+  it('avisa quando o arquivo de bookmarks não tem os dados do app', async () => {
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'x.json'), data: new ArrayBuffer(4) })
+    vi.mocked(parseCameraBookmarksFile).mockImplementation(() => { throw new SceneFileError('missingAppData') })
 
     const user = userEvent.setup()
     await renderCameraPanel()
-    await user.click(screen.getByRole('button', { name: 'Importar bookmarks (.glb)' }))
+    await user.click(screen.getByRole('button', { name: 'Importar bookmarks (.json)' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('não contém os dados do Virtual Mockup')
+    expect(await screen.findByRole('alert')).toHaveTextContent('não é do Virtual Mockup')
     expect(useFiguresStore.getState().cameraBookmarks).toHaveLength(0)
   })
 })

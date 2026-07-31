@@ -25,8 +25,25 @@ export function slugifySceneName(name: string): string {
   return slug || FALLBACK_SCENE_SLUG
 }
 
-export function formatSnapshotFilename(sceneName: string, sequence: number): string {
+/**
+ * Sufixo do mapa de profundidade (fase 13). A profundidade é uma saída
+ * ALTERNATIVA — quem quer as duas versões captura duas vezes, e cada captura
+ * consome um número da sequência. Sem o sufixo, os dois arquivos seriam
+ * indistinguíveis na pasta a não ser abrindo cada um.
+ */
+export const DEPTH_FILENAME_SUFFIX = '_depth'
+
+export interface SnapshotNameOptions {
+  depth?: boolean
+}
+
+export function formatSnapshotFilename(
+  sceneName: string,
+  sequence: number,
+  options: SnapshotNameOptions = {},
+): string {
   const slug = slugifySceneName(sceneName)
   const padded = String(sequence).padStart(3, '0')
-  return `${slug}_snap${padded}.png`
+  const suffix = options.depth ? DEPTH_FILENAME_SUFFIX : ''
+  return `${slug}_snap${padded}${suffix}.png`
 }

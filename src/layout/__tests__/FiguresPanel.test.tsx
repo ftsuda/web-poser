@@ -1,25 +1,16 @@
 import '../../i18n'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { COLOR_PALETTE, MAX_FIGURES, useFiguresStore } from '../../store/figuresStore'
 import { usePoseClipboardStore } from '../../store/poseClipboardStore'
 import { FiguresPanel } from '../FiguresPanel'
 
-// `importOriginal` preserva `SceneFileError` real (usado por `instanceof`).
-vi.mock('../../persistence/sceneFile', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../persistence/sceneFile')>()),
-  exportFigureToGlb: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
-  importFigureFromGlb: vi.fn(),
-}))
-vi.mock('../../persistence/fileIO', () => ({
-  writeFileToDirectoryOrDownload: vi.fn().mockResolvedValue(undefined),
-  pickFile: vi.fn(),
-}))
-
-import { SceneFileError, exportFigureToGlb, importFigureFromGlb } from '../../persistence/sceneFile'
-import { pickFile, writeFileToDirectoryOrDownload } from '../../persistence/fileIO'
-
+/**
+ * Sem mock de persistência: desde DECISOES.md #87 este painel não faz I/O de
+ * arquivo nenhum — exportar/importar boneco saiu, e boneco em arquivo virou
+ * assunto do painel de Propriedades ("Pose em arquivo").
+ */
 async function renderFiguresPanel() {
   const utils = render(<FiguresPanel />)
   await act(async () => {})
@@ -29,10 +20,6 @@ async function renderFiguresPanel() {
 describe('FiguresPanel', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
-    vi.mocked(exportFigureToGlb).mockClear()
-    vi.mocked(importFigureFromGlb).mockReset()
-    vi.mocked(pickFile).mockReset()
-    vi.mocked(writeFileToDirectoryOrDownload).mockClear()
   })
 
   it('shows the empty-state message when there are no figures', async () => {
@@ -156,95 +143,6 @@ describe('FiguresPanel', () => {
     }
   })
 
-  it('exports a figure as a .glb download when its export button is clicked', async () => {
-    useFiguresStore.getState().addFigure('Herói')
-    const user = userEvent.setup()
-    await renderFiguresPanel()
-
-    await user.click(screen.getByRole('button', { name: 'Exportar boneco (.glb)' }))
-
-    expect(vi.mocked(exportFigureToGlb)).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(writeFileToDirectoryOrDownload)).toHaveBeenCalledTimes(1)
-    const [directoryHandle, filename] = vi.mocked(writeFileToDirectoryOrDownload).mock.calls[0]
-    expect(directoryHandle).toBeNull()
-    expect(filename).toMatch(/\.glb$/)
-  })
-
-  it('applies an imported figure to the currently selected figure, keeping its identity/position', async () => {
-    const id = useFiguresStore.getState().addFigure('Original') as string
-    useFiguresStore.getState().selectFigure(id)
-    useFiguresStore.getState().setPosition(id, [5, 0, 5])
-
-    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'boneco.glb'), data: new ArrayBuffer(4) })
-    vi.mocked(importFigureFromGlb).mockResolvedValue({
-      id: 'figure-imported',
-      name: 'Boneco importado',
-      color: '#4060e0',
-      visible: true,
-      height: 1.85,
-      position: [0, 0, 0],
-      rotation: { x: 0, y: 0, z: 0 },
-      pose: { 'elbow.L': { x: 30, y: 0, z: 0 } },
-    })
-
-    const user = userEvent.setup()
-    await renderFiguresPanel()
-    await user.click(screen.getByRole('button', { name: 'Importar boneco (.glb)' }))
-
-    await vi.waitFor(() => {
-      const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
-      expect(figure?.height).toBe(1.85)
-      expect(figure?.pose['elbow.L']).toEqual({ x: 30, y: 0, z: 0 })
-    })
-    const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
-    expect(figure?.name).toBe('Original')
-    expect(figure?.position).toEqual([5, 0, 5])
-  })
-
-  it('creates a new figure from an imported file when nothing is selected', async () => {
-    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'boneco.glb'), data: new ArrayBuffer(4) })
-    vi.mocked(importFigureFromGlb).mockResolvedValue({
-      id: 'figure-imported',
-      name: 'Boneco importado',
-      color: '#4060e0',
-      visible: true,
-      height: 1.6,
-      position: [1, 0, 1],
-      rotation: { x: 0, y: 0, z: 0 },
-      pose: {},
-    })
-
-    const user = userEvent.setup()
-    await renderFiguresPanel()
-    await user.click(screen.getByRole('button', { name: 'Importar boneco (.glb)' }))
-
-    await vi.waitFor(() => {
-      expect(useFiguresStore.getState().figures).toHaveLength(1)
-    })
-    expect(useFiguresStore.getState().figures[0].name).toBe('Boneco importado')
-  })
-})
-
-describe('FiguresPanel — erro de importação (fase 9, item 4)', () => {
-  beforeEach(() => {
-    useFiguresStore.setState(useFiguresStore.getInitialState())
-    vi.mocked(importFigureFromGlb).mockReset()
-    vi.mocked(pickFile).mockReset()
-  })
-
-  it('avisa quando o .glb do boneco não pode ser lido, sem alterar a cena', async () => {
-    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'ruim.glb'), data: new ArrayBuffer(4) })
-    vi.mocked(importFigureFromGlb).mockRejectedValue(new SceneFileError('unreadable'))
-
-    const user = userEvent.setup()
-    await renderFiguresPanel()
-    await user.click(screen.getByRole('button', { name: 'Importar boneco (.glb)' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Arquivo não pôde ser lido — o .glb parece corrompido ou não é um glTF válido.',
-    )
-    expect(useFiguresStore.getState().figures).toHaveLength(0)
-  })
 })
 
 /**

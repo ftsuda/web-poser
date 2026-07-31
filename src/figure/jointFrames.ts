@@ -7,9 +7,10 @@ import type { Figure } from '../store/figuresStore'
  * pose atual de um boneco — a mesma transformação local por junta que
  * `Figure.tsx` usa para renderizar, mas puramente como grafo de transformos,
  * reaproveitável por qualquer código que precise da posição/orientação de
- * uma junta no mundo sem montar o `<Canvas>`: exportação glTF
- * (`figureObject3D.ts`) e o solver de arrasto de junta (`dragSolver.ts`, que
- * substituiu o IK de 2 ossos da fase 7).
+ * uma junta no mundo sem montar o `<Canvas>` — hoje, o solver de arrasto de
+ * junta (`dragSolver.ts`, que substituiu o IK de 2 ossos da fase 7). Era
+ * também a base da exportação glTF, removida em DECISOES.md #85; é daqui que
+ * um futuro exportador rigado sairá.
  */
 
 const ZERO_ROTATION: JointRotation = { x: 0, y: 0, z: 0 }

@@ -7,13 +7,31 @@ import { CLIPS_FILENAME } from './clipsFile'
 
 /**
  * Manifesto `workspace.json` de um workspace salvo em pasta: aponta, por
- * nome de arquivo, para os `.glb`s de cada cena salvos independentemente na
+ * nome de arquivo, para o `.json` de cada cena salva independentemente na
  * mesma pasta — ver PLANO.md > "Workspace: catálogo de cenas" e
- * DECISOES.md #11 (opção 1: pasta + manifesto, não um `.glb` único).
+ * DECISOES.md #11 (opção 1: pasta + manifesto, não um arquivo único).
+ *
+ * As cenas eram `.glb` até DECISOES.md #85. A pasta agora é inteiramente JSON.
  */
 
 export const WORKSPACE_MANIFEST_FILENAME = 'workspace.json'
 export const WORKSPACE_MANIFEST_VERSION = 1
+
+/**
+ * Nomes que uma cena NÃO pode ocupar: são os arquivos fixos da pasta.
+ *
+ * Não existia enquanto as cenas eram `.glb` — a extensão sozinha já separava
+ * os dois mundos. Agora tudo é `.json`, e uma cena chamada "Poses" geraria
+ * `poses.json`, sobrescrevendo a biblioteca de poses do usuário. Comparação em
+ * minúsculas porque o sistema de arquivos do Windows não distingue caixa.
+ */
+const RESERVED_FILENAMES: readonly string[] = [
+  WORKSPACE_MANIFEST_FILENAME,
+  JOINT_LIMITS_FILENAME,
+  POSES_FILENAME,
+  ANIMATIONS_FILENAME,
+  CLIPS_FILENAME,
+]
 
 export interface WorkspaceManifestEntry {
   id: string
@@ -39,17 +57,17 @@ export function buildWorkspaceManifest(
   scenes: readonly SceneSnapshot[],
   activeSceneId: string | null,
 ): WorkspaceManifest {
-  const usedFilenames = new Set<string>()
+  const usedFilenames = new Set<string>(RESERVED_FILENAMES.map((name) => name.toLowerCase()))
 
   const entries = scenes.map((scene) => {
     const base = slugifySceneName(scene.name)
-    let filename = `${base}.glb`
+    let filename = `${base}.json`
     let suffix = 2
-    while (usedFilenames.has(filename)) {
-      filename = `${base}-${suffix}.glb`
+    while (usedFilenames.has(filename.toLowerCase())) {
+      filename = `${base}-${suffix}.json`
       suffix += 1
     }
-    usedFilenames.add(filename)
+    usedFilenames.add(filename.toLowerCase())
     return { id: scene.id, name: scene.name, filename }
   })
 
@@ -73,7 +91,7 @@ export function parseWorkspaceManifest(json: unknown): WorkspaceManifest {
     return {
       id: typeof entrySource.id === 'string' ? entrySource.id : `scene-${index + 1}`,
       name: typeof entrySource.name === 'string' ? entrySource.name : `Cena ${index + 1}`,
-      filename: typeof entrySource.filename === 'string' ? entrySource.filename : `scene-${index + 1}.glb`,
+      filename: typeof entrySource.filename === 'string' ? entrySource.filename : `scene-${index + 1}.json`,
     }
   })
 

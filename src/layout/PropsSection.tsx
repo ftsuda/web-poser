@@ -44,6 +44,9 @@ export function PropsSection() {
     <fieldset className="props-section">
       <legend>{t('panels.figures.props.title')}</legend>
 
+      {/* Escolher a forma e acrescentar são dois passos, e não um controle
+          composto: o combo ganha a linha inteira (os nomes de forma não cabiam
+          na metade que sobrava) e o botão vem embaixo, em largura cheia. */}
       <div className="props-section__add">
         <label className="props-section__shape">
           {t('panels.figures.props.shape')}
@@ -58,6 +61,7 @@ export function PropsSection() {
 
         <button
           type="button"
+          className="panel-action"
           disabled={atLimit}
           title={atLimit ? t('panels.figures.props.addLimitReached', { max: MAX_PROPS }) : undefined}
           onClick={() => addProp(shape, t('panels.figures.props.defaultName', { index: nextPropSeq }))}
@@ -222,7 +226,7 @@ export function PropProperties({ prop }: { prop: SceneProp }) {
 
   return (
     <div className="prop-properties">
-      <div className="prop-properties__tools" role="group" aria-label={t('panels.properties.prop.tool')}>
+      <div className="panel-actions prop-properties__tools" role="group" aria-label={t('panels.properties.prop.tool')}>
         {PROP_GIZMO_MODES.map((candidate) => (
           <button
             key={candidate}
@@ -322,7 +326,12 @@ export function PropProperties({ prop }: { prop: SceneProp }) {
         ))}
       </fieldset>
 
-      <button type="button" disabled={prop.locked} onClick={() => seatPropOnGround(prop.id)}>
+      <button
+        type="button"
+        className="panel-action"
+        disabled={prop.locked}
+        onClick={() => seatPropOnGround(prop.id)}
+      >
         {t('panels.properties.prop.seatOnGround')}
       </button>
 
@@ -331,6 +340,7 @@ export function PropProperties({ prop }: { prop: SceneProp }) {
       </p>
       <button
         type="button"
+        className="panel-action"
         disabled={prop.locked || moved === 0}
         onClick={() => clearPropVertices(prop.id)}
       >

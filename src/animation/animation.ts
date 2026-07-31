@@ -1,9 +1,7 @@
-import { JOINT_NAMES, clampJointRotation, type JointRotation } from '../figure/skeleton'
-import { withLegacyIndexFinger } from '../figure/poseCompat'
+import { asRecord, sanitizeFigure, toVec3 } from '../figure/figureFormat'
 import type { CameraViewState } from '../scene/cameraMove'
-import { slugifySceneName } from '../snapshot/snapshotNaming'
-import { DEFAULT_FIGURE_COLOR, normalizeFigureColor, type Figure } from '../store/figuresStore'
-import { MAX_HEIGHT_M, MIN_HEIGHT_M, REFERENCE_HEIGHT_M } from '../figure/skeleton'
+import { DEPTH_FILENAME_SUFFIX, slugifySceneName } from '../snapshot/snapshotNaming'
+import type { Figure } from '../store/figuresStore'
 
 /**
  * Modelo de dados do mini animador (PLANO.md > "Mini animador", DECISOES.md
@@ -153,9 +151,18 @@ export function animationOutputDurationMs(animation: Animation): number {
   return animationDurationMs(animation) / clampAnimationSpeed(animation.speed)
 }
 
-/** Nome do arquivo de vídeo de uma animação, com a mesma sanitização do instantâneo. */
-export function formatAnimationFilename(animationName: string): string {
-  return `${slugifySceneName(animationName)}.mp4`
+/**
+ * Nome do arquivo de vídeo de uma animação, com a mesma sanitização do
+ * instantâneo — e o mesmo sufixo `_depth` para o mapa de profundidade (fase
+ * 13). Sem ele, exportar o mapa sobrescreveria o vídeo normal da mesma
+ * animação, que tem exatamente o mesmo nome.
+ */
+export function formatAnimationFilename(
+  animationName: string,
+  options: { depth?: boolean } = {},
+): string {
+  const suffix = options.depth ? DEPTH_FILENAME_SUFFIX : ''
+  return `${slugifySceneName(animationName)}${suffix}.mp4`
 }
 
 /** Instante de cada keyframe na linha do tempo, começando em zero. */
@@ -444,62 +451,20 @@ export function planKeyframeSplit(animation: Animation, timeMs: unknown): Keyfra
 
 // ---------------------------------------------------------------------------
 // Leitura de dado não confiável (autosave, `animations.json`)
+//
+// A leitura do BONECO não mora mais aqui: é `figure/figureFormat.ts`, um lugar
+// só para os quatro pontos que liam boneco de fora (DECISOES.md #86). O que
+// sobra neste arquivo é o que é da ANIMAÇÃO — a câmera do keyframe, a duração
+// e o rótulo do grupo.
 // ---------------------------------------------------------------------------
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
-}
-
-function sanitizeVec3(value: unknown, fallback: [number, number, number]): [number, number, number] {
-  if (!Array.isArray(value) || value.length !== 3 || value.some((n) => typeof n !== 'number' || Number.isNaN(n))) {
-    return fallback
-  }
-  return [value[0] as number, value[1] as number, value[2] as number]
-}
-
-function sanitizeRotation(value: unknown): JointRotation {
-  const source = asRecord(value)
-  const axis = (name: 'x' | 'y' | 'z') => (typeof source[name] === 'number' ? (source[name] as number) : 0)
-  return { x: axis('x'), y: axis('y'), z: axis('z') }
-}
-
-/**
- * Lê UM boneco de dado não confiável, exatamente como ele aparece dentro de
- * `keyframes[].figures[]`. Exportado (e não só interno) porque o arquivo de pose
- * avulsa (`figurePoseFile.ts`, DECISOES.md #79) guarda um boneco com ESTA mesma
- * estrutura — a ponte entre o celular e o computador é o mesmo objeto que a
- * animação já usa, não um segundo formato a manter em dia.
- */
-export function sanitizeFigure(value: unknown, index: number): Figure {
-  const source = asRecord(value)
-
-  const pose: Record<string, JointRotation> = {}
-  for (const [jointName, rotation] of Object.entries(asRecord(source.pose))) {
-    if (!JOINT_NAMES.includes(jointName)) continue
-    pose[jointName] = clampJointRotation(jointName, sanitizeRotation(rotation))
-  }
-
-  const height = typeof source.height === 'number' ? source.height : REFERENCE_HEIGHT_M
-
-  return {
-    id: typeof source.id === 'string' ? source.id : `figure-${index + 1}`,
-    name: typeof source.name === 'string' ? source.name : `Figure ${index + 1}`,
-    color: normalizeFigureColor(source.color) ?? DEFAULT_FIGURE_COLOR,
-    visible: typeof source.visible === 'boolean' ? source.visible : true,
-    height: Math.min(MAX_HEIGHT_M, Math.max(MIN_HEIGHT_M, height)),
-    position: sanitizeVec3(source.position, [0, 0, 0]),
-    rotation: sanitizeRotation(source.rotation),
-    pose: withLegacyIndexFinger(pose),
-  }
-}
 
 function sanitizeCamera(value: unknown): CameraViewState | null {
   const source = asRecord(value)
   if (!Array.isArray(source.position) || !Array.isArray(source.target)) return null
   return {
-    position: sanitizeVec3(source.position, [0, 0, 0]),
-    target: sanitizeVec3(source.target, [0, 0, 0]),
-    up: sanitizeVec3(source.up, [0, 1, 0]),
+    position: toVec3(source.position, [0, 0, 0]),
+    target: toVec3(source.target, [0, 0, 0]),
+    up: toVec3(source.up, [0, 1, 0]),
     focalMm: typeof source.focalMm === 'number' && source.focalMm > 0 ? source.focalMm : 50,
   }
 }

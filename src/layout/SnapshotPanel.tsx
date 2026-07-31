@@ -9,6 +9,7 @@ import {
   type OutputQualityKey,
 } from '../snapshot/constants'
 import { isFileSystemAccessAvailable } from '../persistence/fileIO'
+import { useDepthStore } from '../store/depthStore'
 import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
 import { CollapsiblePanel } from './CollapsiblePanel'
 
@@ -29,6 +30,8 @@ export function SnapshotPanel() {
   const toggleHideOverlays = useSnapshotCaptureStore((state) => state.toggleHideOverlays)
   const setDirectoryHandle = useSnapshotCaptureStore((state) => state.setDirectoryHandle)
   const requestCapture = useSnapshotCaptureStore((state) => state.requestCapture)
+  const depthOutput = useDepthStore((state) => state.snapshotDepth)
+  const toggleDepthOutput = useDepthStore((state) => state.toggleSnapshotDepth)
 
   const [widthDraft, setWidthDraft] = useState(() => String(width))
   const [lastSyncedWidth, setLastSyncedWidth] = useState(width)
@@ -133,9 +136,21 @@ export function SnapshotPanel() {
         {t('panels.snapshots.hideOverlays')}
       </label>
 
+      {/* Mapa de profundidade (fase 13): saída ALTERNATIVA, não uma segunda
+          saída — uma captura gera um arquivo, e quem quer as duas versões
+          captura duas vezes. A faixa perto/longe é compartilhada com o vídeo e
+          com a tela, e por isso mora no painel de Cenas, em Configurações. */}
+      <label
+        className="snapshot-panel__field snapshot-panel__field--checkbox"
+        title={t('panels.snapshots.depthOutputHint')}
+      >
+        <input type="checkbox" checked={depthOutput} onChange={toggleDepthOutput} />
+        {t('panels.snapshots.depthOutput')}
+      </label>
+
       <div className="snapshot-panel__directory">
         {fileSystemAccessAvailable && (
-          <button type="button" onClick={() => void handleChooseDirectory()}>
+          <button type="button" className="panel-action" onClick={() => void handleChooseDirectory()}>
             {t('panels.snapshots.chooseDirectory')}
           </button>
         )}
@@ -148,7 +163,7 @@ export function SnapshotPanel() {
         </p>
       </div>
 
-      <button type="button" className="snapshot-panel__capture" onClick={requestCapture}>
+      <button type="button" className="panel-action snapshot-panel__capture" onClick={requestCapture}>
         {t('panels.snapshots.capture')}
       </button>
 

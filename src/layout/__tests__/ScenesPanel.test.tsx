@@ -3,15 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
+import { useDepthStore } from '../../store/depthStore'
 import { useFiguresStore } from '../../store/figuresStore'
+import { useUIStore } from '../../store/uiStore'
 import { ScenesPanel } from '../ScenesPanel'
 
 // `importOriginal` preserva `SceneFileError` (classe real) — o painel usa
 // `instanceof` para escolher a mensagem de erro (fase 9, item 4).
 vi.mock('../../persistence/sceneFile', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../persistence/sceneFile')>()),
-  exportSceneToGlb: vi.fn().mockResolvedValue(new ArrayBuffer(4)),
-  importSceneFromGlb: vi.fn(),
+  serializeSceneFile: vi.fn().mockReturnValue('{}'),
+  parseSceneFile: vi.fn(),
 }))
 vi.mock('../../persistence/fileIO', () => ({
   writeFileToDirectoryOrDownload: vi.fn().mockResolvedValue(undefined),
@@ -25,7 +27,7 @@ vi.mock('../../persistence/workspaceFolder', () => ({
   loadWorkspaceFromFiles: vi.fn(),
 }))
 
-import { SceneFileError, importSceneFromGlb, exportSceneToGlb } from '../../persistence/sceneFile'
+import { SceneFileError, parseSceneFile, serializeSceneFile } from '../../persistence/sceneFile'
 import { isFileSystemAccessAvailable, pickFile, pickMultipleFiles, writeFileToDirectoryOrDownload } from '../../persistence/fileIO'
 import { loadWorkspaceFromDirectory, loadWorkspaceFromFiles, saveWorkspaceToDirectory } from '../../persistence/workspaceFolder'
 
@@ -39,8 +41,8 @@ describe('ScenesPanel', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useFiguresStore.temporal.getState().clear()
-    vi.mocked(exportSceneToGlb).mockClear()
-    vi.mocked(importSceneFromGlb).mockReset()
+    vi.mocked(serializeSceneFile).mockClear()
+    vi.mocked(parseSceneFile).mockReset()
     vi.mocked(pickFile).mockReset()
     vi.mocked(writeFileToDirectoryOrDownload).mockClear()
     vi.mocked(pickMultipleFiles).mockReset()
@@ -95,23 +97,23 @@ describe('ScenesPanel', () => {
     expect(useFiguresStore.getState().scenes).toHaveLength(0)
   })
 
-  it('exports the current working scene as a .glb download', async () => {
+  it('exports the current working scene as a .json download', async () => {
     useFiguresStore.getState().addFigure()
     const user = userEvent.setup()
     await renderScenesPanel()
 
-    await user.click(screen.getByRole('button', { name: 'Exportar cena atual (.glb)' }))
+    await user.click(screen.getByRole('button', { name: 'Exportar cena atual (.json)' }))
 
-    expect(vi.mocked(exportSceneToGlb)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(serializeSceneFile)).toHaveBeenCalledTimes(1)
     expect(vi.mocked(writeFileToDirectoryOrDownload)).toHaveBeenCalledTimes(1)
     const [directoryHandle, filename] = vi.mocked(writeFileToDirectoryOrDownload).mock.calls[0]
     expect(directoryHandle).toBeNull()
-    expect(filename).toMatch(/\.glb$/)
+    expect(filename).toMatch(/\.json$/)
   })
 
-  it('imports a scene from a picked .glb file and replaces the working scene', async () => {
-    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'cena.glb'), data: new ArrayBuffer(4) })
-    vi.mocked(importSceneFromGlb).mockResolvedValue({
+  it('imports a scene from a picked .json file and replaces the working scene', async () => {
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'cena.json'), data: new ArrayBuffer(4) })
+    vi.mocked(parseSceneFile).mockReturnValue({
       name: 'Cena importada',
       figures: [],
       nextFigureSeq: 1,
@@ -126,42 +128,42 @@ describe('ScenesPanel', () => {
 
     const user = userEvent.setup()
     await renderScenesPanel()
-    await user.click(screen.getByRole('button', { name: 'Importar cena (.glb)' }))
+    await user.click(screen.getByRole('button', { name: 'Importar cena (.json)' }))
 
     await vi.waitFor(() => {
       expect(useFiguresStore.getState().sceneName).toBe('Cena importada')
     })
   })
 
-  it('shows an error and keeps the current scene when the .glb is corrupted (fase 9, item 4)', async () => {
-    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'ruim.glb'), data: new ArrayBuffer(4) })
-    vi.mocked(importSceneFromGlb).mockRejectedValue(new SceneFileError('unreadable'))
+  it('shows an error and keeps the current scene when the file is corrupted (fase 9, item 4)', async () => {
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'ruim.json'), data: new ArrayBuffer(4) })
+    vi.mocked(parseSceneFile).mockImplementation(() => { throw new SceneFileError('unreadable') })
 
     const user = userEvent.setup()
     await renderScenesPanel()
-    await user.click(screen.getByRole('button', { name: 'Importar cena (.glb)' }))
+    await user.click(screen.getByRole('button', { name: 'Importar cena (.json)' }))
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('Arquivo não pôde ser lido — o .glb parece corrompido ou não é um glTF válido.')
+    expect(alert).toHaveTextContent('Arquivo não pôde ser lido — o conteúdo não é um JSON válido (arquivo corrompido ou truncado).')
     expect(useFiguresStore.getState().sceneName).toBe('Cena 1')
   })
 
-  it('explains when the .glb has no app data instead of wiping the scene (fase 9, item 4)', async () => {
-    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'blender.glb'), data: new ArrayBuffer(4) })
-    vi.mocked(importSceneFromGlb).mockRejectedValue(new SceneFileError('missingAppData'))
+  it('explains when the file has no app data instead of wiping the scene (fase 9, item 4)', async () => {
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'blender.json'), data: new ArrayBuffer(4) })
+    vi.mocked(parseSceneFile).mockImplementation(() => { throw new SceneFileError('missingAppData') })
 
     const user = userEvent.setup()
     await renderScenesPanel()
-    await user.click(screen.getByRole('button', { name: 'Importar cena (.glb)' }))
+    await user.click(screen.getByRole('button', { name: 'Importar cena (.json)' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'O arquivo é um .glb válido, mas não contém os dados do Virtual Mockup (custom properties). Reexporte com a opção de custom properties ligada.',
+      'O arquivo é um JSON válido, mas não é do Virtual Mockup — falta o campo "version" que todo arquivo do aplicativo grava.',
     )
   })
 
   it('clears the error message after a successful import (fase 9, item 4)', async () => {
-    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'x.glb'), data: new ArrayBuffer(4) })
-    vi.mocked(importSceneFromGlb).mockRejectedValueOnce(new SceneFileError('unreadable')).mockResolvedValueOnce({
+    vi.mocked(pickFile).mockResolvedValue({ file: new File([], 'x.json'), data: new ArrayBuffer(4) })
+    vi.mocked(parseSceneFile).mockImplementationOnce(() => { throw new SceneFileError('unreadable') }).mockReturnValueOnce({
       name: 'Cena importada',
       figures: [],
       nextFigureSeq: 1,
@@ -176,7 +178,7 @@ describe('ScenesPanel', () => {
 
     const user = userEvent.setup()
     await renderScenesPanel()
-    const button = screen.getByRole('button', { name: 'Importar cena (.glb)' })
+    const button = screen.getByRole('button', { name: 'Importar cena (.json)' })
 
     await user.click(button)
     expect(await screen.findByRole('alert')).toBeInTheDocument()
@@ -191,8 +193,8 @@ describe('ScenesPanel', () => {
     const user = userEvent.setup()
     await renderScenesPanel()
 
-    await user.click(screen.getByRole('button', { name: 'Importar cena (.glb)' }))
-    expect(vi.mocked(importSceneFromGlb)).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Importar cena (.json)' }))
+    expect(vi.mocked(parseSceneFile)).not.toHaveBeenCalled()
   })
 
   describe('workspace em pasta — sem File System Access API (fallback)', () => {
@@ -201,12 +203,12 @@ describe('ScenesPanel', () => {
       expect(screen.queryByRole('button', { name: 'Salvar workspace em pasta' })).not.toBeInTheDocument()
       expect(
         screen.getByText(
-          'Este navegador não suporta escolher pasta — use os arquivos individuais (workspace.json + joint-limits.json + poses.json + .glb) para abrir um workspace salvo.',
+          'Este navegador não suporta escolher pasta — selecione os arquivos individuais (workspace.json + os .json das cenas + joint-limits.json + poses.json) para abrir um workspace salvo.',
         ),
       ).toBeInTheDocument()
     })
 
-    it('opens a workspace from a set of picked files (workspace.json + .glb)', async () => {
+    it('opens a workspace from a set of picked files (workspace.json + scene .json)', async () => {
       vi.mocked(pickMultipleFiles).mockResolvedValue([new File([], 'workspace.json')])
       vi.mocked(loadWorkspaceFromFiles).mockResolvedValue({
         scenes: [
@@ -382,5 +384,82 @@ describe('ScenesPanel — novo workspace (fase 9, item 7)', () => {
     expect(useFiguresStore.getState().scenes).toHaveLength(0)
     expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
     expect(screen.getByText('Nenhuma cena salva ainda.')).toBeInTheDocument()
+  })
+})
+
+/**
+ * Fase 13 — a faixa do mapa de profundidade (perto/longe) é COMPARTILHADA
+ * pelas três saídas, então mora aqui, na seção de Configurações do painel de
+ * Cenas, e não dentro de uma delas.
+ */
+describe('ScenesPanel — Configurações', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useDepthStore.setState(useDepthStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  // Regra do #83: seção nova nasce recolhida — as exceções são "poses" e
+  // "cameraFraming".
+  it('nasce recolhida e abre no clique', async () => {
+    const user = userEvent.setup()
+    await renderScenesPanel()
+
+    expect(screen.queryByLabelText('Perto (m)')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Configurações' }))
+    expect(useUIStore.getState().collapsedSections.sceneSettings).toBe(false)
+    expect(screen.getByLabelText('Perto (m)')).toBeInTheDocument()
+  })
+
+  it('a faixa nasce automática, e travá-la libera os campos de perto/longe', async () => {
+    useUIStore.setState((state) => ({
+      collapsedSections: { ...state.collapsedSections, sceneSettings: false },
+    }))
+    const user = userEvent.setup()
+    await renderScenesPanel()
+
+    const automatica = screen.getByLabelText('Faixa automática (pelos bonecos e objetos)')
+    expect(automatica).toBeChecked()
+    expect(screen.getByLabelText('Perto (m)')).toBeDisabled()
+
+    await user.click(automatica)
+    expect(useDepthStore.getState().autoRange).toBe(false)
+    expect(screen.getByLabelText('Perto (m)')).toBeEnabled()
+  })
+
+  /**
+   * O chão fora da conta da faixa vira uma cunha branca chapada em primeiro
+   * plano, disputando o branco com a superfície mais próxima do boneco. O
+   * recorte pela faixa é o padrão; os outros dois valores continuam à mão.
+   */
+  it('escolhe o que o chão faz no mapa, recortado por padrão', async () => {
+    useUIStore.setState((state) => ({
+      collapsedSections: { ...state.collapsedSections, sceneSettings: false },
+    }))
+    const user = userEvent.setup()
+    await renderScenesPanel()
+
+    const select = screen.getByLabelText('Chão no mapa')
+    expect(select).toHaveValue('clipped')
+
+    await user.selectOptions(select, 'hidden')
+    expect(useDepthStore.getState().groundMode).toBe('hidden')
+  })
+
+  it('comita perto e longe no blur, como os demais numéricos do projeto', async () => {
+    useUIStore.setState((state) => ({
+      collapsedSections: { ...state.collapsedSections, sceneSettings: false },
+    }))
+    useDepthStore.setState({ autoRange: false })
+    const user = userEvent.setup()
+    await renderScenesPanel()
+
+    const perto = screen.getByLabelText('Perto (m)')
+    await user.clear(perto)
+    await user.type(perto, '3')
+    await user.tab()
+
+    expect(useDepthStore.getState().nearM).toBe(3)
   })
 })

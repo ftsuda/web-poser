@@ -1,14 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { CameraBookmark, Figure } from '../../store/figuresStore'
-import { exportObjectsToGlb } from '../gltfIO'
 import {
   SceneFileError,
-  exportCameraBookmarksToGlb,
-  exportFigureToGlb,
-  exportSceneToGlb,
-  importCameraBookmarksFromGlb,
-  importFigureFromGlb,
-  importSceneFromGlb,
+  parseCameraBookmarksFile,
+  parseSceneFile,
+  serializeCameraBookmarksFile,
+  serializeSceneFile,
 } from '../sceneFile'
 import type { SceneWorkingState } from '../sceneSerialization'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
@@ -48,15 +45,11 @@ const scene: SceneWorkingState = {
 }
 
 describe('sceneFile — cena completa', () => {
-  it('exporta e reimporta uma cena completa preservando bonecos, ambiente, bookmarks e contadores', async () => {
-    const glb = await exportSceneToGlb(scene)
-    expect(glb.byteLength).toBeGreaterThan(0)
-
-    const restored = await importSceneFromGlb(glb)
-    expect(restored).toEqual(scene)
+  it('exporta e reimporta uma cena completa preservando bonecos, ambiente, bookmarks e contadores', () => {
+    expect(parseSceneFile(serializeSceneFile(scene))).toEqual(scene)
   })
 
-  it('exporta uma cena vazia sem lançar erro', async () => {
+  it('exporta uma cena vazia sem lançar erro', () => {
     const empty: SceneWorkingState = {
       name: 'Vazia',
       figures: [],
@@ -69,60 +62,42 @@ describe('sceneFile — cena completa', () => {
       nextSnapshotNumber: 1,
       sceneCamera: DEFAULT_SCENE_CAMERA,
     }
-    const glb = await exportSceneToGlb(empty)
-    const restored = await importSceneFromGlb(glb)
-    expect(restored).toEqual(empty)
+    expect(parseSceneFile(serializeSceneFile(empty))).toEqual(empty)
   })
-})
 
-describe('sceneFile — boneco individual', () => {
-  it('exporta um único boneco e reimporta com pose/altura/cor preservadas, sem dados de cena', async () => {
-    const glb = await exportFigureToGlb(figureA)
-    const restored = await importFigureFromGlb(glb)
-    expect(restored).toEqual(figureA)
+  it('o arquivo abre no editor identificando-se: `version` e `leiame` antes do conteúdo', () => {
+    const keys = Object.keys(JSON.parse(serializeSceneFile(scene)) as Record<string, unknown>)
+    expect(keys.slice(0, 2)).toEqual(['version', 'leiame'])
   })
 })
 
 describe('sceneFile — conjunto de bookmarks de câmera', () => {
-  it('exporta e reimporta bookmarks de câmera sem depender de bonecos/ambiente', async () => {
-    const glb = await exportCameraBookmarksToGlb([bookmark])
-    const restored = await importCameraBookmarksFromGlb(glb)
-    expect(restored).toEqual([bookmark])
+  it('exporta e reimporta bookmarks de câmera sem depender de bonecos/ambiente', () => {
+    expect(parseCameraBookmarksFile(serializeCameraBookmarksFile([bookmark]))).toEqual([bookmark])
   })
 
-  it('inclui uma câmera glTF por bookmark exportado', async () => {
-    const glb = await exportCameraBookmarksToGlb([bookmark])
-    const { importGlb } = await import('../gltfIO')
-    const imported = await importGlb(glb)
-    let cameraCount = 0
-    imported.scene.traverse((object) => {
-      if ((object as { isCamera?: boolean }).isCamera) cameraCount += 1
-    })
-    expect(cameraCount).toBe(1)
+  it('aceita um arquivo de cena inteiro como fonte de bookmarks', () => {
+    expect(parseCameraBookmarksFile(serializeSceneFile(scene))).toEqual([bookmark])
   })
 })
 
 describe('sceneFile — erro de importação visível (fase 9, item 4)', () => {
-  it('rejeita bytes que não são um .glb com reason "unreadable"', async () => {
-    const garbage = new TextEncoder().encode('isto não é um glb').buffer as ArrayBuffer
-
-    await expect(importSceneFromGlb(garbage)).rejects.toBeInstanceOf(SceneFileError)
-    await expect(importSceneFromGlb(garbage)).rejects.toMatchObject({ reason: 'unreadable' })
+  it('rejeita um texto que não é JSON com reason "unreadable"', () => {
+    expect(() => parseSceneFile('isto não é json')).toThrow(SceneFileError)
+    expect(() => parseSceneFile('isto não é json')).toThrow(expect.objectContaining({ reason: 'unreadable' }))
   })
 
-  it('rejeita um .glb válido sem o bloco de dados do app com reason "missingAppData"', async () => {
-    // Um `.glb` legítimo (o Blender reexporta assim quando as custom
-    // properties não viajam) — antes, isso substituía a cena por uma vazia
-    // sem nenhum aviso.
-    const glb = await exportObjectsToGlb([], {})
+  it('rejeita um JSON válido de outra origem com reason "missingAppData"', () => {
+    // Um JSON legítimo, mas que não é nosso — antes de existir esta checagem,
+    // isso substituía a cena por uma vazia sem nenhum aviso.
+    const alheio = JSON.stringify({ scene: 'de outro programa', objects: [] })
 
-    await expect(importSceneFromGlb(glb)).rejects.toMatchObject({ reason: 'missingAppData' })
-    await expect(importFigureFromGlb(glb)).rejects.toMatchObject({ reason: 'missingAppData' })
-    await expect(importCameraBookmarksFromGlb(glb)).rejects.toMatchObject({ reason: 'missingAppData' })
+    for (const parse of [parseSceneFile, parseCameraBookmarksFile]) {
+      expect(() => parse(alheio)).toThrow(expect.objectContaining({ reason: 'missingAppData' }))
+    }
   })
 
-  it('continua importando normalmente um arquivo válido do app', async () => {
-    const glb = await exportSceneToGlb(scene)
-    await expect(importSceneFromGlb(glb)).resolves.toMatchObject({ name: scene.name })
+  it('continua importando normalmente um arquivo válido do app', () => {
+    expect(parseSceneFile(serializeSceneFile(scene))).toMatchObject({ name: scene.name })
   })
 })

@@ -11,7 +11,7 @@ import { JOINT_NAMES, ROOT_JOINT_NAME } from './skeleton'
  * travadas, para o efeito nunca ficar inexplicável.
  *
  * **O lock é estado de TRABALHO, não conteúdo da cena** (decisão do usuário):
- * vive na sessão e no autosave do navegador, e não entra no `.glb` — que
+ * vive na sessão e no autosave do navegador, e não entra no arquivo da cena — que
  * continua contendo só a pose. Por isso também fica fora do histórico de undo:
  * travar não é uma edição do boneco.
  *

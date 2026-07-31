@@ -2,6 +2,7 @@ import '../../i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useDepthStore } from '../../store/depthStore'
 import { useFiguresStore } from '../../store/figuresStore'
 import { useSnapshotCaptureStore } from '../../store/snapshotCaptureStore'
 import { SnapshotPanel } from '../SnapshotPanel'
@@ -16,6 +17,7 @@ describe('SnapshotPanel', () => {
   beforeEach(() => {
     useSnapshotCaptureStore.setState(useSnapshotCaptureStore.getInitialState())
     useFiguresStore.setState(useFiguresStore.getInitialState())
+    useDepthStore.setState(useDepthStore.getInitialState())
   })
 
   it('shows the panel title with 16:9 in 1080p selected by default', async () => {
@@ -91,6 +93,22 @@ describe('SnapshotPanel', () => {
         screen.getByText("Este navegador não suporta escolher pasta — as capturas serão baixadas."),
       ).toBeInTheDocument()
     })
+  })
+
+  /**
+   * Fase 13: profundidade é uma saída ALTERNATIVA, e não uma segunda saída —
+   * uma captura gera UM arquivo. A vista da tela (Toolbar) fica intacta.
+   */
+  it('escolhe gerar o PNG em profundidade, desligado por padrão', async () => {
+    const user = userEvent.setup()
+    await renderSnapshotPanel()
+
+    const checkbox = screen.getByLabelText('Gerar o PNG em profundidade')
+    expect(checkbox).not.toBeChecked()
+
+    await user.click(checkbox)
+    expect(useDepthStore.getState().snapshotDepth).toBe(true)
+    expect(useDepthStore.getState().previewEnabled).toBe(false)
   })
 
   describe('when File System Access API is available', () => {

@@ -238,57 +238,83 @@ describe('TimelineBar — inserir keyframe', () => {
 })
 
 /**
- * Item 41: o keyframe que o painel destaca (item 40) também aparece na régua,
- * para a barra e o painel contarem a mesma história.
+ * A régua numerada abaixo do slider (pedido do usuário, 2026-07-31) e, dentro
+ * dela, o destaque do keyframe que o painel marca (item 41) — para a barra e o
+ * painel contarem a mesma história.
  */
-describe('TimelineBar — marca do keyframe na bancada', () => {
+describe('TimelineBar — régua numerada dos keyframes', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useAnimationStore.setState(useAnimationStore.getInitialState())
     useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, timeline: false } }))
   })
 
-  const marca = (container: HTMLElement) => container.querySelector('.timeline-bar__visited')
+  const marcas = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.timeline-bar__mark'))
+  const destaque = (container: HTMLElement) =>
+    container.querySelector('.timeline-bar__mark--visited')
 
-  it('sem "Ir para" a régua não tem marca nenhuma', async () => {
+  it('numera cada keyframe e o põe no instante dele', async () => {
     comAnimacao(3)
     const { container } = await renderTimelineBar()
 
-    expect(marca(container)).toBeNull()
+    // 3 keyframes de 1000 ms: o total é 2000 ms, o k2 cai na metade e o k3 no fim.
+    expect(marcas(container).map((marca) => marca.textContent)).toEqual(['1', '2', '3'])
+    expect(marcas(container).map((marca) => (marca as HTMLElement).style.left)).toEqual([
+      '0%',
+      '50%',
+      '100%',
+    ])
   })
 
-  it('marca a posição do keyframe que está na cena de trabalho', async () => {
+  /** O número sozinho não diz quando: o título completa com o instante. */
+  it('cada marca diz o número e o instante', async () => {
     comAnimacao(3)
-    // 3 keyframes de 1000 ms: o total é 2000 ms e o k2 cai na metade.
+    const { container } = await renderTimelineBar()
+
+    expect(marcas(container)[1]).toHaveAttribute('title', 'Keyframe 2 — 1.0s')
+  })
+
+  it('sem "Ir para" nenhuma marca fica em destaque', async () => {
+    comAnimacao(3)
+    const { container } = await renderTimelineBar()
+
+    expect(marcas(container)).toHaveLength(3)
+    expect(destaque(container)).toBeNull()
+  })
+
+  it('destaca a marca do keyframe que está na cena de trabalho', async () => {
+    comAnimacao(3)
     useAnimationStore.setState({ visitedKeyframeId: 'k2' })
     const { container } = await renderTimelineBar()
 
-    const traco = marca(container)
+    const traco = destaque(container)
     expect(traco).toHaveStyle({ left: '50%' })
     expect(traco).toHaveAttribute('title', 'Keyframe 2 está na cena de trabalho')
   })
 
-  /** A marca é leitura: some sozinha quando o keyframe deixa de existir. */
-  it('remover o keyframe marcado apaga a marca', async () => {
+  /** O destaque é leitura: some sozinho quando o keyframe deixa de existir. */
+  it('remover o keyframe destacado apaga o destaque, e a marca some com ele', async () => {
     comAnimacao(3)
     useAnimationStore.setState({ visitedKeyframeId: 'k3' })
     const { container } = await renderTimelineBar()
-    expect(marca(container)).not.toBeNull()
+    expect(destaque(container)).not.toBeNull()
 
     act(() => {
       useFiguresStore.getState().removeAnimationKeyframe(WORKING_ANIMATION_ID, 'k3')
     })
 
-    expect(marca(container)).toBeNull()
+    expect(destaque(container)).toBeNull()
+    expect(marcas(container)).toHaveLength(2)
   })
 
-  /** Recolhida, o corpo da barra nem é renderizado — não há o que marcar. */
-  it('recolhida, não desenha marca', async () => {
+  /** Recolhida, o corpo da barra nem é renderizado — não há régua nenhuma. */
+  it('recolhida, não desenha régua', async () => {
     comAnimacao(3)
     useAnimationStore.setState({ visitedKeyframeId: 'k2' })
     useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, timeline: true } }))
     const { container } = await renderTimelineBar()
 
-    expect(marca(container)).toBeNull()
+    expect(marcas(container)).toHaveLength(0)
   })
 })

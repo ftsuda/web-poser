@@ -5,7 +5,7 @@
  * Fica numa chave PRÓPRIA (`virtual-mockup:ui:v1`), separada do autosave do
  * workspace (`autosave.ts`), de propósito: o estado recolhido/expandido é
  * preferência de quem está usando o app, não conteúdo da cena — se entrasse
- * no mesmo bloco, viajaria junto no `extras` do `.glb` e no `workspace.json`,
+ * no mesmo bloco, viajaria junto no arquivo da cena e no `workspace.json`,
  * poluindo um formato que o Blender também lê. Continua sendo gravado
  * automaticamente, sem ação do usuário, como o resto do autosave.
  */
@@ -70,6 +70,8 @@ export const SECTION_KEYS = [
   'cameraMove',
   'cameraOrtho',
   'cameraBookmarks',
+  /** Configurações do painel de Cenas — hoje, a faixa do mapa de profundidade (fase 13). */
+  'sceneSettings',
 ] as const
 
 export type SectionKey = (typeof SECTION_KEYS)[number]
@@ -108,7 +110,7 @@ export interface UIPreferences {
   /**
    * Régua vertical do viewport (fase 9, item 11). Fica aqui, e não no
    * `environment` da cena (junto da grade), porque é apoio de tela: no
-   * `environment` viajaria no `extras` do `.glb` e no `workspace.json`,
+   * `environment` viajaria no arquivo da cena e no `workspace.json`,
    * mudando um contrato de arquivo que o Blender também lê — sem nenhum
    * ganho, já que a régua não é conteúdo da composição.
    */
@@ -130,7 +132,7 @@ export interface UIPreferences {
    * Casca visual do boneco — manequim de madeira ou palito de juntas grandes
    * (DECISOES.md #81). Mesmo raciocínio da régua e da máscara: é modo de
    * VISUALIZAÇÃO, não conteúdo. Guardar no `environment` da cena a faria viajar
-   * no `extras` do `.glb` e no `workspace.json`, mudando um contrato de arquivo
+   * no arquivo da cena e no `workspace.json`, mudando um contrato de arquivo
    * que o Blender também lê para descrever algo que nem existe fora da tela.
    *
    * Por ser preferência de tela e não de cena, ela também vale para TODOS os

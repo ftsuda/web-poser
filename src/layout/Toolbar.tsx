@@ -4,6 +4,7 @@ import { useStore } from 'zustand'
 import { supportedLanguages } from '../i18n'
 import type { FigureStyle } from '../figure/skeleton'
 import type { FrameMaskSource } from '../scene/frameMask'
+import { useDepthStore } from '../store/depthStore'
 import { useFiguresStore, type BackgroundTone } from '../store/figuresStore'
 import { useUIStore } from '../store/uiStore'
 
@@ -23,6 +24,8 @@ export function Toolbar() {
   const setFrameMaskSource = useUIStore((state) => state.setFrameMaskSource)
   const figureStyle = useUIStore((state) => state.figureStyle)
   const setFigureStyle = useUIStore((state) => state.setFigureStyle)
+  const depthPreview = useDepthStore((state) => state.previewEnabled)
+  const togglePreviewDepth = useDepthStore((state) => state.togglePreview)
 
   // O histórico do `zundo` é um store vanilla à parte do `figuresStore` — sem
   // esta assinatura os botões não saberiam quando habilitar/desabilitar.
@@ -105,8 +108,18 @@ export function Toolbar() {
           {t('toolbar.ruler')}
         </label>
 
+        {/* Mapa de profundidade NA TELA (fase 13). Mesma natureza da régua e da
+            casca do boneco: é modo de VISUALIZAÇÃO — fora do undo, fora do
+            arquivo da cena —, e por isso mora aqui e não num painel. Ligar a
+            vista não liga saída nenhuma: o PNG e o MP4 têm escolha própria, no
+            painel de cada um. */}
+        <label className="toolbar__field toolbar__field--checkbox" title={t('toolbar.depthHint')}>
+          <input type="checkbox" checked={depthPreview} onChange={togglePreviewDepth} />
+          {t('toolbar.depth')}
+        </label>
+
         {/* Casca visual do boneco (DECISOES.md #81). É modo de VISUALIZAÇÃO: não
-            entra no undo, não viaja no `.glb` e não muda pose nem limites — por
+            entra no undo, não viaja no arquivo da cena e não muda pose nem limites — por
             isso mora na Toolbar, ao lado do fundo e da régua, e não no painel de
             Propriedades do boneco selecionado. */}
         <label className="toolbar__field" title={t('toolbar.figureStyleHint')}>

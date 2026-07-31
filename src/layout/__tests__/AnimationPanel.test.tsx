@@ -11,6 +11,7 @@ vi.mock('../../persistence/fileIO', () => ({
 import { pickFile, writeFileToDirectoryOrDownload } from '../../persistence/fileIO'
 import { useAnimationStore } from '../../store/animationStore'
 import { useCameraStore } from '../../store/cameraStore'
+import { useDepthStore } from '../../store/depthStore'
 import { useFiguresStore } from '../../store/figuresStore'
 import { useUIStore } from '../../store/uiStore'
 import { useKeyframeThumbnailStore } from '../../store/keyframeThumbnailStore'
@@ -57,6 +58,7 @@ describe('AnimationPanel', () => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
     useAnimationStore.setState(useAnimationStore.getInitialState())
     useCameraStore.setState(useCameraStore.getInitialState())
+    useDepthStore.setState(useDepthStore.getInitialState())
     abrirPainel()
   })
 
@@ -1555,5 +1557,33 @@ describe('AnimationPanel — seções recolhíveis', () => {
 
     await user.click(screen.getByRole('button', { name: 'Vídeo' }))
     expect(screen.queryByRole('button', { name: 'Exportar MP4' })).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Fase 13 — o MP4 em profundidade. Fica na seção de vídeo, junto do fps e da
+ * resolução: é escolha de SAÍDA, feita na hora de exportar.
+ */
+describe('AnimationPanel — saída em profundidade', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useDepthStore.setState(useDepthStore.getInitialState())
+    abrirPainel()
+  })
+
+  it('escolhe exportar o MP4 em profundidade, desligado por padrão', async () => {
+    comAnimacao(2)
+    const user = userEvent.setup()
+    await renderAnimationPanel()
+
+    const checkbox = screen.getByLabelText('Exportar o MP4 em profundidade')
+    expect(checkbox).not.toBeChecked()
+
+    await user.click(checkbox)
+    expect(useDepthStore.getState().videoDepth).toBe(true)
+    // A escolha do PNG e a vista da tela seguem intocadas.
+    expect(useDepthStore.getState().snapshotDepth).toBe(false)
+    expect(useDepthStore.getState().previewEnabled).toBe(false)
   })
 })

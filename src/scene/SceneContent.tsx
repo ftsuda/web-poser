@@ -1,4 +1,4 @@
-import { GRID_DIVISIONS, GROUND_SIZE, OVERLAY_NAMES, SHADOW_INTENSITY } from './constants'
+import { GRID_DIVISIONS, GROUND_NAME, GROUND_SIZE, OVERLAY_NAMES, SHADOW_INTENSITY } from './constants'
 
 export interface SceneContentProps {
   grid: boolean
@@ -19,7 +19,7 @@ export function SceneContent({ grid }: SceneContentProps) {
         shadow-intensity={SHADOW_INTENSITY}
       />
 
-      <mesh name="ground" rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <mesh name={GROUND_NAME} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[GROUND_SIZE, GROUND_SIZE]} />
         <meshStandardMaterial color="#606060" />
       </mesh>

@@ -39,17 +39,23 @@ describe('gravação', () => {
     expect({ ...posed, position: figure.position }).toEqual(figure)
   })
 
-  it('o arquivo traz versão, leiame e o boneco', () => {
+  /**
+   * `figures` no plural, com um item: é o nome usado por cena, animação, trechos
+   * e autosave, e este arquivo era o único do projeto a destoar com `figure`
+   * singular (DECISOES.md #87).
+   */
+  it('o arquivo traz versão, leiame e o boneco numa lista `figures`', () => {
     const file = buildFigurePoseFile(makeFigure())
     expect(file.version).toBe(FIGURE_POSE_VERSION)
     expect(file.leiame.length).toBeGreaterThan(0)
-    expect(file.figure.pose['elbow.L']).toEqual({ x: -40, y: 90, z: 0 })
+    expect(file.figures).toHaveLength(1)
+    expect(file.figures[0].pose['elbow.L']).toEqual({ x: -40, y: 90, z: 0 })
   })
 
   it('serializa como JSON legível', () => {
     const json = serializeFigurePoseFile(makeFigure())
     expect(json).toContain('\n')
-    expect(JSON.parse(json).figure.name).toBe('Boneco 1')
+    expect(JSON.parse(json).figures[0].name).toBe('Boneco 1')
   })
 })
 
@@ -92,6 +98,19 @@ describe('leitura: ida e volta', () => {
 
 describe('leitura: a família de formatos de animação', () => {
   const pose = { 'elbow.L': { x: -40, y: 90, z: 0 } }
+
+  /**
+   * O arquivo gravava `figure` singular até DECISOES.md #87. Continua sendo
+   * lido — um arquivo de pose que já esteja no celular do usuário não pode
+   * deixar de abrir por causa de uma troca de nome de chave.
+   */
+  it('lê o `figure` singular dos arquivos antigos igual ao `figures` de hoje', () => {
+    const figure = makeFigure({ pose })
+
+    expect(parseFigurePoseFile({ version: 1, figure })).toEqual(
+      parseFigurePoseFile({ version: 1, figures: [figure] }),
+    )
+  })
 
   it('aceita um boneco cru', () => {
     expect(parseFigurePoseFile({ height: 1.6, position: [1, 0.2, 3], rotation: { x: 0, y: 0, z: 0 }, pose })?.positionY).toBe(0.2)

@@ -46,4 +46,17 @@ describe('formatSnapshotFilename', () => {
   it('slugifies the scene name as part of the filename', () => {
     expect(formatSnapshotFilename('Minha Cena Legal', 1)).toBe('Minha-Cena-Legal_snap001.png')
   })
+
+  /**
+   * Fase 13: profundidade é uma saída ALTERNATIVA — quem quer as duas versões
+   * captura duas vezes, e os números da sequência ficam diferentes. O sufixo é
+   * o que permite reconhecer qual arquivo é qual na pasta.
+   */
+  it('marca o mapa de profundidade com o sufixo `_depth`', () => {
+    expect(formatSnapshotFilename('Cena 1', 2, { depth: true })).toBe('Cena-1_snap002_depth.png')
+  })
+
+  it('sem a opção, o nome é exatamente o de sempre', () => {
+    expect(formatSnapshotFilename('Cena 1', 2, { depth: false })).toBe('Cena-1_snap002.png')
+  })
 })

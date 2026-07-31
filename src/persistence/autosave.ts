@@ -13,7 +13,7 @@ import { sceneFromExtras, sceneToExtras, type SceneWorkingState } from './sceneS
  * Autosave contínuo do workspace inteiro (cena de trabalho + catálogo de
  * snapshots) em `localStorage` — restaurado automaticamente ao abrir o app,
  * sem diálogo de confirmação (ver PLANO.md > "Workspace: catálogo de
- * cenas"). Reaproveita o mesmo schema de `extras` usado pelo `.glb`
+ * cenas"). Reaproveita o mesmo schema de cena usado pelo arquivo `.json`
  * (`sceneToExtras`/`sceneFromExtras`) por desempenho e para não duplicar
  * regras de validação/defaults.
  */
@@ -50,8 +50,8 @@ export interface WorkspaceState {
   /**
    * Juntas travadas por boneco (ver DECISOES.md #42). É estado de TRABALHO
    * (decisão do usuário): entra aqui, para sobreviver a recarregar a página, e
-   * NÃO entra no `.glb` — por isso fica no nível de cima do payload, fora do
-   * bloco de `extras` que o `.glb` compartilha.
+   * NÃO entra no arquivo da cena — por isso fica no nível de cima do payload,
+   * fora do bloco de cena que o `.json` compartilha.
    */
   jointLocks: JointLockMap
 }

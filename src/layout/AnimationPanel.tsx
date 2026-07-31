@@ -34,6 +34,7 @@ import {
 } from '../snapshot/constants'
 import { useAnimationStore } from '../store/animationStore'
 import { useCameraStore } from '../store/cameraStore'
+import { useDepthStore } from '../store/depthStore'
 import { useFiguresStore } from '../store/figuresStore'
 import { useKeyframeThumbnailStore } from '../store/keyframeThumbnailStore'
 import type { AnimationImportMode } from '../store/figuresStore'
@@ -299,6 +300,8 @@ export function AnimationPanel() {
   const setOnionSkin = useAnimationStore((state) => state.setOnionSkin)
   const onionSkinMode = useAnimationStore((state) => state.onionSkinMode)
   const setOnionSkinMode = useAnimationStore((state) => state.setOnionSkinMode)
+  const depthOutput = useDepthStore((state) => state.videoDepth)
+  const toggleDepthOutput = useDepthStore((state) => state.toggleVideoDepth)
   const fps = useAnimationStore((state) => state.fps)
   const aspectKey = useAnimationStore((state) => state.aspectKey)
   const qualityKey = useAnimationStore((state) => state.qualityKey)
@@ -811,20 +814,39 @@ export function AnimationPanel() {
       )}
 
       {/* Ações da linha do tempo INTEIRA (pedido do usuário, 2026-07-31):
-          fechar o ciclo, carimbar a câmera, gerar miniaturas e guardar uma
-          faixa como trecho fazem todas a mesma coisa — agem sobre a lista,
-          não sobre um keyframe. Estavam espalhadas por três pontos do painel,
-          duas delas depois do bloco de vídeo. Aqui elas ficam logo abaixo da
-          lista de que falam, e a velocidade fecha o bloco por ser a outra
-          propriedade da linha do tempo como um todo. */}
+          fechar o ciclo, carimbar a câmera e gerar miniaturas fazem todas a
+          mesma coisa — agem sobre a lista, não sobre um keyframe. Estavam
+          espalhadas por três pontos do painel, duas delas depois do bloco de
+          vídeo. Aqui elas ficam logo abaixo da lista de que falam, abertas
+          pela velocidade — a outra propriedade da linha do tempo como um todo.
+
+          "Salvar trecho" morava aqui e saiu para "Trechos prontos" (pedido do
+          usuário, 2026-07-31): das quatro, era a única que não MEXIA na linha
+          do tempo — lia uma faixa dela para produzir um trecho, que é o que o
+          outro bloco aplica, renomeia e remove. */}
       <fieldset className="animation-panel__timeline-actions">
         <legend>{t('panels.animation.timelineActions')}</legend>
+
+        {/* A velocidade abre o bloco (pedido do usuário): é a propriedade da
+            linha do tempo como um todo, e não uma das ações — quem chega aqui
+            depois de montar os keyframes olha para ela primeiro. Vale para a
+            reprodução na tela E para o vídeo; não mexe na linha do tempo, os
+            keyframes continuam nos mesmos instantes. */}
+        <SpeedField
+          label={t('panels.animation.speed')}
+          speed={speed}
+          disabled={!active || exporting}
+          onCommit={(value) => active && setAnimationSpeed(active.id, value)}
+        />
+        <p className="animation-panel__hint">
+          {t('panels.animation.speedHint', { duration: formatSeconds(outputMs) })}
+        </p>
 
         {/* Item 27: sem o keyframe 1 repetido no fim, nenhum ciclo emenda — a
             última transição não volta ao ponto de partida. */}
         <button
           type="button"
-          className="animation-panel__wide"
+          className="panel-action animation-panel__wide"
           onClick={() => active && closeAnimationCycle(active.id)}
           disabled={!active || active.keyframes.length < 2 || exporting}
           title={t('panels.animation.closeCycleHint')}
@@ -839,7 +861,7 @@ export function AnimationPanel() {
             seria carimbado é o enquadramento de antes de dar play. */}
         <button
           type="button"
-          className="animation-panel__wide"
+          className="panel-action animation-panel__wide"
           onClick={() => setApplyingCamera(true)}
           disabled={!active || active.keyframes.length === 0 || playing || exporting}
           title={t('panels.animation.applyCameraHint')}
@@ -854,7 +876,7 @@ export function AnimationPanel() {
             guardado só em memória. */}
         <button
           type="button"
-          className="animation-panel__wide"
+          className="panel-action animation-panel__wide"
           onClick={requestThumbnails}
           disabled={!active || active.keyframes.length === 0 || exporting}
           title={t('panels.animation.thumbnailsHint')}
@@ -862,82 +884,6 @@ export function AnimationPanel() {
           {t('panels.animation.thumbnails')}
         </button>
 
-        {/* Salvar uma faixa da linha do tempo como trecho reutilizável (item
-            39): os keyframes literais, SEM a câmera — ao aplicar, o trecho
-            congela a câmera viva, como os de fábrica. */}
-        {active && active.keyframes.length >= 2 && (
-          <div className="animation-panel__save-clip">
-            <label htmlFor="animation-clip-from" className="animation-panel__field">
-              {t('panels.animation.clipRangeFrom')}
-              <select
-                id="animation-clip-from"
-                value={rangeFrom}
-                onChange={(event) => setRangeFromDraft(Number(event.target.value))}
-              >
-                {active.keyframes.map((keyframe, index) => (
-                  // O número do keyframe MAIS o instante: só o número faria a
-                  // opção "2" (índice 1) e o valor 2 se confundirem, na leitura
-                  // e em qualquer automação.
-                  <option key={keyframe.id} value={index}>
-                    {`${index + 1} — ${formatSeconds(startTimes[index])}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label htmlFor="animation-clip-to" className="animation-panel__field">
-              {t('panels.animation.clipRangeTo')}
-              <select
-                id="animation-clip-to"
-                value={rangeTo}
-                onChange={(event) => setRangeToDraft(Number(event.target.value))}
-              >
-                {active.keyframes.map((keyframe, index) => (
-                  // O número do keyframe MAIS o instante: só o número faria a
-                  // opção "2" (índice 1) e o valor 2 se confundirem, na leitura
-                  // e em qualquer automação.
-                  <option key={keyframe.id} value={index}>
-                    {`${index + 1} — ${formatSeconds(startTimes[index])}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label htmlFor="animation-clip-name" className="animation-panel__field">
-              {t('panels.animation.clipSaveName')}
-              <input
-                id="animation-clip-name"
-                type="text"
-                value={clipNameDraft}
-                onChange={(event) => setClipNameDraft(event.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                if (saveClipFromRange(active.id, rangeFrom, rangeTo, clipNameDraft)) setClipNameDraft('')
-              }}
-              disabled={rangeFrom === rangeTo}
-              title={t('panels.animation.clipSaveHint')}
-            >
-              {t('panels.animation.clipSave')}
-            </button>
-            {rangeFrom === rangeTo && (
-              <p className="animation-panel__hint">{t('panels.animation.clipRangeTooShort')}</p>
-            )}
-          </div>
-        )}
-
-        {/* Vale para a reprodução na tela E para o vídeo — o que se vê tocando é
-            o que sai no arquivo. Não mexe na linha do tempo: os keyframes
-            continuam nos mesmos instantes. */}
-        <SpeedField
-          label={t('panels.animation.speed')}
-          speed={speed}
-          disabled={!active || exporting}
-          onCommit={(value) => active && setAnimationSpeed(active.id, value)}
-        />
-        <p className="animation-panel__hint">
-          {t('panels.animation.speedHint', { duration: formatSeconds(outputMs) })}
-        </p>
       </fieldset>
 
       {/* Trechos prontos (DECISOES.md #60): sequências predefinidas de
@@ -1085,6 +1031,7 @@ export function AnimationPanel() {
 
           <button
             type="button"
+            className="panel-action"
             onClick={() => {
               if (savedClip) {
                 // Um papel só: cada boneco marcado executa o trecho no próprio
@@ -1113,6 +1060,79 @@ export function AnimationPanel() {
             <p className="animation-panel__hint">{t('panels.animation.clipNeedsTwoFigures')}</p>
           )}
 
+          {/* Salvar uma faixa da linha do tempo como trecho reutilizável (item
+              39): os keyframes literais, SEM a câmera — ao aplicar, o trecho
+              congela a câmera viva, como os de fábrica.
+
+              Mora AQUI (pedido do usuário, 2026-07-31), e não nas ações da
+              linha do tempo: o que sai daqui é um trecho, e é este bloco que
+              aplica, renomeia e remove trechos. Lá em cima ele era a única
+              ação que produzia algo para OUTRO bloco consumir.
+
+              É também o que põe "Nome do trecho" acima dos dois botões que o
+              usam — "Salvar trecho" cria um novo com esse nome, "Renomear
+              trecho" rebatiza o que está escolhido no combo. */}
+          {active && active.keyframes.length >= 2 && (
+            <div className="animation-panel__save-clip">
+              <label htmlFor="animation-clip-from" className="animation-panel__field">
+                {t('panels.animation.clipRangeFrom')}
+                <select
+                  id="animation-clip-from"
+                  value={rangeFrom}
+                  onChange={(event) => setRangeFromDraft(Number(event.target.value))}
+                >
+                  {active.keyframes.map((keyframe, index) => (
+                    // O número do keyframe MAIS o instante: só o número faria a
+                    // opção "2" (índice 1) e o valor 2 se confundirem, na leitura
+                    // e em qualquer automação.
+                    <option key={keyframe.id} value={index}>
+                      {`${index + 1} — ${formatSeconds(startTimes[index])}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label htmlFor="animation-clip-to" className="animation-panel__field">
+                {t('panels.animation.clipRangeTo')}
+                <select
+                  id="animation-clip-to"
+                  value={rangeTo}
+                  onChange={(event) => setRangeToDraft(Number(event.target.value))}
+                >
+                  {active.keyframes.map((keyframe, index) => (
+                    // O número do keyframe MAIS o instante: só o número faria a
+                    // opção "2" (índice 1) e o valor 2 se confundirem, na leitura
+                    // e em qualquer automação.
+                    <option key={keyframe.id} value={index}>
+                      {`${index + 1} — ${formatSeconds(startTimes[index])}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label htmlFor="animation-clip-name" className="animation-panel__field">
+                {t('panels.animation.clipSaveName')}
+                <input
+                  id="animation-clip-name"
+                  type="text"
+                  value={clipNameDraft}
+                  onChange={(event) => setClipNameDraft(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="panel-action"
+                onClick={() => {
+                  if (saveClipFromRange(active.id, rangeFrom, rangeTo, clipNameDraft)) setClipNameDraft('')
+                }}
+                disabled={rangeFrom === rangeTo}
+                title={t('panels.animation.clipSaveHint')}
+              >
+                {t('panels.animation.clipSave')}
+              </button>
+              {rangeFrom === rangeTo && (
+                <p className="animation-panel__hint">{t('panels.animation.clipRangeTooShort')}</p>
+              )}
+            </div>
+          )}
 
           {savedClip && (
             <div className="animation-panel__buttons">
@@ -1187,7 +1207,14 @@ export function AnimationPanel() {
           </select>
         </label>
 
-        <button type="button" className="animation-panel__export" onClick={requestExport} disabled={!canExport}>
+        {/* Mapa de profundidade (fase 13): mesma regra do instantâneo — saída
+            alternativa, um arquivo por exportação, sufixo `_depth` no nome. */}
+        <label className="animation-panel__toggle" title={t('panels.animation.depthOutputHint')}>
+          <input type="checkbox" checked={depthOutput} onChange={toggleDepthOutput} />
+          {t('panels.animation.depthOutput')}
+        </label>
+
+        <button type="button" className="panel-action animation-panel__export" onClick={requestExport} disabled={!canExport}>
           {t('panels.animation.export')}
         </button>
 

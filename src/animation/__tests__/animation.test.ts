@@ -14,6 +14,7 @@ import {
   clampKeyframeDuration,
   createWorkingAnimation,
   findWorkingAnimation,
+  formatAnimationFilename,
   freeKeyframeLabel,
   keyframeGroups,
   keyframeIndexAtTimeMs,
@@ -552,5 +553,20 @@ describe('freeKeyframeLabel', () => {
 
   it('texto vazio continua vazio — o trecho entra sem grupo', () => {
     expect(freeKeyframeLabel(comRotulos(['Andando 1']), '  ')).toBe('')
+  })
+})
+
+/**
+ * Fase 13: o MP4 em profundidade é uma saída ALTERNATIVA, gerada numa
+ * exportação própria — o sufixo é o que impede que ela sobrescreva o vídeo
+ * normal da mesma animação, que tem exatamente o mesmo nome.
+ */
+describe('formatAnimationFilename', () => {
+  it('sanitiza o nome da animação, como o instantâneo faz com o da cena', () => {
+    expect(formatAnimationFilename('Minha Animação')).toBe('Minha-Animação.mp4')
+  })
+
+  it('marca o mapa de profundidade com o sufixo `_depth`', () => {
+    expect(formatAnimationFilename('Minha Animação', { depth: true })).toBe('Minha-Animação_depth.mp4')
   })
 })

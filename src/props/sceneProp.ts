@@ -38,7 +38,7 @@ export type Vec3 = readonly [number, number, number]
  * (`propGeometry.ts`), não pelo índice cru do vértice no buffer.
  *
  * **Esparso de propósito:** só o que foi movido entra, então um objeto intacto
- * não ocupa nada no `localStorage` nem no `.glb`.
+ * não ocupa nada no `localStorage` nem no arquivo da cena.
  *
  * **Absoluto de propósito:** mudar o `size` depois move a primitiva de base e
  * mantém o desvio do mesmo tamanho. É o que casa com "tudo em metros" — um
@@ -149,7 +149,7 @@ function isZero(offset: Vec3): boolean {
 }
 
 /**
- * Lê os desvios de vértice de uma fonte não confiável (autosave, `.glb`
+ * Lê os desvios de vértice de uma fonte não confiável (autosave, arquivo de cena
  * editado à mão). `controlPointCount` é quantos pontos a forma tem: índice
  * fora da faixa é DESCARTADO, e não grampeado — um desvio que caiu em outro
  * vértice deformaria o objeto num lugar que ninguém pediu.

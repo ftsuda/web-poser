@@ -9,7 +9,7 @@ import { sanitizeSavedClips, type SavedClip } from '../animation/clipLibrary'
  *
  * O trecho é do WORKSPACE, não de uma cena: é o que permite montar uma
  * sequência numa cena e reaplicá-la em qualquer outra. Por isso não entra no
- * `.glb`.
+ * arquivo da cena.
  */
 
 export const CLIPS_FILENAME = 'clips.json'

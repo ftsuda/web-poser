@@ -181,7 +181,7 @@ export interface Figure {
  * Snapshot nomeado do estado de trabalho (bonecos/poses/ambiente/bookmarks de
  * câmera/contador de instantâneo) — o "catálogo de cenas" do workspace (ver
  * PLANO.md > "Workspace: catálogo de cenas" e DECISOES.md #11). Cada
- * snapshot é exatamente o que vira um `.glb` ao exportar aquela cena.
+ * snapshot é exatamente o que vira um `.json` ao exportar aquela cena.
  */
 export interface SceneSnapshotData {
   figures: Figure[]
@@ -248,7 +248,7 @@ export interface FiguresState {
    * A CÂMERA DE CENA (fase 11): um elemento da cena, separado da navegação do
    * viewport. É dela que saem os keyframes, o PNG e o MP4 — o viewport passa a
    * ser só a bancada de trabalho. Persistida com a cena (autosave, snapshots e
-   * `.glb`), mas FORA do histórico de undo, como a navegação: mover a câmera é
+   * arquivo da cena), mas FORA do histórico de undo, como a navegação: mover a câmera é
    * enquadrar, não editar conteúdo (decidido com o usuário — DECISOES.md).
    */
   sceneCamera: CameraViewState
@@ -278,7 +278,7 @@ export interface FiguresState {
    * Biblioteca de TRECHOS do usuário (item 39) — faixas de keyframes salvas
    * com nome, reaplicáveis em qualquer animação de qualquer cena. Do
    * WORKSPACE, como a biblioteca de poses e as animações: vai para um
-   * `clips.json` da pasta, e não para o `.glb` da cena.
+   * `clips.json` da pasta, e não para o arquivo da cena.
    */
   clipLibrary: SavedClip[]
   nextClipSeq: number
@@ -286,14 +286,14 @@ export interface FiguresState {
    * Animações do usuário (DECISOES.md #52) — também do WORKSPACE, e pela mesma
    * razão da biblioteca de poses: cada keyframe carrega um retrato completo da
    * cena, então uma animação é autossuficiente e vale a partir de qualquer
-   * cena. Não viaja no `.glb`: o arquivo da cena continua sem canais de
-   * animação glTF, preservando a ida e volta com o Blender da fase 6.
+   * cena. Não viaja no arquivo da cena: ele continua sendo só a cena, sem
+   * linha do tempo dentro dele.
    */
   animations: Animation[]
   nextAnimationSeq: number
   /**
    * Juntas travadas por boneco (DECISOES.md #42). Estado de TRABALHO, decisão
-   * do usuário: vive na sessão e no autosave, não entra no `.glb` nem no
+   * do usuário: vive na sessão e no autosave, não entra no arquivo da cena nem no
    * histórico de undo.
    */
   jointLocks: JointLockMap
@@ -378,19 +378,20 @@ export interface FiguresState {
    */
   renameSceneSnapshot: (id: string, name: string) => void
   removeSceneSnapshot: (id: string) => void
-  /** Substitui a cena de trabalho por dados lidos de um `.glb` importado — não é um snapshot salvo do catálogo. */
+  /** Substitui a cena de trabalho por dados lidos de um `.json` importado — não é um snapshot salvo do catálogo. */
   loadSceneWorkingState: (data: SceneSnapshotData & { name: string }) => void
-  /** Aplica altura/pose importadas a um boneco existente, mantendo identidade/cor/posição — ver PLANO.md > "Exportação/importação de um boneco individual". */
-  applyImportedPose: (id: string, imported: { height: number; pose: Record<string, JointRotation> }) => void
   /**
    * Aplica uma pose lida de um arquivo de pose avulsa (`figurePoseFile.ts`,
-   * DECISOES.md #81) — o formato que faz a ponte com o celular.
+   * DECISOES.md #81) — o formato que faz a ponte com o celular, e desde o #87 o
+   * único caminho de boneco em arquivo.
    *
-   * Difere de `applyImportedPose` em dois pontos, os dois vindos do contrato
-   * daquele arquivo: a inclinação do boneco (`rotation`) também vem da pose, e a
-   * colocação recebe o Y do arquivo mantendo X/Z onde estão (agachar e pular são
-   * pose; andar para o lado é composição). Identidade, cor e visibilidade
-   * continuam sendo do boneco de destino.
+   * Pelo contrato daquele arquivo: a inclinação do boneco (`rotation`) também
+   * vem da pose, e a colocação recebe o Y do arquivo mantendo X/Z onde estão
+   * (agachar e pular são pose; andar para o lado é composição). Identidade, cor
+   * e visibilidade continuam sendo do boneco de destino.
+   *
+   * Substituiu o `applyImportedPose` do exportar/importar boneco (#87), de quem
+   * era um superconjunto estrito — aquele aplicava só altura e pose.
    */
   applyImportedFigurePose: (
     id: string,
@@ -401,8 +402,6 @@ export interface FiguresState {
       pose: Record<string, JointRotation>
     },
   ) => void
-  /** Cria um boneco novo a partir de um boneco importado — sujeito ao limite de 5 bonecos e a uma cor livre da paleta. */
-  importFigureAsNew: (imported: Omit<Figure, 'id'>) => string | null
   /** Adiciona bookmarks importados aos já existentes (nunca substitui); nomes duplicados recebem um sufixo automático. */
   importCameraBookmarks: (bookmarks: readonly Omit<CameraBookmark, 'id'>[]) => void
   /** Substitui o catálogo de cenas por um workspace lido de uma pasta; carrega a cena ativa na cena de trabalho, se houver. */
@@ -1549,20 +1548,6 @@ export const useFiguresStore = create<FiguresState>()(
         }))
       },
 
-      applyImportedPose: (id, imported) => {
-        const height = clampHeight(imported.height)
-        set((state) => {
-          const locked = getLockedJoints(state.jointLocks, id)
-          return {
-            figures: updateFigure(state.figures, id, (figure) => ({
-              ...figure,
-              height,
-              pose: mergeLockedJoints(figure.pose, imported.pose, locked),
-            })),
-          }
-        })
-      },
-
       applyImportedFigurePose: (id, imported) => {
         const height = clampHeight(imported.height)
         set((state) => {
@@ -1581,18 +1566,6 @@ export const useFiguresStore = create<FiguresState>()(
             })),
           }
         })
-      },
-
-      importFigureAsNew: (imported) => {
-        const { figures, nextFigureSeq } = get()
-        if (figures.length >= MAX_FIGURES) return null
-
-        const color = nextDefaultColor(figures)
-        const id = `figure-${nextFigureSeq}`
-        const figure: Figure = { ...imported, id, color }
-
-        set({ figures: [...figures, figure], nextFigureSeq: nextFigureSeq + 1 })
-        return id
       },
 
       importCameraBookmarks: (bookmarks) => {
@@ -1656,7 +1629,7 @@ export const useFiguresStore = create<FiguresState>()(
           }))
         } else {
           // Sem cena ativa a cena de trabalho atual continua na tela, e ela não
-          // passou pela leitura do `.glb` — precisa ser reajustada aqui.
+          // passou pela leitura do arquivo de cena — precisa ser reajustada aqui.
           set((state) => ({
             scenes,
             activeSceneId,
@@ -2859,7 +2832,7 @@ export const useFiguresStore = create<FiguresState>()(
       // pode reabrir a proteção que o usuário fechou (DECISOES.md #42).
       // `sceneCamera` fica de fora (fase 11): mover a câmera de cena é
       // ENQUADRAR, como a órbita/pan/zoom do viewport — persiste com a cena
-      // (autosave/snapshots/.glb), mas um Ctrl+Z de pose não pode teleportar a
+      // (autosave/snapshots/arquivo de cena), mas um Ctrl+Z de pose não pode teleportar a
       // câmera (decidido com o usuário).
       // Os objetos de cena (item 42) entram no histórico como os bonecos:
       // criar, mover, redimensionar e puxar um vértice são edições de conteúdo.

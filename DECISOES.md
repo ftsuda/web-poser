@@ -4,6 +4,108 @@ Registro de problemas encontrados durante a implementação, opções considerad
 
 ---
 
+## Índice
+
+As **94 decisões**, na ordem em que foram tomadas. Os números **nunca são reaproveitados** — o `PLANO.md`, o `HISTORICO.md` e as próprias entradas se citam por eles. Decisão desdobrada depois ganha subnúmero (78.1, 78.2…) em vez de número novo.
+
+- **#1** — [Aviso "not wrapped in act(...)" nos testes do Toolbar (react-i18next)](#1-aviso-not-wrapped-in-act-nos-testes-do-toolbar-react-i18next)
+- **#2** — [Aviso "THREE.Clock: This module has been deprecated" no console](#2-aviso-threeclock-this-module-has-been-deprecated-no-console)
+- **#3** — [Arrastar o mouse no viewport não gira a câmera (OrbitControls) durante teste manual via automação de navegador](#3-arrastar-o-mouse-no-viewport-não-gira-a-câmera-orbitcontrols-durante-teste-manual-via-automação-de-navegador)
+- **#4** — ["Cannot assign to read only property 'position'" ao passar instâncias de `THREE.Vector3`/`THREE.Quaternion` como props JSX (fase 2, `Figure.tsx`)](#4-cannot-assign-to-read-only-property-position-ao-passar-instâncias-de-threevector3threequaternion-como-props-jsx-fase-2-figuretsx)
+- **#5** — [Avaliação da biblioteca `mannequin.js` como possível dependência para a geometria do boneco](#5-avaliação-da-biblioteca-mannequinjs-como-possível-dependência-para-a-geometria-do-boneco)
+- **#6** — [`@react-three/test-renderer` não expõe `TransformControls` (drei) como um nó localizável por tipo/props na árvore da cena](#6-react-threetest-renderer-não-expõe-transformcontrols-drei-como-um-nó-localizável-por-tipoprops-na-árvore-da-cena)
+- **#7** — [Gizmo de translação do `root` "arrancava" o boneco do chão e descolava a sombra — bug real reportado pelo usuário na validação manual da fase 3](#7-gizmo-de-translação-do-root-arrancava-o-boneco-do-chão-e-descolava-a-sombra--bug-real-reportado-pelo-usuário-na-validação-manual-da-fase-3)
+- **#8** — [Fase 4 (Câmera) — troca perspectiva/ortográfica sem remontar o componente de câmera do drei](#8-fase-4-câmera--troca-perspectivaortográfica-sem-remontar-o-componente-de-câmera-do-drei)
+- **#9** — [Fase 5 (Keyframes) — captura de PNG sob demanda em resolução configurável, sem flash visual](#9-fase-5-keyframes--captura-de-png-sob-demanda-em-resolução-configurável-sem-flash-visual)
+- **#10** — [Pedido do usuário — "teste de captura" com parte do boneco abaixo do plano do chão](#10-pedido-do-usuário--teste-de-captura-com-parte-do-boneco-abaixo-do-plano-do-chão)
+- **#11** — [Fase 6 — esclarecimento de "lista de cenas" → conceito de *workspace* com snapshots de cena](#11-fase-6--esclarecimento-de-lista-de-cenas--conceito-de-workspace-com-snapshots-de-cena)
+- **#12** — [Fase 7 (IK) — CCD por eixo trava contra o limite articular e não converge, mesmo para alvos alcançáveis](#12-fase-7-ik--ccd-por-eixo-trava-contra-o-limite-articular-e-não-converge-mesmo-para-alvos-alcançáveis)
+- **#13** — [Fase 8 (poses predefinidas) — limites de `hip.x`/`shoulder.x` em `skeleton.ts` tinham a faixa grande do lado errado (bug desde a fase 2)](#13-fase-8-poses-predefinidas--limites-de-hipxshoulderx-em-skeletonts-tinham-a-faixa-grande-do-lado-errado-bug-desde-a-fase-2)
+- **#14** — [Fase 9, item 12 — auditoria completa de sinal/direção das juntas restantes (spine/chest/neck/head, clavicle, wrist, ankle, eixos y/z de hip/shoulder)](#14-fase-9-item-12--auditoria-completa-de-sinaldireção-das-juntas-restantes-spinechestneckhead-clavicle-wrist-ankle-eixos-yz-de-hipshoulder)
+- **#15** — [Ajuste de proporções corporais e visual do boneco (pescoço/tronco, dedos, rosto) — pedido do usuário](#15-ajuste-de-proporções-corporais-e-visual-do-boneco-pescoçotronco-dedos-rosto--pedido-do-usuário)
+- **#16** — [Junta `upperChest`, mãos com 3 falanges por dedo, polegar em cilindro e conectores de tronco mais robustos — pedido do usuário](#16-junta-upperchest-mãos-com-3-falanges-por-dedo-polegar-em-cilindro-e-conectores-de-tronco-mais-robustos--pedido-do-usuário)
+- **#17** — [Correção — conector `chest`↔`spine` ainda fino após o #16](#17-correção--conector-chestspine-ainda-fino-após-o-16)
+- **#18** — [`chest` em trapézio (mais largo em cima, mais estreito embaixo) + offset `spine`→`chest` encolhido para compensar](#18-chest-em-trapézio-mais-largo-em-cima-mais-estreito-embaixo--offset-spinechest-encolhido-para-compensar)
+- **#19** — [T-pose como padrão, botão de retorno, combo box de seleção de junta, olhos pretos e topo do chest fechado](#19-t-pose-como-padrão-botão-de-retorno-combo-box-de-seleção-de-junta-olhos-pretos-e-topo-do-chest-fechado)
+- **#20** — [Polegar para trás na T-pose (bug real) + remodelagem do tronco (chest em 2 trapézios, cilindro achatado, conector spine-root mais largo)](#20-polegar-para-trás-na-t-pose-bug-real--remodelagem-do-tronco-chest-em-2-trapézios-cilindro-achatado-conector-spine-root-mais-largo)
+- **#21** — [Novo modelo visual "manequim de madeira" — `skeleton2.ts`/`Figure2.tsx` substitui `skeleton.ts`/`Figure.tsx` como renderer ativo](#21-novo-modelo-visual-manequim-de-madeira--skeleton2tsfigure2tsx-substitui-skeletontsfiguretsx-como-renderer-ativo)
+- **#22** — [Revisão das mãos — torção neutra do antebraço (não só na T-pose), bug real no lado R, e pino de latão marcando o dorso da mão](#22-revisão-das-mãos--torção-neutra-do-antebraço-não-só-na-t-pose-bug-real-no-lado-r-e-pino-de-latão-marcando-o-dorso-da-mão)
+- **#23** — [Correção do #22 — o "conflito" do braço R era um bug de quiralidade na própria verificação, não um limite real do esqueleto; `elbow.R.y=135` revertido para o espelho simples `-45`](#23-correção-do-22--o-conflito-do-braço-r-era-um-bug-de-quiralidade-na-própria-verificação-não-um-limite-real-do-esqueleto-elbowry135-revertido-para-o-espelho-simples--45)
+- **#24** — [Palma exatamente paralela ao chão na T-pose — ajuste na modelagem (offsets de `thumb1`/`fingersBase`), não na pose](#24-palma-exatamente-paralela-ao-chão-na-t-pose--ajuste-na-modelagem-offsets-de-thumb1fingersbase-não-na-pose)
+- **#25** — [Remodelagem completa da mão — alinhada aos eixos locais do punho, torção neutra ±90°, proporções humanas](#25-remodelagem-completa-da-mão--alinhada-aos-eixos-locais-do-punho-torção-neutra-90-proporções-humanas)
+- **#26** — [Braços mais curtos, ombros mais próximos do tronco e chest mais baixo — confirmados pela antropometria antes de aplicar](#26-braços-mais-curtos-ombros-mais-próximos-do-tronco-e-chest-mais-baixo--confirmados-pela-antropometria-antes-de-aplicar)
+- **#27** — [Revisão da ligação chest/upperChest → neck — pescoço visível engrossado (era "palito" de 0,39 da largura da cabeça)](#27-revisão-da-ligação-chestupperchest--neck--pescoço-visível-engrossado-era-palito-de-039-da-largura-da-cabeça)
+- **#28** — [Verificação de cabeça e pernas — cabeça proporcional (sem ajuste); pernas re-ancoradas nos marcos (o offset do quadril "comia" 3 cm)](#28-verificação-de-cabeça-e-pernas--cabeça-proporcional-sem-ajuste-pernas-re-ancoradas-nos-marcos-o-offset-do-quadril-comia-3-cm)
+- **#29** — [Limites articulares customizáveis por workspace — `joint-limits.json` como camada por cima dos padrões do código](#29-limites-articulares-customizáveis-por-workspace--joint-limitsjson-como-camada-por-cima-dos-padrões-do-código)
+- **#30** — [Poses de mão, poses de corpo com colocação no chão e simetria esquerda/direita — e a correção de `clavicle.R.z`](#30-poses-de-mão-poses-de-corpo-com-colocação-no-chão-e-simetria-esquerdadireita--e-a-correção-de-claviclerz)
+- **#31** — [Fase 9 (refinamentos de UX e workspace) — quatro decisões confirmadas com o usuário e três detalhes técnicos que não eram óbvios](#31-fase-9-refinamentos-de-ux-e-workspace--quatro-decisões-confirmadas-com-o-usuário-e-três-detalhes-técnicos-que-não-eram-óbvios)
+- **#32** — [Fechamento do mapa de atalhos e remoção do renderizador antigo (dívida técnica dos itens 20 e 22 do cardápio)](#32-fechamento-do-mapa-de-atalhos-e-remoção-do-renderizador-antigo-dívida-técnica-dos-itens-20-e-22-do-cardápio)
+- **#33** — [Régua vertical ancorada no boneco selecionado](#33-régua-vertical-ancorada-no-boneco-selecionado)
+- **#34** — [Espelho e inversão parciais: a simetria passa a valer da junta selecionada para baixo](#34-espelho-e-inversão-parciais-a-simetria-passa-a-valer-da-junta-selecionada-para-baixo)
+- **#35** — [Poses de luta em par e o botão de pose aleatória](#35-poses-de-luta-em-par-e-o-botão-de-pose-aleatória)
+- **#36** — [Primeira entrega do catálogo: 18 poses novas (apontar, apoios no chão, A-pose) e o combo agrupado](#36-primeira-entrega-do-catálogo-18-poses-novas-apontar-apoios-no-chão-a-pose-e-o-combo-agrupado)
+- **#37** — [Segunda entrega do catálogo: 26 poses novas (expressivas, ação e 13 poses em par)](#37-segunda-entrega-do-catálogo-26-poses-novas-expressivas-ação-e-13-poses-em-par)
+- **#38** — [Terceira entrega do catálogo: meditação, poses de postura, "deitado em X" e o mata-leão sentado](#38-terceira-entrega-do-catálogo-meditação-poses-de-postura-deitado-em-x-e-o-mata-leão-sentado)
+- **#39** — [Cor livre para os bonecos, no lugar da paleta fixa de 5](#39-cor-livre-para-os-bonecos-no-lugar-da-paleta-fixa-de-5)
+- **#40** — [Mata-leão deitado, e a direção dos braços no "deitado em X"](#40-mata-leão-deitado-e-a-direção-dos-braços-no-deitado-em-x)
+- **#41** — [Poses em dupla aplicadas automaticamente no segundo boneco](#41-poses-em-dupla-aplicadas-automaticamente-no-segundo-boneco)
+- **#42** — [Biblioteca de poses do usuário e travamento de juntas](#42-biblioteca-de-poses-do-usuário-e-travamento-de-juntas)
+- **#43** — [Mistura entre duas poses — e por que o quatérnio foi reprovado](#43-mistura-entre-duas-poses--e-por-que-o-quatérnio-foi-reprovado)
+- **#44** — [Giro do cotovelo/joelho (IK), e o aviso de alcance que mentia](#44-giro-do-cotovelojoelho-ik-e-o-aviso-de-alcance-que-mentia)
+- **#45** — [Dedo indicador separado, e a adução do polegar que faltava](#45-dedo-indicador-separado-e-a-adução-do-polegar-que-faltava)
+- **#46** — [Câmera no vocabulário de fotografia: lente em milímetros, enquadramento, ângulo e movimento A→B](#46-câmera-no-vocabulário-de-fotografia-lente-em-milímetros-enquadramento-ângulo-e-movimento-ab)
+- **#47** — [Termo em inglês no botão, tradução como legenda](#47-termo-em-inglês-no-botão-tradução-como-legenda)
+- **#48** — [Sem seleção, o enquadramento é do conjunto](#48-sem-seleção-o-enquadramento-é-do-conjunto)
+- **#49** — [Contra-picado limitado pelo chão](#49-contra-picado-limitado-pelo-chão)
+- **#50** — [O vocabulário de câmera completo](#50-o-vocabulário-de-câmera-completo)
+- **#51** — [Enquadramento por combo, com botão de confirmar](#51-enquadramento-por-combo-com-botão-de-confirmar)
+- **#52** — [Mini animador: as quatro decisões que o pedido deixou em aberto](#52-mini-animador-as-quatro-decisões-que-o-pedido-deixou-em-aberto)
+- **#53** — [Máscara de enquadramento, e a caixa da pose em dupla](#53-máscara-de-enquadramento-e-a-caixa-da-pose-em-dupla)
+- **#54** — [Fim da reprodução devolve a cena, e o keyframe intermediário](#54-fim-da-reprodução-devolve-a-cena-e-o-keyframe-intermediário)
+- **#55** — [O vídeo saía errado — e as três funcionalidades da mesma leva](#55-o-vídeo-saía-errado--e-as-três-funcionalidades-da-mesma-leva)
+- **#56** — [Redutor/acelerador global da animação](#56-redutoracelerador-global-da-animação)
+- **#57** — [Ferramentas de criação de poses padrão](#57-ferramentas-de-criação-de-poses-padrão)
+- **#58** — [Apoiar no chão e espelho ao vivo](#58-apoiar-no-chão-e-espelho-ao-vivo)
+- **#59** — [Zerar por grupo e copiar só um membro](#59-zerar-por-grupo-e-copiar-só-um-membro)
+- **#60** — [Trechos de animação prontos (solo e em dupla)](#60-trechos-de-animação-prontos-solo-e-em-dupla)
+- **#61** — [Guarda de luta: cotovelo direito baixado](#61-guarda-de-luta-cotovelo-direito-baixado)
+- **#62** — [Poses e trechos de dança pop (K-pop)](#62-poses-e-trechos-de-dança-pop-k-pop)
+- **#63** — [Joelhada na barriga com cambalhota](#63-joelhada-na-barriga-com-cambalhota)
+- **#64** — [Chave de braço sentada (empurrão/puxão) + trecho `armLock`](#64-chave-de-braço-sentada-empurrãopuxão--trecho-armlock)
+- **#65** — [Nove itens de animação: bancada, régua no rodapé, grupos e biblioteca de trechos](#65-nove-itens-de-animação-bancada-régua-no-rodapé-grupos-e-biblioteca-de-trechos)
+- **#66** — [Rolagem horizontal nos painéis e a ordem de Animação e Instantâneos](#66-rolagem-horizontal-nos-painéis-e-a-ordem-de-animação-e-instantâneos)
+- **#67** — [Botões do card, captura fixa no topo e papel-cebola (item 31)](#67-botões-do-card-captura-fixa-no-topo-e-papel-cebola-item-31)
+- **#68** — [Área de transferência de poses](#68-área-de-transferência-de-poses)
+- **#69** — [Confirmação ao regravar, "Inserir" na barra e o nome da animação junto da biblioteca](#69-confirmação-ao-regravar-inserir-na-barra-e-o-nome-da-animação-junto-da-biblioteca)
+- **#70** — [Espelho completo do boneco](#70-espelho-completo-do-boneco)
+- **#71** — [Barra da linha do tempo em duas fileiras](#71-barra-da-linha-do-tempo-em-duas-fileiras)
+- **#72** — [Duas poses de balé e a pirueta](#72-duas-poses-de-balé-e-a-pirueta)
+- **#73** — [O keyframe que está na bancada: destaque no card e marca na régua](#73-o-keyframe-que-está-na-bancada-destaque-no-card-e-marca-na-régua)
+- **#74** — [Papel-cebola com escolha de lado](#74-papel-cebola-com-escolha-de-lado)
+- **#75** — [Marca do playhead no card do keyframe](#75-marca-do-playhead-no-card-do-keyframe)
+- **#76** — [Gizmo de translação de junta (arrasto de cadeia) — e a aposentadoria do IK de 2 ossos](#76-gizmo-de-translação-de-junta-arrasto-de-cadeia--e-a-aposentadoria-do-ik-de-2-ossos)
+- **#77** — [Juntas travadas em vermelho enquanto o gizmo de mover está ativo](#77-juntas-travadas-em-vermelho-enquanto-o-gizmo-de-mover-está-ativo)
+- **#78** — [Câmera de cena separada do viewport de trabalho (fase 11)](#78-câmera-de-cena-separada-do-viewport-de-trabalho-fase-11)
+- **#78.1** — [Correção do "ver pela câmera" torcendo a câmera, e controles numéricos de posição/rotação](#781-correção-do-ver-pela-câmera-torcendo-a-câmera-e-controles-numéricos-de-posiçãorotação)
+- **#78.2** — [Botões Mover/Girar da câmera no painel](#782-botões-movergirar-da-câmera-no-painel)
+- **#78.3** — ["Vertical 9:16" direto no seletor da máscara de enquadramento](#783-vertical-916-direto-no-seletor-da-máscara-de-enquadramento)
+- **#78.4** — [Máscara por proporção e resoluções como proporção × qualidade](#784-máscara-por-proporção-e-resoluções-como-proporção--qualidade)
+- **#79** — [Exportar e importar uma animação em JSON, com remapeamento para os bonecos da cena](#79-exportar-e-importar-uma-animação-em-json-com-remapeamento-para-os-bonecos-da-cena)
+- **#80** — [Objetos de cena 3D redimensionáveis, com vértice livre](#80-objetos-de-cena-3d-redimensionáveis-com-vértice-livre)
+- **#81** — [Casca de palito e pose em arquivo JSON — a ponte com o celular](#81-casca-de-palito-e-pose-em-arquivo-json--a-ponte-com-o-celular)
+- **#82** — [Enxertar uma animação importada, carimbar a câmera atual e a confirmação de regravar em `<dialog>`](#82-enxertar-uma-animação-importada-carimbar-a-câmera-atual-e-a-confirmação-de-regravar-em-dialog)
+- **#83** — [Reorganização do painel de Animação: teto na lista, seções recolhíveis e as ações da linha do tempo juntas](#83-reorganização-do-painel-de-animação-teto-na-lista-seções-recolhíveis-e-as-ações-da-linha-do-tempo-juntas)
+- **#84** — [Reorganização dos painéis de Propriedades e Câmera](#84-reorganização-dos-painéis-de-propriedades-e-câmera)
+- **#85** — [Remoção do glTF: a cena passa a ser um `.json`](#85-remoção-do-gltf-a-cena-passa-a-ser-um-json)
+- **#86** — [Uma codificação só para o boneco, e um leitor só](#86-uma-codificação-só-para-o-boneco-e-um-leitor-só)
+- **#87** — [Um caminho só para boneco em arquivo](#87-um-caminho-só-para-boneco-em-arquivo)
+- **#88** — [Uma convenção de botão para todos os painéis](#88-uma-convenção-de-botão-para-todos-os-painéis)
+- **#89** — [Quatro ajustes de layout, e uma régua que o navegador não desenha](#89-quatro-ajustes-de-layout-e-uma-régua-que-o-navegador-não-desenha)
+- **#90** — [Consolidar doze sessões num lugar em que a décima terceira começa lendo](#90-consolidar-doze-sessões-num-lugar-em-que-a-décima-terceira-começa-lendo)
+- **#91** — [Mapa de profundidade: uma rampa linear, três escolhas independentes (fase 13)](#91-mapa-de-profundidade-uma-rampa-linear-três-escolhas-independentes-fase-13)
+
+---
+
 ## 1. Aviso "not wrapped in act(...)" nos testes do Toolbar (react-i18next)
 
 **Contexto:** ao escrever os testes RTL de `Toolbar.tsx` (fase 1), o console emite `An update to Toolbar inside a test was not wrapped in act(...)` mesmo em testes sem nenhuma interação assíncrona explícita. Todas as asserções passam — é um aviso, não uma falha.
@@ -2538,3 +2640,351 @@ Três correções de ordem pedidas pelo usuário ao usar o resultado:
 ### Verificação
 
 **+12 testes**: renomear pose (aplicado e cancelado, e ausente nas poses de fábrica); ordem dos blocos na raiz, seções recolhidas por padrão, as duas vistas terminando igual e a rotação antes do gizmo na junta; a inclinação dentro do bloco da lente, um `Aplicar` por bloco e as quatro seções recolhidas do painel de Câmera; e o novo padrão de recolhimento em `uiPreferences`. **~13 pontos de teste ajustados** ao estado inicial das seções, via um helper `abrirSecoes()` em cada arquivo — o mesmo gesto do `abrirPainel()` do animador. Suíte de 2.247 para **2.259**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual do usuário no navegador** — as sete seções novas, a lista de bookmarks rolando e a ordem dos blocos nas duas vistas do painel de Propriedades.
+
+## 85. Remoção do glTF: a cena passa a ser um `.json`
+
+Pedido do usuário em 2026-07-31: "avaliar uma limpeza no código para remover todas as funcionalidades relacionadas a exportação/importação de arquivos glb". O levantamento mostrou que o `.glb` não era uma funcionalidade acessória — **era o formato de arquivo das cenas do workspace** (#11). Removê-lo é migrar a persistência em disco, não apagar código.
+
+### O número que decidiu
+
+O `.glb` carregava duas coisas: o bloco `extras["virtual-mockup"]` (o JSON com o estado inteiro) e uma geometria glTF — esfera por junta, cilindro por osso, malha real dos objetos, uma câmera por bookmark. **A importação nunca leu a geometria de volta**: `importSceneFromGlb` chamava só `readGlbExtras` → `sceneFromExtras`. A malha existia exclusivamente para abrir no Blender.
+
+Medido antes de decidir (teste temporário, `exportSceneToGlb` contra `JSON.stringify(sceneToExtras(...))`):
+
+| Cena | `.glb` | JSON | Razão |
+|---|---|---|---|
+| 1 boneco | 245 KB | 1,2 KB | 207x |
+| 3 bonecos + 2 objetos | 723 KB | 3,3 KB | 222x |
+| 6 bonecos + 5 objetos | 1,45 MB | 6,4 KB | 226x |
+
+**~99,5% de cada arquivo de cena era geometria que só o Blender lia.**
+
+### O que tornou a troca barata
+
+`sceneSerialization.ts` **não mudou uma linha**. Ele já era JSON puro e já era o formato do autosave em `localStorage` — o mesmo `sceneToExtras` de que a cena volta a cada recarga da página. O caminho JSON já estava em produção; faltava só escrevê-lo em disco. Trocou-se o envelope, não o conteúdo: `SCENE_EXTRAS_VERSION` continua 1, e um `scene.json` tem exatamente os campos que o bloco de `extras` tinha.
+
+### O que saiu, e por que nada disso serviria ao módulo de rigging
+
+Apagados: `gltfIO.ts`, `figureObject3D.ts`, `propObject3D.ts` e dois arquivos de teste (~320 linhas de código, ~380 de teste). `sceneFile.ts` foi reescrito como I/O de JSON.
+
+A pergunta do usuário ao fechar o escopo foi o custo de remover agora e depois fazer um módulo de integração com o Blender **com rigging de verdade** (juntas convertidas para armature, para keyframing avançado). A resposta é que o custo é próximo de zero, porque um exportador rigado não reaproveita nada disso: esfera + cilindro não vira armature, e um rig precisa de `THREE.Bone`, `SkinnedMesh` com `skinIndex`/`skinWeight`, `boneInverses` e `AnimationClip`. O único reaproveitamento seria o wrapper de ~30 linhas do `GLTFExporter` — que precisaria mudar de qualquer forma, já que não passava `animations` ao `.parse()`.
+
+**Não se perde nada do que um rig realmente precisa**: `skeleton.ts` (hierarquia, posições, escala por altura), `jointFrames.ts` (grafo de transformos, que fica de qualquer jeito — o `dragSolver` usa), `sceneSerialization.ts`, `animation.ts` e `Figure.tsx`. E o `Figure.tsx` já é um manequim de **segmentos rígidos** (`SegmentPart` no espaço local de cada junta): isso mapeia 1:1 para armature com peso 1,0 por osso, ou seja, o exportador futuro não precisará de weight painting. Ver PLANO.md > "Integração com o Blender (rigging)".
+
+### Achados de glTF preservados aqui, porque o código que os continha foi apagado
+
+Descobertos lendo o fonte do `three-stdlib`, não a documentação. Quem escrever o módulo de rigging vai precisar deles:
+
+- `extras` só é escrito em `scenes[0].extras` quando o objeto passado a `.parse()` é uma instância real de `THREE.Scene`. Um `Group` é envolvido numa cena sintética sem `userData`, e o bloco se perde.
+- `binary: true` faz `onDone` receber um `ArrayBuffer` pronto (`.glb`), em vez do objeto JSON do `.gltf`.
+- Ao reabrir, o bloco volta em `gltf.scene.userData` (um `THREE.Group` — o loader não recria o tipo `Scene`), **não** em `gltf.userData`, que só reflete `extras` no nível do documento e nunca é escrito pelo exportador.
+- `PropertyBinding.sanitizeNodeName` **remove** (não substitui) `.` `:` `/` `[` `]` dos nomes de nó. Um nó `figure-1.shoulder.L` volta como `figure-1shoulderL`, quebrando qualquer busca por nome depois do round-trip — por isso os nomes usavam `_` como separador.
+
+### Consequências aceitas
+
+1. **Workspaces `.glb` já salvos em disco não abrem mais.** Decisão explícita do usuário: remoção total imediata, sem caminho de leitura legada nem conversor. O autosave do navegador não é afetado — ele nunca foi `.glb`.
+2. **Não há mais ponte com o Blender** até o módulo de rigging existir. Aceito porque a ponte antiga só devolvia o JSON de `extras`: edição de malha ou de armature feita no Blender já era ignorada na importação, e o `.glb` nunca teve canal de animação (#52). O módulo novo SUBSTITUI essa ponte, não a estende.
+3. **Nome de cena reservado.** Enquanto as cenas eram `.glb`, a extensão sozinha as separava dos arquivos fixos da pasta. Agora tudo é `.json`, e uma cena chamada "Poses" geraria `poses.json`, **apagando a biblioteca de poses do usuário**. `buildWorkspaceManifest` passou a reservar `workspace.json`, `joint-limits.json`, `poses.json`, `animations.json` e `clips.json` — a cena vira `poses-2.json`. Comparação em minúsculas, porque o sistema de arquivos do Windows não distingue caixa.
+
+### O que ficou de fora de propósito
+
+**Há duas codificações JSON do mesmo boneco** no projeto: `FigureExtras` usa `joints: { junta: [x,y,z] }` e o `Figure` do keyframe usa `pose: { junta: {x,y,z} }` — mesmo conteúdo, duas rotinas de sanitização (`figureFromExtras` e `sanitizeFigure`). O `figurePoseFile.ts` (#81) escolheu a do keyframe. Unificar era a hora certa, mas o usuário decidiu deixar para tarefa separada: mexer no formato do boneco quebraria a leitura do autosave existente e exigiria um caminho de migração, misturando dois riscos numa mudança só.
+
+### Verificação
+
+Suíte em **2.251**, toda verde — saíram os testes de `gltfIO` e `figureObject3D` e os de malha do `propObject3D`, entraram os do arquivo JSON (ordem das chaves, `scene.json` como fonte de boneco e de bookmarks, as duas falhas de leitura) e o do nome de cena reservado; `tsc -b` e `eslint .` limpos. As mensagens de erro de importação foram reescritas nos dois idiomas: `unreadable` agora é "não é um JSON válido" e `missingAppData` é "falta o campo version", em vez das explicações sobre custom properties do Blender.
+
+## 86. Uma codificação só para o boneco, e um leitor só
+
+Pedido do usuário em 2026-07-31, logo após a remoção do glTF (#85), que tinha deixado esta dívida registrada de propósito: havia **duas codificações JSON do mesmo boneco** — `joints:{junta:[x,y,z]}` na cena e `pose:{junta:{x,y,z}}` no keyframe —, com duas rotinas de sanitização a manter em dia.
+
+### O levantamento achou quatro, não dois
+
+| Leitor | Lia de | Junta | Rotação do boneco |
+|---|---|---|---|
+| `sceneSerialization.figureFromExtras` | cena, autosave | `joints:[x,y,z]` | tupla |
+| `animation.sanitizeFigure` | `animations.json`, pose avulsa | `pose:{x,y,z}` | objeto |
+| `clipLibrary` (bloco próprio) | `clips.json` | `pose:{x,y,z}` | objeto |
+| `poseLibrary.sanitizeSavedPoses` | `poses.json` | `pose:[x,y,z]` | **as duas** |
+
+Mais **três cópias privadas** de `asRecord`, `sanitizeRotation` e `sanitizeVec3`, com divergências silenciosas entre si: `sanitizeVec3` recusava `NaN` e o `tupleToVec3` da cena não — uma colocação `[NaN,0,0]` entrava na cena e só aparecia como boneco sumido na tela.
+
+### O precedente já estava no código
+
+`poseLibrary.toRotation` **já aceitava as duas codificações**, com o comentário "a mesma pose pode chegar do JSON da pasta ou do autosave". A solução já tinha sido escrita uma vez, para o mesmo problema, num canto só. O trabalho foi generalizá-la — como o `withLegacyIndexFinger` (#45) e o `keyframeCounter`→`snapshotCounter` (#52) já faziam para outros campos.
+
+### O que foi feito
+
+**`src/figure/figureFormat.ts`** passa a ser o leitor único: `asRecord`, `toRotation`, `readRotation`, `toVec3`, `clampHeight`, `sanitizePose` e `sanitizeFigure`.
+
+**Mora em `figure/`, e não em `persistence/` nem em `animation/`**, porque o formato do boneco é do MODELO — ao lado do `skeleton.ts`, que define as juntas, e do `poseCompat.ts`, que migra as antigas. Antes disto, `persistence/figurePoseFile.ts` importava a leitura de `animation/animation.ts`: persistência perguntando ao animador qual é o formato do boneco, que é a camada errada. `sceneSerialization.ts` também deixou de ter leitura de boneco; o que sobrou nele é o que é da CENA (ambiente, câmera, bookmarks, objetos, contadores).
+
+**Tudo grava `{x,y,z}` agora** — cena, animação, trechos, pose avulsa e `poses.json`, que era o último a gravar tuplas. `FigureExtras` deixou de ser um tipo próprio e virou um alias de `Figure`: **o arquivo de cena guarda o objeto do store verbatim**, que é o que permite colar um boneco de um `scene.json` dentro de um keyframe de `animations.json` sem conversão nenhuma.
+
+### Duas políticas de rotação, de propósito
+
+`toRotation` é ESTRITA (devolve `null` no ilegível) e `readRotation` nunca falha (completa com zero). Não é acidente nem sobra: uma junta ilegível numa POSE salva deve sumir — é o que permite reconhecer "isto não é uma pose" quando não sobra junta nenhuma —, enquanto num BONECO ela vira zero, que é exatamente o que a junta ausente já produz ao desenhar (`jointFrames` cai em `ZERO_ROTATION`).
+
+Pelo mesmo motivo o `poseLibrary` **manteve o laço próprio** em vez de usar o `sanitizePose` compartilhado: além do descarte, ele exclui a `root` (a inclinação do boneco mora no campo `rotation` da pose). O que ele compartilha é o `toRotation`. Duas políticas documentadas não são duplicação; duas cópias da mesma política eram.
+
+### Compatibilidade: leitura tolerante permanente, sem subir a versão
+
+Decisão do usuário. `sanitizeFigure` lê `joints` como sinônimo de `pose`, e `toRotation` aceita tupla e objeto — para sempre, sem `SCENE_EXTRAS_VERSION` 2 e sem conversor. Um `scene.json`, um `poses.json` e, principalmente, **o autosave que todo usuário tem no `localStorage`** continuam abrindo. Sem isso, a primeira abertura do app depois desta mudança traria a cena de trabalho em T-pose e a biblioteca de poses vazia — e é justamente esse payload que o teste novo de autosave reproduz.
+
+Quando o arquivo traz os dois campos, **`pose` manda**: é o que se grava hoje.
+
+### Custo em tamanho, medido
+
+O bloco de pose cresce ~50% (`"shoulder.L":[5,-3,2]` = 21 caracteres contra `"shoulder.L":{"x":5,"y":-3,"z":2}` = 32). Uma cena de 6 bonecos com todas as 38 juntas declaradas dá **9,9 KB** de arquivo, e um `poses.json` de 20 poses dá 27 KB. Irrelevante em disco e em `localStorage` — e para dimensionar: a mesma cena de 6 bonecos pesava **1,45 MB** como `.glb` até ontem (#85).
+
+### Mudança de comportamento aceita
+
+A colocação do boneco na cena passou a recusar `NaN` (antes só a leitura da animação recusava). Um arquivo editado à mão com `position:[NaN,0,0]` agora cai em `[0,0,0]` em vez de gerar um boneco em lugar nenhum. É correção, não regressão — e é o tipo de divergência que existir uma cópia por módulo produz.
+
+### O que NÃO mudou
+
+Objetos de cena (`PropExtras`) continuam gravando `rotation` e `size` em tupla: não são boneco, e o escopo aqui era o boneco. Passaram a usar o `toVec3`/`readRotation` compartilhados na leitura, o que os torna tolerantes de graça, sem mudar o que gravam.
+
+### Verificação
+
+**+17 testes** (`figureFormat.test.ts` novo, mais a leitura legada em `posesFile` e no autosave, e as três garantias de gravação em `sceneSerialization`), suíte de 2.251 para **2.268**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. Vale notar que boa parte dos testes de cena já alimentava `joints:[x,y,z]` na entrada — viraram cobertura de leitura legada sem uma linha de mudança, o que é um bom sinal de que o contrato antigo continua honrado.
+
+## 87. Um caminho só para boneco em arquivo
+
+Pedido do usuário em 2026-07-31, depois de uma avaliação comparativa das duas funcionalidades: unificar o JSON da pose para gravar em plural e **remover exportar/importar boneco do painel de Bonecos**.
+
+### O que a avaliação mostrou
+
+Depois da unificação do formato do boneco (#86), os dois arquivos tinham virado quase o mesmo artefato. O que restava de diferença no que era gravado:
+
+1. a chave de embrulho — `figures` (lista) contra `figure` (singular);
+2. o X/Z zerado no arquivo de pose.
+
+Duas funções de leitura, dois módulos, dois conjuntos de testes e **cinco chaves de mensagem de erro** (`importUnreadable`, `importMissingAppData`, `importFailed` de um lado; `importUnreadableJson`, `importNoPose` do outro) para produzir dois JSONs que diferiam por um `s`. Duas dessas mensagens eram a mesma frase escrita duas vezes.
+
+### O defeito que a duplicação escondia
+
+`parseFigureFile` exigia só `version: number` e depois procurava `source.figures`. **Todo arquivo do workspace tem `version`** — `poses.json`, `clips.json`, `animations.json`, `joint-limits.json`, `workspace.json` e o próprio arquivo de pose, que usava `figure` singular. Escolhendo qualquer um deles no seletor de "Importar boneco":
+
+1. `readAppJson` passava;
+2. `source.figures` não existia, então `figureFromExtras(undefined, 0)` devolvia um boneco PADRÃO com `pose: {}`;
+3. `applyImportedPose` chamava `mergeLockedJoints(atual, {}, travadas)`, que devolve o que chega;
+4. o boneco selecionado ia para T-pose a 1,70 m, e o painel ainda chamava `setErrorKey(null)` — sucesso declarado.
+
+Ou seja: **exportar uma pose e tentar reimportá-la como boneco apagava a pose do boneco selecionado, em silêncio.** O Ctrl+Z recuperava, mas nada avisava.
+
+O lado da pose tinha acertado isso desde o #81: `parseFigurePoseFile` devolve `null` quando não sobra junta conhecida, com o comentário dizendo exatamente por quê. A regra estava pensada, escrita e testada — num dos dois caminhos. Remover o outro apaga o defeito em vez de corrigi-lo duas vezes.
+
+### As decisões
+
+**Plural, por precedente.** O levantamento dos formatos deu 6 a 1: `scene.json`, boneco avulso, `animations.json`, `clips.json` e o autosave usavam `figures[]`; só o arquivo de pose usava `figure`. E a assimetria já era favorável — `findFigureSource` do arquivo de pose **já lia** `figures`, enquanto `parseFigureFile` não lia `figure`. Passar a gravar `figures: [um]` não custou nada na leitura, e `figure` continua sendo aceito para os arquivos que já existem por aí (inclusive no celular do usuário, que é o ponto do formato).
+
+**As duas ações de store órfãs foram apagadas** (decisão do usuário), e não mantidas documentadas como `renameSceneSnapshot` e `loadPoseLibrary` (#83, #84). O precedente daquelas é outro: elas esperam um botão. Estas perderam o seu de propósito. E `applyImportedPose` era **subconjunto estrito** de `applyImportedFigurePose` — aquela aplicava altura e pose, esta aplica altura, pose, inclinação e Y, pelo mesmo `mergeLockedJoints`. Era a duplicação de código de verdade.
+
+### A capacidade perdida, aceita explicitamente
+
+Não há mais como trazer um boneco de arquivo como boneco **novo**: "Carregar pose" aplica a um boneco já existente e selecionado. Para trazer um de fora agora: acrescentar boneco, selecionar, carregar pose — perdendo nome, cor, visibilidade e o X/Z do arquivo.
+
+O usuário optou por aceitar a perda em vez de compensá-la com um botão novo no painel de Propriedades. Vale registrar que a compensação seria barata se um dia fizer falta: o JSON da pose **já carrega** nome, cor, visibilidade e colocação — apenas não os aplica, por decisão do #81.
+
+### A inversão de rótulos que sobrou resolvida
+
+Antes, o arquivo chamado "pose" aplicava MAIS ao destino (altura, pose, inclinação e Y) do que o arquivo chamado "boneco" no modo com seleção (só altura e pose) — o contrário do que os dois rótulos sugerem. Com um caminho só, a questão deixa de existir.
+
+### Verificação
+
+Saíram `serializeFigureFile`/`parseFigureFile`, as ações `applyImportedPose`/`importFigureAsNew`, quatro chaves i18n (`exportFigure`/`importFigure` nos dois idiomas), duas regras de CSS e sete testes; o mock inteiro de `persistence/sceneFile` e `persistence/fileIO` saiu do `FiguresPanel.test.tsx`, que **não faz mais I/O de arquivo nenhum**. Entraram dois testes de compatibilidade (o `figure` singular lido igual ao `figures` de hoje, e a asserção da lista na gravação).
+
+Suíte de 2.268 para **2.260**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+## 88. Uma convenção de botão para todos os painéis
+
+Pedido do usuário em 2026-07-31, com uma captura de tela mostrando "Espelhar edições ao vivo" quebrado em três linhas ao lado de uma caixa de marcar.
+
+### O diagnóstico: não havia convenção nenhuma
+
+Sete regras diferentes de largura e padding para botão de painel, uma por painel, mais os botões que ninguém tinha lembrado de estilizar — esses ficavam do tamanho do próprio texto, encolhidos no meio de uma coluna de 220–260 px. "Posicionar na vista atual", "Apoiar no chão", "Resetar esta junta" e "Gerar keyframes do movimento" estavam nessa situação.
+
+Pior: `.properties-panel__pose-presets` era uma grade de DUAS COLUNAS usada tanto para conjuntos legítimos (presets de mão, grupos de junta) quanto para envolver **um botão sozinho**. "Travar junta" saía com metade da largura e um buraco ao lado; "Inverter lados", terceiro numa grade de dois, caía sozinho na segunda fileira.
+
+### A regra, e por que ela é semântica
+
+Duas classes em `index.css`, e a escolha entre elas descreve o CONTEÚDO, não a aparência:
+
+- **`.panel-action`** — a ação está sozinha no seu bloco. Largura do painel, que é o alvo de clique máximo disponível.
+- **`.panel-actions`** — as ações formam um conjunto entre o qual se escolhe (presets de pose, grupos de junta, presets de mão, vistas de câmera). Grade de duas colunas: empilhar oito presets em largura cheia trocaria rolagem por nada.
+
+Um botão sozinho nunca vai num `.panel-actions`. Escrito assim, o defeito do "Travar junta" deixa de ser possível por descuido — a classe errada fica visivelmente errada na leitura do JSX.
+
+**A margem entre ações consecutivas é escopada a `fieldset > `** de propósito: contêineres próprios (`.scenes-panel__file-actions` e companhia) já espaçam por `gap`, e a regra somaria em cima disso.
+
+### O defeito da captura de tela
+
+Cada painel tem uma regra `__field input { width: 100% }` para os campos de texto, e ela alcançava também as caixas de marcar. Um `<input type="checkbox">` com `width: 100%` num flex vira um item que pede a linha inteira, encolhe até o mínimo e **não devolve o espaço**: o rótulo ao lado ficava com poucos caracteres por linha.
+
+Conserto compartilhado pelos quatro painéis que têm campos (`properties`, `snapshot`, `camera`, `animation`): a caixa passa a ter tamanho próprio e `flex: 0 0 auto`. O mesmo defeito existia calado no painel de Instantâneos.
+
+### Mudanças de layout pedidas
+
+- **Objetos de cena:** o `select` de forma e o botão "Acrescentar" eram um `flex` lado a lado, e o combo ficava com o que sobrava — estreito demais para os nomes de forma. Viraram grade de uma coluna: combo em cima, botão de largura cheia embaixo.
+- **Propriedades (raiz):** "Aplicar pose" em largura cheia (decisão do usuário; a alternativa era manter o par com "Aleatória"). "Renomear"/"Remover" continuam em par — são irmãs sobre a pose escolhida no combo. "Aleatória" e "Espelhar o boneco todo" em largura cheia.
+- **Propriedades (junta):** "Travar junta", "Resetar esta junta", "Apoiar no chão" e "Inverter lados" em largura cheia. Os dois espelhos (direita→esquerda, esquerda→direita) continuam em par: ali se escolhe a DIREÇÃO da cópia, que é um conjunto.
+- **Câmera:** "Posicionar na vista atual" e "Gerar keyframes do movimento" em largura cheia.
+- **Animação:** a velocidade passou a ABRIR o bloco "Ações da linha do tempo" em vez de fechá-lo (decisão do usuário) — é a propriedade da linha do tempo como um todo, e não uma das ações. Vale notar que ela já ficava depois da lista de keyframes; o pedido original supunha que não.
+- **Cenas:** as ações de arquivo ganharam separador e vão maior acima. Salvar um snapshot mexe no catálogo em memória; exportar grava um `.json` no disco — encostados, os dois pareciam a mesma fila, e é justamente a diferença que mais custa caro confundir.
+- **Objetos (medidas):** as quatro ferramentas do gizmo eram `flex-wrap`, e a última sobrava sozinha na segunda linha com largura diferente das outras três. Viraram a grade de duas colunas.
+
+### Verificação
+
+Suíte de **2.260**, toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. Nenhum teste consulta as classes mexidas — os únicos `querySelector` por classe da suíte são de `animation-panel__keyframe` e `timeline-bar__visited`, intocados.
+
+**Falta a conferência visual do usuário**: não há driver de navegador no ambiente, e instalar um (com os binários do Chromium) sairia caro demais para uma revisão de CSS. O servidor de desenvolvimento foi deixado de pé para isso.
+
+## 89. Quatro ajustes de layout, e uma régua que o navegador não desenha
+
+Pedido do usuário em 2026-07-31, na sequência da convenção de botão (#88). Três dos quatro itens são aplicação direta dela; o quarto devolve uma informação que o HTML promete e nenhum navegador entrega.
+
+### Rótulo em cima do controle, no painel de Propriedades
+
+`.properties-panel__field` é o único campo do projeto que fica em LINHA — e existe assim por causa dos rótulos de uma letra dos eixos X/Y/Z. "Selecionar junta" é frase, e ao lado do próprio combo sobrava pouca largura para os nomes de junta.
+
+Novo modificador `.properties-panel__field--stacked`, que devolve o campo ao desenho que `.camera-panel__field`, `.animation-panel__field`, `.snapshot-panel__field` e `.scenes-panel__field` já usam por padrão. A linha continua sendo a exceção, e agora está dito qual é o motivo dela.
+
+A classe `properties-panel__joint-select`, que o campo carregava, saiu junto: nunca teve regra de CSS nenhuma nem foi consultada por teste — era nome sem dono.
+
+### Inclinação: slider e "Endireitar" em linhas separadas
+
+Dividindo a linha com o botão, o slider do dutch angle perdia justamente a largura de que o ajuste fino precisa. "Endireitar" é ação isolada e virou `.panel-action` em largura cheia, pela regra do #88; o slider ficou sozinho no `.camera-panel__slider-row`, que é como o slider do movimento de câmera já estava.
+
+### "Salvar trecho" mudou de bloco
+
+Estava em "Ações da linha do tempo", entre "Fechar o ciclo", "Aplicar a câmera" e "Gerar miniaturas". Das quatro, era a única que não MEXIA na linha do tempo: lê uma faixa dela para produzir um trecho — e trecho é o assunto do bloco "Trechos prontos", que é quem aplica, renomeia e remove.
+
+Um efeito colateral bem-vindo: `clipNameDraft` sempre foi um estado só, usado pelo "Nome do trecho" (salvar) e pelo "Renomear trecho". Nos dois blocos separados isso era invisível e parecia acidente; juntos, o campo aparece uma vez acima dos dois botões que o consomem, e o compartilhamento vira o desenho.
+
+O pedido dizia "bloco de vistas prontas" — nome de uma seção do painel de CÂMERA. Confirmado com o usuário antes de mexer: o destino é "Trechos prontos", no painel de Animação.
+
+### A régua numerada da linha do tempo
+
+O `<datalist id="timeline-keyframe-marks">` da barra já traz `<option value={start} label={index + 1}>`. O `label` é o mecanismo padrão para nomear uma marca de `range` — e **nenhum navegador o desenha**: sai o tique, some o número. Não há CSS que resolva; as marcas de um `datalist` não são estilizáveis nem endereçáveis.
+
+Daí uma faixa própria abaixo do slider, com um `<span>` absoluto por keyframe em `left: (start / total) * 100%`. O navegador continua desenhando os tiques a partir do `datalist`; esta faixa só põe o número embaixo de cada um. **Numeração completa**, e não só do keyframe corrente (escolha do usuário): "estou no 3 de 7" passa a ser coisa que se lê, e não que se conta.
+
+**O alinhamento com o slider precisou de recuo.** O centro do polegar não percorre a largura toda do controle — vai de meio polegar da borda esquerda a meio polegar da direita. Sem recuo, o "1" ficava à esquerda do tique do keyframe 1 e o último número à direita do dele, com o erro crescendo para as pontas. `margin: 0 calc(var(--range-thumb) / 2)` na faixa encolhe o sistema de coordenadas para o mesmo do slider, e o `0%–100%` daqui passa a ser o `0%–100%` de lá. `--range-thumb: 16px` é variável de `:root` porque é fato do navegador, não desta barra — o projeto não estiliza polegar em lugar nenhum.
+
+**Os traços próprios foram retirados** (pedido do usuário): a primeira versão desenhava um tique por marca, e com os do `datalist` no mesmo lugar davam dois por keyframe. Sem traço, o destaque do keyframe que está na bancada (item 41) deixou de ser a espessura e passou a ser cor e peso — que é o que distingue um número dos vizinhos quando o tique é igual para todos.
+
+Sobrou uma limitação conhecida: com muitos keyframes juntos, os números se sobrepõem. Aceita por ora — o `title` de cada marca ("Keyframe 4 — 3.2s") continua resolvendo caso a caso.
+
+`.timeline-bar__visited` virou `.timeline-bar__mark--visited`: o elemento deixou de ser "a marca" para ser "a marca em destaque" entre várias, e o nome passou a dizer isso.
+
+### Verificação
+
+Suíte de 2.260 para **2.262** (a régua trocou quatro testes por seis), toda verde; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+**Falta a conferência visual do usuário** — em especial o recuo da régua, que é aproximação do polegar nativo e pode pedir ajuste do `--range-thumb`.
+
+---
+
+## 90. Consolidar doze sessões num lugar em que a décima terceira começa lendo
+
+Pergunta do usuário em 2026-07-31: qual a melhor forma de consolidar as diferentes sessões de conversa feitas no projeto. São doze sessões e 349 MB de transcript em `~/.claude/projects/`.
+
+### O diagnóstico: já estavam consolidadas, e faltava a porta
+
+O ritual de documentar ao fim de cada sessão vinha sendo cumprido — 89 decisões numeradas com o porquê, 77 entregas datadas. **A consolidação não era o que faltava.** O que faltava era um lugar por onde entrar: uma sessão nova encontrava 4.700 linhas de documentação sem nenhum resumo, e o que ela precisava saber logo de cara — que não existe `npm test`, que nenhuma string de UI pode nascer sem chave de i18n, que só há um leitor de boneco desde o #86 — estava disperso no meio delas ou só no histórico de conversa, que não sobrevive à sessão.
+
+Os `.jsonl` ficaram de fora por isso: o sinal deles já está destilado nos dois documentos, e o resto é ruído de ferramenta.
+
+### O `CLAUDE.md`, e por que ele é curto
+
+É o único arquivo que toda sessão nova carrega automaticamente, então cada linha nele custa contexto em toda sessão futura — o que empurra para o oposto de "copiar o plano". Ficou com o que não se descobre lendo código: os comandos reais, as regras que não se negociam (offline, TDD, i18n, português), o mapa das pastas, e uma lista de **invariantes conquistadas a duras penas** — as coisas que parecem detalhe e custaram uma decisão inteira, e que um agente desavisado desfaria por descuido. Cada uma cita o número da decisão, para o porquê continuar a um salto de distância em vez de ser reescrito.
+
+O fluxo de trabalho do usuário entrou junto — perguntar antes, TDD, documentar depois nos dois lugares —, porque até aqui ele precisava ser repetido a cada sessão.
+
+### O `HISTORICO.md`: o log sai do plano
+
+O `PLANO.md` tinha 1.565 linhas e misturava três coisas: o que o app é, o que falta fazer e o que já foi feito. A terceira ocupava 890 linhas e crescia em **quatro blocos separados** — dois deles no meio da lista de propostas, porque em algum momento as entregas passaram a ser anexadas no fim do arquivo e a lista tinha ganhado grupos novos depois disso. O estrago era visível: os itens 40 e 41 do grupo H estavam separados do grupo por vinte entregas, e a proposta de rigging para o Blender morava entre duas entregas concluídas.
+
+- **As 77 entradas foram para o `HISTORICO.md`**, reordenadas pela data de conclusão do próprio título, com ordenação **estável** — entradas da mesma data mantêm a ordem relativa, que é o que preserva referências como "ver a entrada seguinte" e "na sequência da reorganização do animador".
+- **Nenhum texto de entrada foi alterado.** O corte foi conferido por contagem de linhas não-vazias antes e depois: zero perdidas, e as 84 acrescentadas são exatamente cabeçalho e índice.
+- **Três referências que dependiam de posição foram corrigidas**, porque só elas quebravam com a mudança de arquivo: "a entrega no fim deste documento", "Entrega do item 42 acima" e "Substitui a ponte removida acima".
+- **Os itens 40 e 41 voltaram para o grupo H** e a proposta do Blender ficou no `PLANO.md`, marcada como proposta sem número — a numeração não foi tocada, pela regra de sempre.
+
+### Dois índices, e o que eles não são
+
+`HISTORICO.md` e `DECISOES.md` ganharam índice no topo, com âncora por entrada. **Não são resumo** — resumo envelhece calado e passa a mentir. São só endereço: achar a #76 custava uma varredura de 2.783 linhas.
+
+O do `DECISOES.md` lista 93 entradas para 89 números, porque o #31.5 e os #78.1–78.4 são desdobramentos que ganharam subnúmero em vez de número novo — o índice torna essa convenção visível pela primeira vez.
+
+### O que ficou de fora
+
+O `README.md` continua sendo o template do Vite, palavra por palavra. Está fora do que foi pedido e é decisão do usuário se o projeto quer um README de verdade.
+
+---
+
+## 91. Mapa de profundidade: uma rampa linear, três escolhas independentes (fase 13)
+
+A fase 13 estava levantada desde 2026-07-31 no `PLANO.md` com **cinco decisões em aberto** e uma escolha de rota. Nenhuma linha foi escrita antes de o usuário responder às oito perguntas — o que evitou construir a coisa errada em três frentes de uma vez.
+
+### A rota: por que o material nativo do three não servia
+
+O `MeshDepthMaterial` com `BasicDepthPacking` emite `1 - fragCoordZ`, e já entrega a polaridade pedida (perto claro, longe escuro) em meia dúzia de linhas. O problema é que essa grandeza segue a distribuição em `1/z` da projeção em perspectiva: com o `near 0,1 / far 100` da câmera do projeto, 3 m dá cinza 0,032 e 5 m dá 0,019 — **o boneco inteiro ocupa cerca de três níveis de 256**. Apertar a faixa em volta do conteúdo salva a imagem, mas a rampa continua torta: o primeiro metro come metade da escala.
+
+O usuário escolheu a **rota B** — um `ShaderMaterial` próprio de quinze linhas de GLSL que escreve `1 - (d - perto) / (longe - perto)`, com `d = -(modelViewMatrix * position).z`, a distância ao **plano** da câmera. Rampa reta, e o cinza no arquivo é o dado: o shader não inclui `<tonemapping_fragment>` nem `<colorspace_fragment>`, então o valor sai sem gama por cima. É o que ControlNet, compositing e relighting esperam ler. O teto continua sendo o PNG de 8 bits — anotado, não resolvido.
+
+### O chão entra, mas não conta
+
+A pergunta mais afiada do levantamento. O plano de 20×20 m é conteúdo de verdade — some no PNG só quando "ocultar grade/gizmos" está ligado, e a grade é outra coisa. Mas dentro da caixa envolvente ele vira uma rampa gigante que espreme o boneco de volta para os poucos níveis de cinza de que a faixa apertada acabou de salvá-lo.
+
+**Decisão do usuário: desenhado, mas fora da conta.** A faixa é medida só por bonecos e objetos de cena; o chão é pintado com a mesma rampa e satura em preto lá atrás, que é o comportamento de qualquer renderizador. Isso é o que separou `depthContentBox` (quem entra na conta) de quem é desenhado (todo mundo).
+
+A **elipse de contato** foi o caso oposto: ela é `transparent` com `depthWrite` desligado, e sob um material de profundidade viraria um disco opaco no chão **mentindo sobre a distância**. Some sempre — regra do modo, e não a opção de captura, que continua valendo para grade, gizmos, régua e papel-cebola.
+
+### Três escolhas, e a função que existe só para elas serem independentes
+
+O ponto em que o pedido do usuário foi mais específico: profundidade é **modo alternativo**, não segunda saída. Uma captura gera **um** arquivo; quem quer as duas versões gera duas vezes. E são três escolhas separadas — ver na tela, gerar o PNG, exportar o MP4 —, porque conferir o volume na tela não é a mesma coisa que querer o arquivo assim.
+
+Independência de verdade custou uma função: **`suspendDepthMaterial`**. Com a vista em profundidade ligada, a cena viva já está com `overrideMaterial` posto e as elipses apagadas — capturar um PNG normal nesse estado sairia em profundidade, sem elipse. Então a saída normal **força** o modo normal e restaura depois. Sem nada ligado ela é inofensiva, e é por isso que a captura simplesmente sempre a chama, em vez de perguntar antes.
+
+O sufixo `_depth` no nome nasceu daí: como são duas gerações, os números da sequência ficam diferentes (`snap001.png` e `snap002_depth.png`) e sem o sufixo não haveria como saber qual é qual. No MP4 ele é mais que conveniência — o nome do arquivo é o nome da animação, e sem sufixo a exportação em profundidade **sobrescreveria** o vídeo normal.
+
+### O fundo tem um dono só
+
+O erro que não foi cometido, e quase foi. O fundo precisa ir a preto no passe (o cinza do ambiente leria como distância média), e o caminho óbvio era mutar `scene.background` junto com o material, num lugar só.
+
+Só que na TELA quem põe o fundo é o `Viewport`, por React (`<color attach="background">`). Com dois donos, desligar o modo daria isto: o R3F comita o cinza no `attach` e, logo depois, a limpeza do efeito restaura o "valor anterior" — que era o preto. A vista ficaria presa no escuro até alguém mexer noutra coisa.
+
+Por isso o passe da tela (`attachDepthMaterial`) **não toca no fundo**, e o `Viewport` decide a cor reativamente; o fundo preto vive só nos passes de ARQUIVO (`applyDepthPass`), que são síncronos dentro de uma tarefa só e não disputam nada com o React. É a mesma disciplina do `RestoreScene` de sempre, com uma regra a mais: uma propriedade, um dono.
+
+### Faixa automática, e por que a trava não é luxo
+
+A caixa envolvente do conteúdo visível é o padrão óbvio e dá a melhor imagem de um quadro isolado. Numa **sequência**, é armadilha: cada quadro se remede, e um boneco que anda em direção à câmera sai sempre com o mesmo cinza — a informação de aproximação, que é justamente o que um depth map carrega, desaparece. A imagem "respira".
+
+A trava (perto/longe em metros) é a saída, e mora numa seção **"Configurações" do painel de Cenas** por ser compartilhada pelas três saídas — dentro de qualquer uma delas ela pareceria pertencer só àquela. A alternância da tela ficou na **Toolbar**, ao lado da régua e da casca do boneco, pelo raciocínio do #81: é modo de visualização, fora do undo e fora do arquivo.
+
+Duas escolhas menores caíram por consequência: `Box3.setFromObject` foi trocado por uma varredura própria (o do three **ignora a visibilidade**, e um boneco desligado no painel esticaria a faixa por algo que nem aparece na imagem), e a exportação de vídeo reaproveita **um** `ShaderMaterial` pelo laço inteiro, trocando só os uniformes — um material novo por quadro seria uma compilação de shader por quadro.
+
+### O que ficou fora
+
+As **miniaturas de keyframe** continuam sempre normais: elas existem para dizer qual keyframe é qual, e um cartão em cinza de profundidade diria menos. E a conferência visual no navegador continua sendo do usuário — WebGL real não existe em jsdom, como desde a fase 5.
+
+### Adendo, no mesmo dia: o chão grampeado engolia o boneco
+
+O usuário pediu uma alteração no chão "para evitar conflito com a profundidade dos bonecos", e a conta mostra que o conflito era grande. Tirar o chão da conta da faixa resolveu metade do problema e criou a outra metade: com a faixa medida só pelo boneco, o chão em primeiro plano cai **fora** dela, e grampear o que está fora significa pintá-lo de branco chapado.
+
+Com a câmera padrão — 2 m de altura, 35 mm, boneco a ~5,4 m — o chão entra no quadro a ~2,5 m e a faixa começa a ~5,0 m. São **dois metros e meio de branco liso na metade de baixo da imagem**, no mesmo valor 1,0 que deveria ser exclusivo da superfície mais próxima do boneco. O peito e o rosto se dissolviam no piso exatamente na ponta clara da escala, que é o oposto do que um mapa de profundidade existe para fazer.
+
+Quatro rotas foram medidas antes de perguntar: chão fora do passe (🟢, perde o contato com o solo), recortado pela faixa (🟡), encolhido em volta dos bonecos (🟢, mas a borda é reta no mundo e vira um degrau) e dentro da conta da faixa (🟢, e devolve o boneco a poucos níveis de cinza — o problema que a decisão original evitou). O usuário escolheu **um seletor de três valores com o recorte como padrão**, o que entrega a melhor rota sem fechar as outras antes da conferência visual.
+
+**Recortar é por profundidade, não por geometria.** O material do chão descarta o fragmento cuja distância cai fora de perto/longe; a borda do "tapete" acompanha a distância em vez de ser um retângulo no mundo. O material do conteúdo **nunca** recorta, e essa assimetria é deliberada: com a faixa travada mais curta que o boneco, ele tem de clarear e escurecer nas pontas — sumir com metade dele seria um modo de falha muito pior do que saturar.
+
+### O preço: `overrideMaterial` não servia mais
+
+O chão precisa de um material **diferente** do resto, e `scene.overrideMaterial` é um só para a cena inteira. A troca virou material a material, por `traverse` — que era, aliás, o que o levantamento de viabilidade já previa.
+
+Isso trouxe um problema que o `overrideMaterial` não tinha: com uma propriedade só, qualquer passe sabia restaurá-la; com N objetos, quem restaura precisa saber o que cada um era. E `suspendDepthMaterial` restaura o que **outro** passe trocou — é a função inteira da qual a independência das três escolhas depende.
+
+A saída foi guardar o original em **marcas de `userData`** (`depthOriginalMaterial`, `depthHidden`) em vez de numa closure. O estado passa a viver no objeto, e não em quem o mexeu: qualquer passe desfaz o que outro fez, sem os dois se conhecerem. Duas consequências caem de graça — a aplicação vira **idempotente** (a marca só é gravada na primeira passada, então reaplicar não sobrescreve o original com o material de profundidade), e a vista na tela pode repeti-la **a cada quadro**, que é o que a faz alcançar um boneco ou objeto criado depois de o modo ter sido ligado. A dependência em `figureIds` que a versão anterior usava para isso saiu junto.
+
+O usuário também decidiu **não** dar folga à faixa automática: a superfície mais próxima continua em 1,0 e a mais distante em 0,0, usando os 256 níveis inteiros.

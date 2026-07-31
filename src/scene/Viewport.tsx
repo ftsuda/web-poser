@@ -9,6 +9,7 @@ import { isDraggableJoint } from '../figure/dragSolver'
 import { ROOT_JOINT_NAME } from '../figure/skeleton'
 import { useFiguresStore } from '../store/figuresStore'
 import { useCameraStore } from '../store/cameraStore'
+import { useDepthStore } from '../store/depthStore'
 import { selectTarget } from '../store/selection'
 import { useUIStore } from '../store/uiStore'
 import { AnimationPlayer } from './AnimationPlayer'
@@ -17,6 +18,8 @@ import { SceneCameraGizmo } from './SceneCameraGizmo'
 import { FrameMaskCamera } from './FrameMaskCamera'
 import { FrameMaskOverlay } from './FrameMaskOverlay'
 import { BACKGROUND_COLORS, CAMERA_DEFAULTS } from './constants'
+import { DEPTH_BACKGROUND } from './depthMap'
+import { DepthPreview } from './DepthPreview'
 import { GridAlignmentIndicator } from './GridAlignmentIndicator'
 import { JointDragGizmo } from './JointDragGizmo'
 import { SnapshotCapture } from './SnapshotCapture'
@@ -37,6 +40,7 @@ export function Viewport() {
   const selectedJointName = useFiguresStore((state) => state.selectedJointName)
   const gizmoMode = useUIStore((state) => state.gizmoMode)
   const rulerVisible = useUIStore((state) => state.rulerVisible)
+  const depthPreview = useDepthStore((state) => state.previewEnabled)
   const viewMode = useCameraStore((state) => state.viewMode)
   const projection = useCameraStore((state) => state.projection)
   const setCameraSelected = useCameraStore((state) => state.setCameraSelected)
@@ -101,7 +105,15 @@ export function Viewport() {
         camera={{ position: CAMERA_DEFAULTS.position, fov: CAMERA_DEFAULTS.fov }}
         onPointerMissed={() => selectTarget(null)}
       >
-        <color attach="background" args={[BACKGROUND_COLORS[environment.background]]} />
+        {/* O fundo é DAQUI, inclusive no modo profundidade (fase 13): sob um
+            material de profundidade o cinza do ambiente leria como distância
+            média, então a vista vai a preto — "infinitamente longe", que é o
+            que o fundo de fato é. Trocar por React, e não por mutação no
+            `DepthPreview`, é o que garante um dono só para a propriedade. */}
+        <color
+          attach="background"
+          args={[depthPreview ? DEPTH_BACKGROUND : BACKGROUND_COLORS[environment.background]]}
+        />
         <SceneContent grid={environment.grid} />
         {/* Ancorada no boneco selecionado, no mesmo ponto do gizmo de
             translação; sem seleção não há o que medir (DECISOES.md #33). */}
@@ -144,6 +156,7 @@ export function Viewport() {
         <FrameMaskCamera controlsRef={orbitControlsRef} />
         <AnimationPlayer />
         <SnapshotCapture />
+        <DepthPreview />
         {/* Órbita só no modo edição: no modo visão-câmera a vista é o quadro
             da câmera de cena, travado (ajustes pelo painel ou pelo gizmo, de
             volta na edição). Durante a REPRODUÇÃO a bancada fica livre — a

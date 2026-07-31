@@ -28,7 +28,9 @@
     "figureStyle": "Boneco",
     "figureStyleHint": "Só a aparência: o esqueleto, as poses e os limites das juntas são os mesmos nas duas. O palito tem juntas grandes, para selecionar com o dedo em tela sensível ao toque.",
     "figureStyleWooden": "Manequim de madeira",
-    "figureStyleStick": "Palito (juntas grandes)"
+    "figureStyleStick": "Palito (juntas grandes)",
+    "depth": "Profundidade",
+    "depthHint": "Mostra a cena na tela como mapa de profundidade — perto claro, longe escuro. É só a vista: o que sai no PNG e no MP4 se escolhe nos painéis de Instantâneos e de Animação."
   },
   "panels": {
     "figures": {
@@ -44,8 +46,6 @@
       "hide": "Ocultar boneco",
       "duplicate": "Duplicar boneco",
       "remove": "Remover boneco",
-      "exportFigure": "Exportar boneco (.glb)",
-      "importFigure": "Importar boneco (.glb)",
       "clipboard": "Área de transferência de poses",
       "clipboardCopy": "Copiar pose do selecionado",
       "clipboardCopyHint": "Guarda a pose do boneco selecionado (juntas e assentamento) para colar em outro boneco, inclusive depois de trocar de cena.",
@@ -384,8 +384,8 @@
       "cancelSave": "Cancelar",
       "applyBookmark": "Ir para este bookmark",
       "removeBookmark": "Remover bookmark",
-      "exportBookmarks": "Exportar bookmarks (.glb)",
-      "importBookmarks": "Importar bookmarks (.glb)",
+      "exportBookmarks": "Exportar bookmarks (.json)",
+      "importBookmarks": "Importar bookmarks (.json)",
       "lens": "Lente e inclinação",
       "focalLength": "Distância focal (mm)",
       "lensHint": "{{term}} ({{family}}) — campo de visão vertical de {{fov}}°. Com um plano ativo, trocar a lente mantém o enquadramento e muda só a perspectiva.",
@@ -475,6 +475,8 @@
       "width": "Largura (px)",
       "height": "Altura (px)",
       "hideOverlays": "Ocultar grade/gizmos/junta na captura",
+      "depthOutput": "Gerar o PNG em profundidade",
+      "depthOutputHint": "Saída alternativa: perto claro, longe escuro, com o sufixo _depth no nome. Para ter as duas versões, capture duas vezes. A faixa perto/longe fica no painel de Cenas, em Configurações.",
       "chooseDirectory": "Escolher pasta de destino",
       "directoryChosen": "Pasta: {{name}}",
       "directoryNotChosen": "Nenhuma pasta escolhida — as capturas serão baixadas.",
@@ -592,6 +594,8 @@
       "thumbnailsHint": "Renderiza um retrato pequeno de cada keyframe, para dizer qual é qual. Fica só em memória — não incha o arquivo nem entra no desfazer.",
       "thumbnailAlt": "Miniatura do keyframe {{index}}",
       "fps": "Quadros por segundo",
+      "depthOutput": "Exportar o MP4 em profundidade",
+      "depthOutputHint": "Saída alternativa: perto claro, longe escuro, com o sufixo _depth no nome. Para ter as duas versões, exporte duas vezes. A faixa perto/longe fica no painel de Cenas, em Configurações.",
       "export": "Exportar MP4",
       "exporting": "Renderizando quadro {{frame}} de {{total}}…",
       "cancelExport": "Cancelar",
@@ -677,18 +681,29 @@
       "load": "Carregar esta cena",
       "remove": "Remover cena",
       "active": "Ativa",
-      "exportScene": "Exportar cena atual (.glb)",
-      "importScene": "Importar cena (.glb)",
+      "exportScene": "Exportar cena atual (.json)",
+      "importScene": "Importar cena (.json)",
       "saveWorkspaceToFolder": "Salvar workspace em pasta",
       "openWorkspaceFromFolder": "Abrir workspace de pasta",
       "workspaceFolderChosen": "Pasta do workspace: {{name}}",
-      "workspaceFolderUnavailable": "Este navegador não suporta escolher pasta — use os arquivos individuais (workspace.json + joint-limits.json + poses.json + .glb) para abrir um workspace salvo.",
+      "workspaceFolderUnavailable": "Este navegador não suporta escolher pasta — selecione os arquivos individuais (workspace.json + os .json das cenas + joint-limits.json + poses.json) para abrir um workspace salvo.",
       "customJointLimits_one": "Limites articulares customizados por este workspace em {{count}} junta (joint-limits.json).",
       "customJointLimits_other": "Limites articulares customizados por este workspace em {{count}} juntas (joint-limits.json).",
       "resetJointLimits": "Restaurar limites padrão",
       "newWorkspace": "Novo workspace (limpar tudo)",
       "newWorkspaceConfirm": "Isto apaga todos os bonecos, as cenas salvas, os bookmarks de câmera, a biblioteca de poses e os limites customizados, e zera o histórico de desfazer. Não dá para desfazer com Ctrl+Z.",
-      "newWorkspaceConfirmYes": "Limpar tudo"
+      "newWorkspaceConfirmYes": "Limpar tudo",
+      "settings": "Configurações",
+      "depthRange": "Mapa de profundidade",
+      "depthAutoRange": "Faixa automática (pelos bonecos e objetos)",
+      "depthNear": "Perto (m)",
+      "depthFar": "Longe (m)",
+      "depthRangeHint": "Perto sai branco, longe sai preto. Com a faixa automática, cada saída se remede pelo conteúdo visível; travar a faixa é o que dá uma sequência de quadros com escala estável.",
+      "depthGround": "Chão no mapa",
+      "depthGroundClipped": "Recortado pela faixa",
+      "depthGroundHidden": "Fora do mapa",
+      "depthGroundFull": "Rampa cheia",
+      "depthGroundHint": "A faixa é medida só pelos bonecos e objetos, então o chão em primeiro plano fica fora dela. Recortado, ele aparece só em volta dos pés; fora do mapa, o boneco fica sobre preto; na rampa cheia, o chão perto da câmera vira uma área branca chapada."
     },
     "collapse": "Recolher painel {{title}}",
     "expand": "Expandir painel {{title}}"
@@ -728,19 +743,20 @@
     "nextKeyframe": "Próximo keyframe",
     "previousFrame": "Um quadro para trás (1/{{fps}} s)",
     "nextFrame": "Um quadro para frente (1/{{fps}} s)",
-    "visitedKeyframe": "Keyframe {{index}} está na cena de trabalho"
+    "visitedKeyframe": "Keyframe {{index}} está na cena de trabalho",
+    "keyframeMark": "Keyframe {{index}} — {{time}}"
   },
   "common": {
     "gizmoTranslate": "Mover",
     "gizmoRotate": "Girar"
   },
   "errors": {
-    "importUnreadable": "Arquivo não pôde ser lido — o .glb parece corrompido ou não é um glTF válido.",
-    "importMissingAppData": "O arquivo é um .glb válido, mas não contém os dados do Virtual Mockup (custom properties). Reexporte com a opção de custom properties ligada.",
+    "importUnreadable": "Arquivo não pôde ser lido — o conteúdo não é um JSON válido (arquivo corrompido ou truncado).",
+    "importMissingAppData": "O arquivo é um JSON válido, mas não é do Virtual Mockup — falta o campo \"version\" que todo arquivo do aplicativo grava.",
     "importFailed": "Não foi possível importar o arquivo.",
     "importNoAnimation": "O arquivo foi lido, mas não tem nenhuma animação aproveitável — keyframes sem bonecos ou sem câmera são descartados.",
     "importUnreadableJson": "Arquivo não pôde ser lido — não é um JSON válido.",
     "importNoPose": "O arquivo foi lido, mas não tem nenhuma pose aproveitável — nenhuma junta conhecida foi encontrada nele.",
-    "workspaceManifestMissing": "A seleção não incluía o arquivo workspace.json — selecione-o junto com os .glb das cenas."
+    "workspaceManifestMissing": "A seleção não incluía o arquivo workspace.json — selecione-o junto com os .json das cenas."
   }
 }

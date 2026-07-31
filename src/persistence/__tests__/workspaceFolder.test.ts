@@ -5,7 +5,7 @@ import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import type { Figure, SceneSnapshot } from '../../store/figuresStore'
 import { JOINT_LIMITS_FILENAME, buildJointLimitsFile } from '../jointLimitsFile'
 import { POSES_FILENAME, buildPosesFile } from '../posesFile'
-import { exportSceneToGlb } from '../sceneFile'
+import { serializeSceneFile } from '../sceneFile'
 import { WORKSPACE_MANIFEST_FILENAME, buildWorkspaceManifest } from '../workspaceManifest'
 import { loadWorkspaceFromDirectory, loadWorkspaceFromFiles, saveWorkspaceToDirectory } from '../workspaceFolder'
 
@@ -55,7 +55,7 @@ function createFakeDirectory() {
 }
 
 describe('workspaceFolder — salvar/abrir workspace numa pasta (File System Access API)', () => {
-  it('grava um .glb por cena e o manifesto workspace.json na pasta', async () => {
+  it('grava um .json por cena e o manifesto workspace.json na pasta', async () => {
     const { directoryHandle, files } = createFakeDirectory()
 
     await saveWorkspaceToDirectory(directoryHandle, scenes, 'scene-2')
@@ -81,20 +81,18 @@ describe('workspaceFolder — salvar/abrir workspace numa pasta (File System Acc
 })
 
 describe('workspaceFolder — fallback sem File System Access API (seleção manual de múltiplos arquivos)', () => {
-  it('reconstrói o workspace a partir do workspace.json e dos .glb selecionados juntos', async () => {
+  it('reconstrói o workspace a partir do workspace.json e dos .json de cena selecionados juntos', async () => {
     const manifest = buildWorkspaceManifest(scenes, 'scene-1')
     const manifestFile = new File([JSON.stringify(manifest)], WORKSPACE_MANIFEST_FILENAME, {
       type: 'application/json',
     })
-    const glbFiles = await Promise.all(
-      manifest.scenes.map(async (entry) => {
-        const scene = scenes.find((s) => s.id === entry.id)!
-        const glb = await exportSceneToGlb({ name: scene.name, ...scene.data })
-        return new File([glb], entry.filename, { type: 'model/gltf-binary' })
-      }),
-    )
+    const sceneFiles = manifest.scenes.map((entry) => {
+      const scene = scenes.find((s) => s.id === entry.id)!
+      const json = serializeSceneFile({ name: scene.name, ...scene.data })
+      return new File([json], entry.filename, { type: 'application/json' })
+    })
 
-    const loaded = await loadWorkspaceFromFiles([manifestFile, ...glbFiles])
+    const loaded = await loadWorkspaceFromFiles([manifestFile, ...sceneFiles])
 
     expect(loaded).not.toBeNull()
     expect(loaded!.activeSceneId).toBe('scene-1')
@@ -102,11 +100,11 @@ describe('workspaceFolder — fallback sem File System Access API (seleção man
   })
 
   it('retorna null quando os arquivos selecionados não incluem o workspace.json', async () => {
-    const loaded = await loadWorkspaceFromFiles([new File(['x'], 'algo.glb')])
+    const loaded = await loadWorkspaceFromFiles([new File(['x'], 'algo.json')])
     expect(loaded).toBeNull()
   })
 
-  it('ignora entradas do manifesto cujo arquivo .glb não foi selecionado', async () => {
+  it('ignora entradas do manifesto cujo arquivo de cena não foi selecionado', async () => {
     const manifest = buildWorkspaceManifest(scenes, null)
     const manifestFile = new File([JSON.stringify(manifest)], WORKSPACE_MANIFEST_FILENAME)
 
@@ -232,7 +230,7 @@ describe('workspaceFolder — biblioteca de poses (DECISOES.md #42)', () => {
 
     const written = JSON.parse(String(files.get(POSES_FILENAME)))
     expect(written.poses).toHaveLength(2)
-    expect(written.poses[0].pose['shoulder.L']).toEqual([10, 90, 20])
+    expect(written.poses[0].pose['shoulder.L']).toEqual({ x: 10, y: 90, z: 20 })
     expect(JSON.parse(String(files.get(WORKSPACE_MANIFEST_FILENAME))).posesFile).toBe(POSES_FILENAME)
   })
 

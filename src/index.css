@@ -11,6 +11,13 @@
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
+  /* Largura do polegar do `<input type=range>`. Ninguém estiliza o polegar no
+     projeto — este é o tamanho que Chrome, Edge e Firefox usam por padrão. Vale
+     para quem precisa alinhar algo com a RÉGUA do slider e não com a caixa
+     dele: o centro do polegar percorre a largura menos um polegar inteiro, meio
+     de cada lado (ver `.timeline-bar__marks`). */
+  --range-thumb: 16px;
+
   font: 16px/145% var(--sans);
   color-scheme: light dark;
   color: var(--text);
@@ -304,6 +311,80 @@ h2 {
   border-radius: 4px;
 }
 
+/* ---------------------------------------------------------------------------
+ * Convenção de botões de painel (DECISOES.md #88)
+ *
+ * Antes disto cada painel inventava a sua: sete regras diferentes de largura e
+ * padding, e todo botão que ninguém tinha lembrado de estilizar ficava do
+ * tamanho do próprio texto — encolhido no meio de uma coluna de 250 px.
+ *
+ * A regra tem duas formas, e a escolha é semântica, não estética:
+ *
+ * - `.panel-action` — a ação está SOZINHA no seu bloco. Ocupa a largura do
+ *   painel, que é o alvo de clique máximo disponível.
+ * - `.panel-actions` — as ações formam um CONJUNTO entre o qual se escolhe
+ *   (presets de pose, grupos de junta, presets de mão, vistas de câmera). Grade
+ *   de duas colunas: empilhar oito presets em largura cheia trocaria rolagem
+ *   por nada.
+ *
+ * Um botão sozinho NUNCA vai num `.panel-actions` — sairia com metade da
+ * largura e um buraco ao lado, que era exatamente o defeito do "Travar junta".
+ * ------------------------------------------------------------------------- */
+.panel-action {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem;
+  cursor: pointer;
+}
+
+.panel-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.panel-actions > button {
+  min-width: 0;
+  padding: 0.35rem;
+  cursor: pointer;
+}
+
+/*
+ * Ar entre ações consecutivas — sem isto elas se encostam e parecem um controle
+ * segmentado.
+ *
+ * Só vale para filha DIRETA de `fieldset`, que é o caso em que não há nada
+ * separando as duas. Contêineres próprios (`.scenes-panel__file-actions` e
+ * companhia) já espaçam por `gap`, e a regra somaria em cima disso.
+ */
+fieldset > .panel-action + .panel-action,
+fieldset > .panel-actions + .panel-action,
+fieldset > .panel-action + .panel-actions {
+  margin-top: 0.4rem;
+}
+
+/*
+ * Caixa de marcar dentro de um campo de painel.
+ *
+ * Cada painel tem uma regra `__field input { width: 100% }` para os campos de
+ * texto, e ela alcançava também as caixas. Um `<input type="checkbox">` com
+ * `width: 100%` num flex vira um item que pede a linha inteira, encolhe até o
+ * mínimo e não devolve o espaço: o rótulo ao lado ficava com poucos caracteres
+ * por linha, e "Espelhar edições ao vivo" quebrava em três.
+ *
+ * A caixa passa a ter o tamanho próprio dela e a NÃO encolher; o rótulo fica
+ * com todo o resto da linha.
+ */
+.properties-panel__field input[type='checkbox'],
+.snapshot-panel__field input[type='checkbox'],
+.camera-panel__field input[type='checkbox'],
+.animation-panel__field input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+}
+
 .figures-panel__add {
   width: 100%;
   padding: 0.4rem;
@@ -469,8 +550,7 @@ h2 {
 }
 
 .figures-panel__duplicate,
-.figures-panel__remove,
-.figures-panel__export {
+.figures-panel__remove {
   flex: 0 0 auto;
   width: 1.4rem;
   height: 1.4rem;
@@ -482,13 +562,6 @@ h2 {
 .figures-panel__duplicate:disabled {
   cursor: not-allowed;
   opacity: 0.5;
-}
-
-.figures-panel__import {
-  width: 100%;
-  padding: 0.4rem;
-  margin-bottom: 0.6rem;
-  cursor: pointer;
 }
 
 .properties-panel__figure-name {
@@ -529,6 +602,27 @@ h2 {
 
 .properties-panel__field input {
   width: 100%;
+}
+
+/* Campo EMPILHADO — rótulo em cima, controle embaixo (pedido do usuário,
+   2026-07-31). A linha é a exceção deste painel, e existe para os rótulos de
+   uma letra dos eixos X/Y/Z; um rótulo que é frase ("Selecionar junta") não
+   cabe ao lado do próprio controle. Empilhado, o campo fica igual aos dos
+   outros painéis — `.camera-panel__field`, `.animation-panel__field`,
+   `.snapshot-panel__field` e `.scenes-panel__field` já nascem em coluna. */
+.properties-panel__field--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+}
+
+/* Sem isto o `<select>` não encolhe abaixo do nome de junta mais comprido e
+   empurra o painel inteiro para fora — o mesmo remendo dos combos de
+   enquadramento e da área de transferência de poses. */
+.properties-panel__field--stacked select {
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
 }
 
 .properties-panel__hint {
@@ -616,34 +710,9 @@ h2 {
   padding: 0 0.3rem;
 }
 
+/* Grade e padding vêm do `.panel-actions`; aqui só o respiro do bloco. */
 .camera-panel__presets {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.35rem;
   margin-bottom: 0.5rem;
-}
-
-.properties-panel__pose-presets {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.35rem;
-}
-
-/* Espelho completo (pedido do usuário): fora da grade de duas colunas das
-   operações de lado, porque não é mais uma delas — vale para o boneco inteiro,
-   sem obedecer ao escopo da junta selecionada. */
-.properties-panel__mirror-all {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  margin-top: 0.45rem;
-  padding: 0.35rem;
-  cursor: pointer;
-}
-
-.properties-panel__pose-presets button {
-  padding: 0.3rem;
-  cursor: pointer;
 }
 
 /* Combo de poses agrupadas (DECISOES.md #36) — ocupa a largura do painel. */
@@ -653,9 +722,10 @@ h2 {
 }
 
 /*
- * Sorteio de pose (DECISOES.md #35): borda tracejada para não se confundir
- * com o "Aplicar pose" ao lado — cada clique dá uma pose diferente, em vez de
- * aplicar a que está escolhida no combo.
+ * Sorteio de pose (DECISOES.md #35): borda tracejada para não se confundir com
+ * o "Aplicar pose" — cada clique dá uma pose diferente, em vez de aplicar a que
+ * está escolhida no combo. A largura vem do `.panel-action`; aqui só o que
+ * distingue o botão visualmente.
  */
 .properties-panel__random-pose {
   border-style: dashed;
@@ -674,18 +744,6 @@ h2 {
 
 .properties-panel__mix .properties-panel__axis-row {
   gap: 0.4rem;
-}
-
-/*
- * Biblioteca de poses do usuário (DECISOES.md #42). O botão de salvar ocupa a
- * largura toda, abaixo da linha "Aplicar/Aleatória": é uma ação sobre a pose
- * ATUAL, não sobre a escolhida no combo.
- */
-.properties-panel__save-pose {
-  width: 100%;
-  margin-top: 0.35rem;
-  padding: 0.3rem;
-  cursor: pointer;
 }
 
 .properties-panel__save-pose-form {
@@ -715,17 +773,6 @@ h2 {
 .properties-panel__reset:disabled {
   cursor: not-allowed;
   opacity: 0.5;
-}
-
-.camera-panel__presets button,
-.camera-panel__back-to-perspective,
-.camera-panel__save {
-  padding: 0.3rem;
-  cursor: pointer;
-}
-
-.camera-panel__back-to-perspective {
-  width: 100%;
 }
 
 .camera-panel__back-to-perspective:disabled {
@@ -775,10 +822,6 @@ h2 {
   cursor: pointer;
 }
 
-.camera-panel__save {
-  width: 100%;
-}
-
 .camera-panel__save-form-actions {
   display: flex;
   gap: 0.4rem;
@@ -795,12 +838,6 @@ h2 {
   flex-direction: column;
   gap: 0.4rem;
   margin-top: 0.6rem;
-}
-
-.camera-panel__bookmark-file-actions button {
-  width: 100%;
-  padding: 0.3rem;
-  cursor: pointer;
 }
 
 .snapshot-panel__field {
@@ -836,10 +873,7 @@ h2 {
 }
 
 .snapshot-panel__directory button {
-  width: 100%;
-  padding: 0.3rem;
   margin-bottom: 0.3rem;
-  cursor: pointer;
 }
 
 .snapshot-panel__hint {
@@ -848,10 +882,10 @@ h2 {
   margin: 0;
 }
 
+/* Capturar é A ação do painel: padding maior e peso na fonte, sobre a largura
+   cheia do `.panel-action`. */
 .snapshot-panel__capture {
-  width: 100%;
   padding: 0.5rem;
-  cursor: pointer;
   font-weight: 500;
 }
 
@@ -918,34 +952,67 @@ h2 {
   margin-bottom: 0.6rem;
 }
 
-.scenes-panel__save,
-.scenes-panel__save-form-actions button,
-.scenes-panel__file-actions button {
-  width: 100%;
-  padding: 0.3rem;
-  cursor: pointer;
-}
-
+/* Confirmar/cancelar são um par: grade de duas colunas do `.panel-actions`,
+   com a margem de bloco própria. */
 .scenes-panel__save-form-actions {
-  display: flex;
-  gap: 0.4rem;
   margin-bottom: 0.6rem;
 }
 
-.scenes-panel__save-form-actions button {
-  flex: 1 1 auto;
-}
-
+/*
+ * As ações de ARQUIVO ficam separadas do "Salvar cena atual como snapshot" por
+ * um vão maior (pedido do usuário): salvar um snapshot mexe no catálogo em
+ * memória, exportar grava um `.json` no disco. Encostados, os dois pareciam a
+ * mesma fila de botões, e a diferença entre eles é justamente a que mais custa
+ * caro confundir.
+ */
 .scenes-panel__file-actions {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
 }
 
 .scenes-panel__hint {
   font-size: 0.75rem;
   opacity: 0.7;
   margin: 0.2rem 0 0;
+}
+
+/* Configurações do workspace (fase 13): a faixa do mapa de profundidade. Sem
+   moldura própria — o `fieldset` só agrupa e nomeia, como no painel de
+   Animação. */
+.scenes-panel__settings {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.scenes-panel__settings legend {
+  font-size: 0.75rem;
+  opacity: 0.75;
+  padding: 0 0 0.3rem;
+}
+
+.scenes-panel__field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Perto e longe lado a lado: são as duas pontas da mesma medida. */
+.scenes-panel__depth-range {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.scenes-panel__depth-range .scenes-panel__field {
+  flex: 1;
+}
+
+.scenes-panel__depth-range input {
+  width: 100%;
 }
 
 .app-shell__viewport {
@@ -1178,12 +1245,7 @@ code {
 /* Combos de enquadramento + botão de confirmar (#51): a escolha não aplica
    sozinha, o mesmo mecanismo do combo de poses. */
 .camera-panel__apply {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  padding: 0.35rem;
-  margin-bottom: 0.5rem;
-  cursor: pointer;
+  margin-bottom: 0.4rem;
 }
 
 .camera-panel__apply:disabled {
@@ -1284,11 +1346,9 @@ code {
    keyframe aqui" era o único: hoje veste "Fechar o ciclo", "Aplicar a câmera" e
    "Gerar miniaturas", que não inserem nada — e um seletor que mente é o mesmo
    problema do `__row` que renderizava coluna. */
+/* Largura e padding vêm do `.panel-action`; aqui só o respiro entre blocos. */
 .animation-panel__wide,
 .animation-panel__export {
-  display: block;
-  width: 100%;
-  min-width: 0;
   margin-bottom: 0.6rem;
 }
 
@@ -1551,27 +1611,45 @@ code {
   opacity: 1;
 }
 
-/* Faixas dos grupos rotulados sob a régua (item 38). */
-/* Faixa fina logo abaixo da régua, só para a marca do item 41: fora do
-   `<input type=range>`, que não deixa estilizar as próprias marcas, e fora do
-   caminho do polegar, que é o que a mão arrasta. */
+/* Régua numerada logo abaixo do slider (pedido do usuário, 2026-07-31): o
+   número de cada keyframe no instante dele. Só o número — o `<input
+   type=range>` já desenha os traços, a partir do `<datalist>`; repeti-los aqui
+   dava dois tiques por keyframe. O que o navegador NÃO desenha é o rótulo da
+   `<option>`, e é ele que esta faixa devolve.
+
+   Fica fora do slider porque ele não deixa estilizar as próprias marcas, e
+   abaixo dele para não disputar o caminho do polegar. */
 .timeline-bar__marks {
   position: relative;
-  height: 0.45rem;
+  height: 0.8rem;
+  /* O polegar não passeia pela largura toda: o centro dele vai de meio polegar
+     da borda esquerda a meio polegar da direita. Sem este recuo, o "1" ficava à
+     esquerda do traço do keyframe 1 e o último número à direita do dele, com o
+     erro crescendo para as pontas. Encolher a faixa por meio polegar de cada
+     lado faz o 0%–100% daqui ser o MESMO 0%–100% de lá. */
+  margin: 0 calc(var(--range-thumb) / 2);
 }
 
-.timeline-bar__visited {
+.timeline-bar__mark {
   position: absolute;
   top: 0;
-  /* `left` é a porcentagem do instante; o traço se centra sobre ela. Três
-     pixels, e não um: um traço de um pixel se confunde com as marcas que o
-     próprio navegador desenha para o `<datalist>`. */
-  width: 3px;
-  height: 100%;
-  margin-left: -1.5px;
-  background: var(--text-h);
-  border-radius: 1px;
+  /* `left` é a porcentagem do instante; o número se centra sobre ela. */
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  line-height: 1;
+  opacity: 0.7;
 }
+
+/* O keyframe que está NA BANCADA (item 41): o mesmo número, em destaque. Sem
+   traço próprio, o destaque é a cor e o peso — que é o que distingue este
+   número dos vizinhos, já que o tique do slider é igual para todos. */
+.timeline-bar__mark--visited {
+  opacity: 1;
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+/* Faixas dos grupos rotulados sob a régua (item 38). */
 
 .timeline-bar__groups {
   position: relative;
@@ -1674,14 +1752,15 @@ code {
   margin: 0.75rem 0 0;
 }
 
+/* Combo numa linha, botão embaixo (pedido do usuário): eram um `flex` lado a
+   lado, e o `select` ficava com o que sobrava depois do botão — estreito demais
+   para os nomes de forma. */
 .props-section__add {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.35rem;
+  display: grid;
+  gap: 0.4rem;
 }
 
 .props-section__shape {
-  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1692,11 +1771,6 @@ code {
 .props-section__shape select {
   width: 100%;
   min-width: 0;
-}
-
-.props-section__add > button {
-  flex: none;
-  font-size: 0.78rem;
 }
 
 .props-section__hide-all {
@@ -1793,10 +1867,11 @@ code {
   gap: 0.6rem;
 }
 
+/* Grade e padding vêm do `.panel-actions` — as quatro ferramentas não cabiam
+   numa fileira só, e o `flex-wrap` deixava a última sozinha na segunda linha
+   com largura diferente das outras três. */
 .prop-properties__tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
+  margin-bottom: 0.5rem;
 }
 
 .prop-properties__tools button {

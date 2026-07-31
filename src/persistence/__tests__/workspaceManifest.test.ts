@@ -21,15 +21,32 @@ const scenes: SceneSnapshot[] = [
 ]
 
 describe('workspaceManifest — manifesto do workspace em pasta', () => {
-  it('gera um manifesto com um nome de arquivo .glb único por cena, mesmo com nomes de cena duplicados', () => {
+  it('gera um manifesto com um nome de arquivo .json único por cena, mesmo com nomes de cena duplicados', () => {
     const manifest = buildWorkspaceManifest(scenes, 'scene-2')
     expect(manifest.version).toBe(WORKSPACE_MANIFEST_VERSION)
     expect(manifest.activeSceneId).toBe('scene-2')
     expect(manifest.scenes).toHaveLength(2)
     const filenames = manifest.scenes.map((s) => s.filename)
     expect(new Set(filenames).size).toBe(2)
-    expect(filenames[0]).toMatch(/\.glb$/)
-    expect(filenames[1]).toMatch(/\.glb$/)
+    expect(filenames[0]).toMatch(/\.json$/)
+    expect(filenames[1]).toMatch(/\.json$/)
+  })
+
+  /**
+   * Não existia enquanto as cenas eram `.glb`: a extensão sozinha separava a
+   * cena dos arquivos fixos da pasta. Agora tudo é `.json`, e uma cena chamada
+   * "Poses" geraria `poses.json` — apagando a biblioteca de poses do usuário.
+   */
+  it('não deixa uma cena ocupar o nome de um arquivo fixo da pasta', () => {
+    const colliding: SceneSnapshot[] = [
+      { id: 'scene-1', name: 'poses', data: emptyData },
+      { id: 'scene-2', name: 'Workspace', data: emptyData },
+      { id: 'scene-3', name: 'joint-limits', data: emptyData },
+    ]
+
+    const filenames = buildWorkspaceManifest(colliding, null).scenes.map((s) => s.filename)
+
+    expect(filenames).toEqual(['poses-2.json', 'Workspace-2.json', 'joint-limits-2.json'])
   })
 
   it('faz o round-trip completo (manifesto → JSON → manifesto)', () => {

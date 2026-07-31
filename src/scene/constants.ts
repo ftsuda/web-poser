@@ -19,6 +19,14 @@ export const GROUND_SIZE = 20
 export const GRID_DIVISIONS = 20
 
 /**
+ * Nome do plano do chão. Não é overlay — sai no PNG e no MP4 como conteúdo —,
+ * mas o mapa de profundidade precisa distingui-lo de todo o resto para poder
+ * recortá-lo ou escondê-lo (ver `depthMap.GroundMode`). Constante para os dois
+ * lados lerem o mesmo nome.
+ */
+export const GROUND_NAME = 'ground'
+
+/**
  * Quão escura é a sombra projetada no chão, de 0 (nenhuma) a 1 (o padrão do
  * three, preto cheio). Baixada a pedido do usuário: com os objetos de cena
  * (item 42) somando volumes ao cenário, a sombra a 1 empastelava o chão e

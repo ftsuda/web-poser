@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import { controlPointCount } from '../../props/propGeometry'
 import { DEFAULT_PROP_COLOR, DEFAULT_PROP_SIZE, type SceneProp } from '../../props/sceneProp'
-import { buildPropObject3D } from '../propObject3D'
-import { exportSceneToGlb, importSceneFromGlb } from '../sceneFile'
+import { parseSceneFile, serializeSceneFile } from '../sceneFile'
 import { propFromExtras, propToExtras, sceneFromExtras, sceneToExtras, type SceneWorkingState } from '../sceneSerialization'
 
 function makeProp(overrides: Partial<SceneProp> = {}): SceneProp {
@@ -102,35 +101,21 @@ describe('serialização de objetos de cena', () => {
     })
   })
 
-  describe('.glb', () => {
-    it('o objeto sai no arquivo e volta pelo bloco de extras', async () => {
+  describe('arquivo de cena', () => {
+    it('o objeto sai no arquivo e volta com forma, desvios e nome', () => {
       const scene = makeScene([makeProp({ vertexOffsets: { 0: [0.2, 0, 0] } })])
-      const restored = await importSceneFromGlb(await exportSceneToGlb(scene))
+      const restored = parseSceneFile(serializeSceneFile(scene))
 
       expect(restored.props).toHaveLength(1)
       expect(restored.props[0].vertexOffsets).toEqual({ 0: [0.2, 0, 0] })
       expect(restored.props[0].name).toBe('Caixa')
     })
 
-    it('a malha exportada é a REAL, com a deformação assada', () => {
-      const flat = buildPropObject3D(makeProp({ size: [1, 1, 1] }))
-      const bent = buildPropObject3D(makeProp({ size: [1, 1, 1], vertexOffsets: { 0: [2, 0, 0] } }))
+    it('"oculto na bancada" e "travado" viajam no arquivo, e não são o mesmo que invisível', () => {
+      const scene = makeScene([makeProp({ hiddenInEditor: true, locked: true, visible: false })])
+      const restored = parseSceneFile(serializeSceneFile(scene))
 
-      flat.geometry.computeBoundingBox()
-      bent.geometry.computeBoundingBox()
-      expect(bent.geometry.boundingBox!.max.x).toBeGreaterThan(flat.geometry.boundingBox!.max.x + 1.9)
-    })
-
-    it('o nó do objeto não usa caracteres que o GLTFLoader remove', () => {
-      // Mesmo contrato do `figureObject3D.ts` (DECISOES.md #11): `.` some no
-      // round-trip e quebraria a busca por nome.
-      expect(buildPropObject3D(makeProp()).name).toBe('prop_prop-1')
-      expect(buildPropObject3D(makeProp()).name).not.toContain('.')
-    })
-
-    it('"oculto na bancada" NÃO tira o objeto do arquivo — só `visible` faz isso', () => {
-      expect(buildPropObject3D(makeProp({ hiddenInEditor: true })).visible).toBe(true)
-      expect(buildPropObject3D(makeProp({ visible: false })).visible).toBe(false)
+      expect(restored.props[0]).toMatchObject({ hiddenInEditor: true, locked: true, visible: false })
     })
   })
 })

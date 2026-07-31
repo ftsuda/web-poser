@@ -1,4 +1,4 @@
-import { sanitizeFigure } from '../animation/animation'
+import { sanitizeFigure } from '../figure/figureFormat'
 import type { Figure } from '../store/figuresStore'
 
 /**
@@ -6,12 +6,19 @@ import type { Figure } from '../store/figuresStore'
  * e o refino no computador (PLANO.md > "Edição em dispositivo touch",
  * DECISOES.md #81).
  *
- * **O formato é o do keyframe, não um novo.** O campo `figure` é exatamente o
- * objeto que vive dentro de `keyframes[].figures[]` do `animations.json` — mesmo
- * `pose`, mesma `rotation`, mesma `height`. A leitura passa pelo
- * `sanitizeFigure` da própria animação, então há uma regra só de validação e
- * grampeamento para os dois caminhos. É isso que permite, mais tarde, montar
- * poses no celular e emendá-las como keyframes aqui sem conversão nenhuma.
+ * **É o único arquivo de boneco avulso do app** desde DECISOES.md #87, quando o
+ * exportar/importar boneco do painel de Bonecos foi removido: aquele arquivo
+ * gravava quase exatamente isto (a unificação do #86 tinha apagado a última
+ * diferença de codificação entre os dois), com uma segunda função de leitura e
+ * um segundo conjunto de mensagens de erro para manter em dia.
+ *
+ * **O formato é o do keyframe, não um novo.** O item de `figures[]` é exatamente
+ * o objeto que vive dentro de `keyframes[].figures[]` do `animations.json` —
+ * mesmo `pose`, mesma `rotation`, mesma `height`. A leitura passa pelo
+ * `sanitizeFigure` compartilhado (`figure/figureFormat.ts`, #86), então há uma
+ * regra só de validação e grampeamento para todos os caminhos. É isso que
+ * permite montar poses no celular e emendá-las como keyframes aqui sem conversão
+ * nenhuma.
  *
  * **Colocação no chão não é pose.** Ao GRAVAR, o boneco é considerado sempre no
  * (0,0) do plano horizontal: X e Z saem zerados. Ao CARREGAR, X e Z do boneco de
@@ -24,16 +31,17 @@ import type { Figure } from '../store/figuresStore'
  * **O que o arquivo carrega e a leitura ignora.** Por reusar a estrutura do
  * keyframe, o JSON traz também `id`, `name`, `color` e `visible`. Nenhum deles é
  * aplicado ao carregar: identidade e aparência são do boneco de destino, não da
- * pose (mesma regra do `poses.json` e do `applyImportedPose`). Eles ficam no
- * arquivo em vez de serem removidos justamente para o objeto continuar sendo um
- * `figures[]` válido de animação.
+ * pose (mesma regra do `poses.json`). Eles ficam no arquivo em vez de serem
+ * removidos justamente para o objeto continuar sendo um `figures[]` válido de
+ * animação.
  */
 
 export const FIGURE_POSE_VERSION = 1
 
 /** Explicação embutida no próprio arquivo — JSON não aceita comentários. */
 const README_LINES: readonly string[] = [
-  'Pose de UM boneco. O objeto "figure" tem exatamente a mesma estrutura de um boneco dentro de "keyframes[].figures[]" do animations.json — é o mesmo formato, não uma conversão.',
+  'Pose de UM boneco. "figures" é uma lista de um item só, e esse item tem exatamente a mesma estrutura de um boneco dentro de "keyframes[].figures[]" do animations.json — é o mesmo formato, não uma conversão.',
+  'Arquivos gravados antes usavam "figure" (singular) e continuam sendo lidos.',
   'As juntas ficam em "pose", em GRAUS, como {"x":0,"y":0,"z":0} por junta. "rotation" é a inclinação do boneco inteiro e "height" a altura dele em metros.',
   'Ao gravar, o boneco é considerado no (0,0) do plano horizontal: "position" sai como [0, y, 0].',
   'Ao carregar, o boneco de destino MANTÉM onde está no plano (X e Z) e recebe do arquivo apenas a altura Y — agachar e pular fazem parte da pose, andar para o lado não.',
@@ -46,7 +54,13 @@ const README_LINES: readonly string[] = [
 export interface FigurePoseFile {
   version: number
   leiame: readonly string[]
-  figure: Figure
+  /**
+   * Lista de UM boneco. O plural é o padrão de nome em todos os outros formatos
+   * do projeto — cena, animação, trechos e autosave usam `figures[]` —, e este
+   * arquivo era o único a destoar com `figure` singular (DECISOES.md #87).
+   * `figure` continua sendo LIDO, para os arquivos gravados antes.
+   */
+  figures: [Figure]
 }
 
 /**
@@ -61,7 +75,7 @@ export function buildFigurePoseFile(figure: Figure): FigurePoseFile {
   return {
     version: FIGURE_POSE_VERSION,
     leiame: README_LINES,
-    figure: figureForPoseFile(figure),
+    figures: [figureForPoseFile(figure)],
   }
 }
 
@@ -96,7 +110,8 @@ function figureFromKeyframes(keyframes: readonly unknown[]): unknown {
  * Acha o boneco dentro de qualquer um dos formatos que a família de arquivos de
  * animação produz, do mais específico ao mais geral:
  *
- * 1. o arquivo de pose deste módulo (`{ figure }`);
+ * 1. o arquivo de pose deste módulo (`{ figures: [um] }`) e o formato antigo
+ *    dele (`{ figure }`), que continua sendo aceito;
  * 2. um boneco cru (quem edita à mão às vezes cola só ele);
  * 3. um keyframe solto (`{ figures: [...] }`);
  * 4. uma animação solta (`{ keyframes: [...] }`);

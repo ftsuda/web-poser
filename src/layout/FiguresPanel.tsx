@@ -2,13 +2,20 @@ import { useState, type ChangeEvent, type FocusEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MAX_FIGURES, useFiguresStore, type Figure } from '../store/figuresStore'
 import { MAX_HEIGHT_M, MIN_HEIGHT_M } from '../figure/skeleton'
-import { slugifySceneName } from '../snapshot/snapshotNaming'
-import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
-import { exportFigureToGlb, importFigureFromGlb } from '../persistence/sceneFile'
 import { usePoseClipboardStore } from '../store/poseClipboardStore'
-import { importErrorKey } from './fileFeedback'
 import { CollapsiblePanel } from './CollapsiblePanel'
 import { PropsSection } from './PropsSection'
+
+/**
+ * Painel de Bonecos: lista, identidade (nome, cor, visibilidade), altura e a
+ * área de transferência de poses da sessão.
+ *
+ * **Não tem mais exportar/importar boneco em arquivo** (DECISOES.md #87). Aquele
+ * `.json` tinha virado quase o mesmo artefato do arquivo de pose avulsa do
+ * painel de Propriedades, e o par de leitores divergentes que sobrava era a
+ * porta de um defeito silencioso. Boneco em arquivo é hoje um caminho só:
+ * "Pose em arquivo", no painel de Propriedades.
+ */
 
 interface FigureRowProps {
   figure: Figure
@@ -48,12 +55,6 @@ function FigureRow({ figure, selected, atLimit }: FigureRowProps) {
 
   const handleColorChange = (event: ChangeEvent<HTMLInputElement>) => {
     setColor(figure.id, event.target.value)
-  }
-
-  const handleExport = async () => {
-    const glb = await exportFigureToGlb(figure)
-    const filename = `${slugifySceneName(figure.name)}.glb`
-    await writeFileToDirectoryOrDownload(null, filename, new Blob([glb], { type: 'model/gltf-binary' }))
   }
 
   return (
@@ -135,19 +136,6 @@ function FigureRow({ figure, selected, atLimit }: FigureRowProps) {
       >
         &times;
       </button>
-
-      <button
-        type="button"
-        className="figures-panel__export"
-        aria-label={t('panels.figures.exportFigure')}
-        title={t('panels.figures.exportFigure')}
-        onClick={(event) => {
-          event.stopPropagation()
-          void handleExport()
-        }}
-      >
-        &#8615;
-      </button>
     </li>
   )
 }
@@ -158,40 +146,12 @@ export function FiguresPanel() {
   const selectedFigureId = useFiguresStore((state) => state.selectedFigureId)
   const nextFigureSeq = useFiguresStore((state) => state.nextFigureSeq)
   const addFigure = useFiguresStore((state) => state.addFigure)
-  const applyImportedPose = useFiguresStore((state) => state.applyImportedPose)
-  const importFigureAsNew = useFiguresStore((state) => state.importFigureAsNew)
-
-  const [errorKey, setErrorKey] = useState<string | null>(null)
 
   const atLimit = figures.length >= MAX_FIGURES
   const selectedFigure = figures.find((figure) => figure.id === selectedFigureId)
 
   const handleAdd = () => {
     addFigure(t('panels.figures.defaultName', { index: nextFigureSeq }))
-  }
-
-  const handleImport = async () => {
-    const picked = await pickFile('.glb')
-    if (!picked) return
-    try {
-      const imported = await importFigureFromGlb(picked.data)
-      if (selectedFigureId) {
-        applyImportedPose(selectedFigureId, { height: imported.height, pose: imported.pose })
-      } else {
-        importFigureAsNew({
-          name: imported.name,
-          color: imported.color,
-          visible: imported.visible,
-          height: imported.height,
-          position: imported.position,
-          rotation: imported.rotation,
-          pose: imported.pose,
-        })
-      }
-      setErrorKey(null)
-    } catch (error) {
-      setErrorKey(importErrorKey(error))
-    }
   }
 
   return (
@@ -206,16 +166,6 @@ export function FiguresPanel() {
       >
         {t('panels.figures.add')}
       </button>
-
-      <button type="button" className="figures-panel__import" onClick={() => void handleImport()}>
-        {t('panels.figures.importFigure')}
-      </button>
-
-      {errorKey && (
-        <p role="alert" className="panel__error">
-          {t(errorKey)}
-        </p>
-      )}
 
       {figures.length === 0 ? (
         <p className="panel__empty">{t('panels.figures.empty')}</p>

@@ -7,7 +7,7 @@ import { buildAnimationsFile, parseAnimationsFile } from './animationsFile'
 import { buildClipsFile, parseClipsFile } from './clipsFile'
 import { buildJointLimitsFile, parseJointLimitsFile } from './jointLimitsFile'
 import { buildPosesFile, parsePosesFile } from './posesFile'
-import { exportSceneToGlb, importSceneFromGlb } from './sceneFile'
+import { parseSceneFile, serializeSceneFile } from './sceneFile'
 import {
   WORKSPACE_MANIFEST_FILENAME,
   buildWorkspaceManifest,
@@ -17,9 +17,12 @@ import {
 
 /**
  * Orquestra salvar/abrir um workspace inteiro (catálogo de cenas) numa pasta
- * do sistema de arquivos: um `.glb` por cena (independente) + o manifesto
+ * do sistema de arquivos: um `.json` por cena (independente) + o manifesto
  * `workspace.json` apontando para eles — ver DECISOES.md #11 (opção 1,
  * escolhida pelo usuário) e PLANO.md > "Workspace: catálogo de cenas".
+ *
+ * As cenas eram `.glb` até DECISOES.md #85; a pasta é hoje inteiramente JSON,
+ * legível e editável à mão como os outros arquivos dela.
  *
  * Desde o #29 a pasta também leva um `joint-limits.json` com os limites
  * articulares em vigor (os padrões do código, quando não customizados),
@@ -88,8 +91,7 @@ export async function saveWorkspaceToDirectory(
   for (const entry of manifest.scenes) {
     const scene = scenes.find((candidate) => candidate.id === entry.id)
     if (!scene) continue
-    const glb = await exportSceneToGlb({ name: scene.name, ...scene.data })
-    await writeToDirectory(directoryHandle, entry.filename, new Blob([glb], { type: 'model/gltf-binary' }))
+    await writeToDirectory(directoryHandle, entry.filename, serializeSceneFile({ name: scene.name, ...scene.data }))
   }
 
   await writeToDirectory(
@@ -113,7 +115,7 @@ export async function saveWorkspaceToDirectory(
 
 /**
  * Instala os limites do workspace ANTES de reconstruir as cenas — a ordem
- * importa: é ao ler cada `.glb` que as poses passam por clamp
+ * importa: é ao ler cada cena que as poses passam por clamp
  * (`sceneSerialization.figureFromExtras`), então poses fora da faixa nova só
  * são corrigidas se os limites já estiverem valendo (decisão do usuário:
  * grampear a pose, ver DECISOES.md #29).
@@ -177,8 +179,7 @@ async function loadScenesFromEntries(
   for (const entry of entries) {
     const file = await readFile(entry.filename)
     if (!file) continue
-    const data = await file.arrayBuffer()
-    const scene = await importSceneFromGlb(data)
+    const scene = parseSceneFile(await file.text())
     scenes.push({ id: entry.id, name: entry.name, data: sceneToSnapshotData(scene) })
   }
   return scenes
@@ -207,8 +208,9 @@ export async function loadWorkspaceFromDirectory(directoryHandle: FileSystemDire
 
 /**
  * Fallback para navegadores sem File System Access API: o usuário seleciona o
- * `workspace.json` e os `.glb`s juntos — e também o `joint-limits.json`, se
- * quiser os limites customizados (sem ele, valem os padrões do código).
+ * `workspace.json` e os `.json` das cenas juntos — e também o
+ * `joint-limits.json`, se quiser os limites customizados (sem ele, valem os
+ * padrões do código).
  */
 export async function loadWorkspaceFromFiles(files: readonly File[]): Promise<LoadedWorkspace | null> {
   const manifestFile = files.find((file) => file.name === WORKSPACE_MANIFEST_FILENAME)

@@ -28,7 +28,9 @@
     "figureStyle": "Figure",
     "figureStyleHint": "Looks only: the skeleton, the poses and the joint limits are the same in both. The stick figure has large joints, so you can select them with a finger on a touch screen.",
     "figureStyleWooden": "Wooden mannequin",
-    "figureStyleStick": "Stick figure (large joints)"
+    "figureStyleStick": "Stick figure (large joints)",
+    "depth": "Depth",
+    "depthHint": "Shows the scene on screen as a depth map — near is light, far is dark. View only: what goes into the PNG and the MP4 is chosen in the Snapshots and Animation panels."
   },
   "panels": {
     "figures": {
@@ -44,8 +46,6 @@
       "hide": "Hide figure",
       "duplicate": "Duplicate figure",
       "remove": "Remove figure",
-      "exportFigure": "Export figure (.glb)",
-      "importFigure": "Import figure (.glb)",
       "clipboard": "Pose clipboard",
       "clipboardCopy": "Copy pose from selected",
       "clipboardCopyHint": "Stores the selected figure's pose (joints and settling) so you can paste it onto another figure, even after switching scenes.",
@@ -384,8 +384,8 @@
       "cancelSave": "Cancel",
       "applyBookmark": "Go to this bookmark",
       "removeBookmark": "Remove bookmark",
-      "exportBookmarks": "Export bookmarks (.glb)",
-      "importBookmarks": "Import bookmarks (.glb)",
+      "exportBookmarks": "Export bookmarks (.json)",
+      "importBookmarks": "Import bookmarks (.json)",
       "lens": "Lens and tilt",
       "focalLength": "Focal length (mm)",
       "lensHint": "{{term}} ({{family}}) — {{fov}}° vertical field of view. With a shot active, changing the lens keeps the framing and changes only the perspective.",
@@ -475,6 +475,8 @@
       "width": "Width (px)",
       "height": "Height (px)",
       "hideOverlays": "Hide grid/gizmos/joint in capture",
+      "depthOutput": "Render the PNG as a depth map",
+      "depthOutputHint": "Alternative output: near is light, far is dark, with the _depth suffix in the name. To get both versions, capture twice. The near/far range lives in the Scenes panel, under Settings.",
       "chooseDirectory": "Choose destination folder",
       "directoryChosen": "Folder: {{name}}",
       "directoryNotChosen": "No folder chosen — captures will be downloaded.",
@@ -592,6 +594,8 @@
       "thumbnailsHint": "Renders a small portrait of each keyframe so you can tell them apart. Kept in memory only — it does not bloat the file or enter undo.",
       "thumbnailAlt": "Keyframe {{index}} thumbnail",
       "fps": "Frames per second",
+      "depthOutput": "Export the MP4 as a depth map",
+      "depthOutputHint": "Alternative output: near is light, far is dark, with the _depth suffix in the name. To get both versions, export twice. The near/far range lives in the Scenes panel, under Settings.",
       "export": "Export MP4",
       "exporting": "Rendering frame {{frame}} of {{total}}…",
       "cancelExport": "Cancel",
@@ -677,18 +681,29 @@
       "load": "Load this scene",
       "remove": "Remove scene",
       "active": "Active",
-      "exportScene": "Export current scene (.glb)",
-      "importScene": "Import scene (.glb)",
+      "exportScene": "Export current scene (.json)",
+      "importScene": "Import scene (.json)",
       "saveWorkspaceToFolder": "Save workspace to folder",
       "openWorkspaceFromFolder": "Open workspace from folder",
       "workspaceFolderChosen": "Workspace folder: {{name}}",
-      "workspaceFolderUnavailable": "This browser doesn't support choosing a folder — use the individual files (workspace.json + joint-limits.json + poses.json + .glb) to open a saved workspace.",
+      "workspaceFolderUnavailable": "This browser doesn't support choosing a folder — pick the individual files (workspace.json + the scene .json files + joint-limits.json + poses.json) to open a saved workspace.",
       "customJointLimits_one": "This workspace customizes the joint limits of {{count}} joint (joint-limits.json).",
       "customJointLimits_other": "This workspace customizes the joint limits of {{count}} joints (joint-limits.json).",
       "resetJointLimits": "Restore default limits",
       "newWorkspace": "New workspace (clear everything)",
       "newWorkspaceConfirm": "This deletes every figure, saved scene, camera bookmark, saved pose and custom joint limit, and clears the undo history. Ctrl+Z cannot bring it back.",
-      "newWorkspaceConfirmYes": "Clear everything"
+      "newWorkspaceConfirmYes": "Clear everything",
+      "settings": "Settings",
+      "depthRange": "Depth map",
+      "depthAutoRange": "Automatic range (from figures and props)",
+      "depthNear": "Near (m)",
+      "depthFar": "Far (m)",
+      "depthRangeHint": "Near comes out white, far comes out black. With the automatic range every output re-measures itself from the visible content; locking the range is what gives a frame sequence a stable scale.",
+      "depthGround": "Ground in the map",
+      "depthGroundClipped": "Clipped to the range",
+      "depthGroundHidden": "Out of the map",
+      "depthGroundFull": "Full ramp",
+      "depthGroundHint": "The range is measured from the figures and props only, so the ground in the foreground falls outside it. Clipped, it shows up only around the feet; out of the map, the figure sits on black; on the full ramp, the ground near the camera turns into a flat white area."
     },
     "collapse": "Collapse {{title}} panel",
     "expand": "Expand {{title}} panel"
@@ -728,19 +743,20 @@
     "nextKeyframe": "Next keyframe",
     "previousFrame": "One frame back (1/{{fps}} s)",
     "nextFrame": "One frame forward (1/{{fps}} s)",
-    "visitedKeyframe": "Keyframe {{index}} is on the working scene"
+    "visitedKeyframe": "Keyframe {{index}} is on the working scene",
+    "keyframeMark": "Keyframe {{index}} — {{time}}"
   },
   "common": {
     "gizmoTranslate": "Move",
     "gizmoRotate": "Rotate"
   },
   "errors": {
-    "importUnreadable": "The file could not be read — the .glb looks corrupted or is not valid glTF.",
-    "importMissingAppData": "The file is a valid .glb but has no Virtual Mockup data (custom properties). Re-export it with custom properties enabled.",
+    "importUnreadable": "The file could not be read — the contents are not valid JSON (corrupted or truncated file).",
+    "importMissingAppData": "The file is valid JSON but not a Virtual Mockup file — it lacks the \"version\" field every app file writes.",
     "importFailed": "The file could not be imported.",
     "importNoAnimation": "The file was read but has no usable animation — keyframes without figures or camera are discarded.",
     "importUnreadableJson": "The file could not be read — it is not valid JSON.",
     "importNoPose": "The file was read but has no usable pose — no known joint was found in it.",
-    "workspaceManifestMissing": "The selection did not include workspace.json — pick it together with the scene .glb files."
+    "workspaceManifestMissing": "The selection did not include workspace.json — pick it together with the scene .json files."
   }
 }

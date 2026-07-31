@@ -2,8 +2,11 @@ import { useEffect } from 'react'
 import { useThree } from '@react-three/fiber'
 import { formatSnapshotFilename } from '../snapshot/snapshotNaming'
 import { writeFileToDirectoryOrDownload } from '../persistence/fileIO'
+import { useDepthStore } from '../store/depthStore'
 import { useFiguresStore } from '../store/figuresStore'
 import { useSnapshotCaptureStore } from '../store/snapshotCaptureStore'
+import { BACKGROUND_COLORS } from './constants'
+import { applyDepthMaterial, resolveDepthRange, suspendDepthMaterial } from './depthMap'
 import { hideSceneOverlays, renderAtResolution, revealEditorHidden } from './sceneCapture'
 import { getSceneCameraObject } from './sceneCameraObject'
 
@@ -58,8 +61,18 @@ export function SnapshotCapture() {
     // esconder apoios de tela não decide sobre ele.
     const restoreEditorHidden = revealEditorHidden(scene)
 
+    // Mapa de profundidade (fase 13): saída ALTERNATIVA, escolhida no painel.
+    // O passe vem DEPOIS de reacender o cenário escondido na bancada, para que
+    // ele conte na faixa — a foto mostra o que está na foto. E quando o modo
+    // está desligado, a captura ainda assim FORÇA o normal: a vista da tela
+    // pode estar em profundidade, e as três escolhas são independentes.
+    const depth = useDepthStore.getState()
+    const restoreDepth = depth.snapshotDepth
+      ? applyDepthMaterial(scene, resolveDepthRange(scene, camera, depth), depth.groundMode)
+      : suspendDepthMaterial(scene, BACKGROUND_COLORS[useFiguresStore.getState().environment.background])
+
     const sequence = consumeSnapshotNumber()
-    const filename = formatSnapshotFilename(sceneName, sequence)
+    const filename = formatSnapshotFilename(sceneName, sequence, { depth: depth.snapshotDepth })
 
     renderAtResolution(gl, scene, camera, width, height, () => {
       gl.domElement.toBlob((blob) => {
@@ -73,6 +86,7 @@ export function SnapshotCapture() {
     // Overlays de volta na mesma tarefa síncrona — `toBlob` já capturou o
     // conteúdo no momento da chamada, então isso não gera flash visual. A tela
     // volta pela câmera ATIVA, que no modo edição é a da bancada.
+    restoreDepth()
     restoreEditorHidden()
     restoreScene()
     gl.render(scene, getThree().camera)
