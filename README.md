@@ -168,6 +168,12 @@ Decisions are cited by number (`DECISOES.md` #86); the documents cross-reference
 
 ---
 
+## License
+
+[MIT](LICENSE) © 2026 Fernando Tsuda.
+
+The bundled runtime dependencies are compatible: MIT for React, three, drei, fiber, zustand, zundo, i18next and `qrcode`; Apache-2.0 for `jsQR`; MPL-2.0 for `mediabunny` (weak, per-file copyleft, used unmodified as a dependency).
+
 ## Status
 
 Phases 1–13 are complete: foundation, figure, FK posing, camera, snapshots, persistence and PWA, IK, polish, UX refinements, the mini animator, the separate scene camera, animation files, and the depth map — followed by the touch **poses module** and its finishing work (items 43–65). `PLANO.md` holds the open proposals; nothing there is a commitment, it is a menu.

@@ -910,7 +910,7 @@ A restrição estruturante vem das regras do projeto: zero rede em runtime + sem
 
 ### Pré-requisitos que valem para qualquer caminho
 
-- **Licença do código** — o repositório **não tem `LICENSE` hoje**; decidir entre proprietário fechado e código aberto (com monetização de conveniência — modelos 1–5 convivem bem com código aberto) é pré-requisito de qualquer publicação. É a maior decisão em aberto desta seção.
+- **Licença do código** — ✅ **MIT, decidida em 2026-08-02** (`DECISOES.md` #104). Era a maior decisão em aberto desta seção; o usuário escolheu código aberto permissivo, que convive bem com os modelos de monetização 1–5 (doação, itch.io, packs de conteúdo, lojas, licença institucional) e é incompatível só com o 6 (freemium com trava). Todas as dependências de runtime são compatíveis: 10 MIT, `jsqr` Apache-2.0 e `mediabunny` MPL-2.0.
 - **Nome e domínio**: ✅ renomeado — o app nasceu "Virtual Mockup" (genérico, difícil de marcar) e virou **WebPoser** em 2026-08-02 (`DECISOES.md` #102), antes do primeiro endereço público, exatamente pela amarra da origem. Falta só conferir a disponibilidade do domínio.
 - **Ícones raster**: hoje só há `icon.svg`; lojas e o manifest pedem PNGs (192/512, maskable) e screenshots. Meio dia de trabalho.
 - **Página de apresentação**: uma landing com GIFs do fluxo (posar → animar → exportar) — o material sai do próprio app (PNG/MP4 exportados, folha de contato).

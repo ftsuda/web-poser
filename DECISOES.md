@@ -6,7 +6,7 @@ Registro de problemas encontrados durante a implementação, opções considerad
 
 ## Índice
 
-As **104 decisões**, na ordem em que foram tomadas. Os números **nunca são reaproveitados** — o `PLANO.md`, o `HISTORICO.md` e as próprias entradas se citam por eles. Decisão desdobrada depois ganha subnúmero (78.1, 78.2…) em vez de número novo.
+As **106 decisões**, na ordem em que foram tomadas. Os números **nunca são reaproveitados** — o `PLANO.md`, o `HISTORICO.md` e as próprias entradas se citam por eles. Decisão desdobrada depois ganha subnúmero (78.1, 78.2…) em vez de número novo.
 
 - **#1** — [Aviso "not wrapped in act(...)" nos testes do Toolbar (react-i18next)](#1-aviso-not-wrapped-in-act-nos-testes-do-toolbar-react-i18next)
 - **#2** — [Aviso "THREE.Clock: This module has been deprecated" no console](#2-aviso-threeclock-this-module-has-been-deprecated-no-console)
@@ -115,6 +115,9 @@ As **104 decisões**, na ordem em que foram tomadas. Os números **nunca são re
 - **#101** — [A sessão atravessa o ar: remessa por QR code, sem rede e sem arquivo (item 65)](#101-a-sessão-atravessa-o-ar-remessa-por-qr-code-sem-rede-e-sem-arquivo-item-65)
 - **#102** — [O app muda de nome: Virtual Mockup vira WebPoser, com migração das chaves](#102-o-app-muda-de-nome-virtual-mockup-vira-webposer-com-migração-das-chaves)
 - **#103** — [O primeiro endereço público: GitHub Pages por workflow, com a suíte como portão](#103-o-primeiro-endereço-público-github-pages-por-workflow-com-a-suíte-como-portão)
+  - **#103.1** — [O `package-lock.json` tem de ser gerado no Linux](#1031-o-package-lockjson-tem-de-ser-gerado-no-linux)
+  - **#103.2** — [`enablement: true` em vez de um passo manual](#1032-enablement-true-em-vez-de-um-passo-manual)
+- **#104** — [Licença MIT — a última pendência da publicação](#104-licença-mit--a-última-pendência-da-publicação)
 
 ---
 
@@ -3201,3 +3204,33 @@ O modelo de dados não mudou: o par `(onionSkin, onionSkinMode)` do `animationSt
 **Publicar não fere o zero-rede.** Vale deixar escrito, porque a regra é de topo: a rede entrega o bundle **uma vez**; a partir daí o service worker serve tudo do cache, e o app roda offline como sempre rodou. O que a publicação acrescenta é a exigência de HTTPS (service worker e `getUserMedia` da remessa por QR só existem em contexto seguro) — que o Pages atende de graça, e que era um dos dois pré-requisitos técnicos anotados no levantamento.
 
 **Fica em aberto, e é pré-requisito de verdade:** o repositório **não tem `LICENSE`**. O levantamento já o apontava como a maior decisão pendente da publicação; o workflow não a força, mas publicar sem licença deixa o código em terra de ninguém legal. Também continua pendente ligar o Pages no `Settings > Pages` do repositório com a origem em **GitHub Actions** — o workflow não pode fazer isso por conta própria.
+
+### 103.1. O `package-lock.json` tem de ser gerado no Linux
+
+A primeira rodada morreu no `npm ci`: `Missing: @emnapi/core@1.11.3` e `@emnapi/runtime@1.11.3 from lock file`. Não era lock desatualizado — apagá-lo e regerá-lo no Windows produzia **exatamente o mesmo arquivo defeituoso**, e `npm install --package-lock-only` sobre o lock existente relatava zero mudanças.
+
+**A causa.** `@napi-rs/wasm-runtime` declara `@emnapi/core` e `@emnapi/runtime` como **peer dependencies**. Ele entra no grafo por `@rolldown/binding-wasm32-wasi` — o fallback WebAssembly do rolldown (Vite 8), pacote `optional` marcado `cpu: ["wasm32"]`. No Windows o npm não desce nesse ramo e nunca hoista os dois peers; no Linux ele desce, calcula a árvore ideal com os dois no topo, e o `npm ci` — que é estrito por contrato, e é por isso que se usa ele — recusa o lock que não os tem. O `npm install` local nunca reclamou porque ele é tolerante e o `node_modules` em disco já tinha tudo.
+
+**O que NÃO resolve:** `npm install --package-lock-only --os=linux --cpu=x64 --libc=glibc`. Esses flags trocam a seleção de **binários** por plataforma, não a resolução de **peers** — o lock saiu diferente e continuou sem as duas entradas.
+
+**O que resolve:** gerar o lock dentro do Linux (`docker run --rm -v "$PWD:/app" -w /app node:24 npm install --package-lock-only`). O arquivo resultante traz `node_modules/@emnapi/runtime` hoisted, **preserva as 6 entradas de `binding-win32`** (o desenvolvimento no Windows continua intacto — `npm ci --dry-run` local passa) e não move nenhuma dependência da aplicação: o diff é de 112 linhas, todas no canto `emnapi`/`fsevents`, mais `@napi-rs/wasm-runtime` de 1.1.6 para 1.2.2. Verificado em container antes de subir — `npm ci` no Linux instalou 598 pacotes, exit 0 —, e confirmado em campo na rodada seguinte, que atravessou instalação, suíte, lint e build.
+
+**A invariante que fica:** rodar `npm install` no Windows e commitar o lock quebra o CI de novo, silenciosamente, porque nada avisa localmente. Toda vez que o lock mudar, ele tem de ser regerado no Linux.
+
+### 103.2. `enablement: true` em vez de um passo manual
+
+A rodada seguinte parou no `actions/configure-pages@v5` com "Get Pages site failed / Not Found": o Pages nunca tinha sido habilitado no repositório. A ação aceita `enablement: true`, que liga o site pela API na primeira rodada usando a permissão `pages: write` que o workflow já tem, e é idempotente depois. Preferido ao passo manual em `Settings > Pages` porque um workflow que exige uma visita à interface antes de funcionar é um workflow que falha para quem clonar o projeto e não ler o `HISTORICO.md`.
+
+*(A mensagem "Node 20 is being deprecated" que aparece no log é informativa e não vem daqui: é o runtime das próprias ações, não o `setup-node` do job, que já está em 24.)*
+
+## 104. Licença MIT — a última pendência da publicação
+
+**Contexto.** O levantamento de publicação (`PLANO.md` > "Publicação e monetização", 2026-08-02) apontava a licença como "a maior decisão em aberto desta seção" e como pré-requisito de qualquer endereço público: o repositório não tinha `LICENSE`, e código sem licença não é código aberto — é código sem permissão nenhuma, em que ninguém pode legalmente copiar, modificar ou redistribuir. Com o workflow do Pages (#103) prestes a tornar o repositório visível, a pendência virou bloqueio. O usuário decidiu: **MIT**.
+
+**O que a escolha permite e o que ela custa.** A MIT é a permissiva mais curta e mais conhecida: qualquer um pode usar, copiar, modificar, distribuir e **vender** o software, com uma condição só — manter o aviso de copyright e a licença. Em troca, a garantia é zero. O custo honesto é que ela **autoriza o fork comercial**: alguém pode pegar o WebPoser, mudar o nome e cobrar por ele, sem devolver nada. Uma copyleft (GPL) impediria isso ao obrigar o derivado a abrir o código também — e foi exatamente por ser GPL-3.0 que a `mannequin.js` foi descartada no início do projeto (#5), o que torna adotá-la aqui uma incoerência de tom.
+
+**Por que ela não briga com a monetização levantada.** Dos seis modelos do `PLANO.md`, cinco convivem sem atrito com código aberto, porque nenhum deles vende *acesso* ao software: doação, pague-o-quanto-quiser no itch.io, preço nas lojas (onde se vende a conveniência do empacotamento), **packs de conteúdo** — que são arquivos JSON, não código, e portanto ficam de fora da licença do software — e licença educacional, que é contrato de serviço. O único incompatível é o 6, o freemium com chave local; e o próprio levantamento já o registrava como última opção, com a ressalva de que código no navegador é inspecionável de qualquer forma. Ou seja, a MIT não fecha nenhuma porta que já não estivesse encostada.
+
+**Compatibilidade das dependências, conferida e não presumida.** As doze dependências de runtime são MIT (React, React DOM, three, `@react-three/fiber`, `@react-three/drei`, zustand, zundo, i18next, react-i18next, `qrcode`), Apache-2.0 (`jsqr`) e MPL-2.0 (`mediabunny`). Todas distribuíveis dentro de um produto MIT: a MPL-2.0 é copyleft **fraco e por arquivo** e, com a biblioteca usada sem modificação, não alcança o nosso código — a avaliação que aprovou a `mediabunny` já tinha registrado isso, e continua valendo.
+
+**O aviso de copyright.** `Copyright (c) 2026 Fernando Tsuda`, inferido do `user.email` do git; o nome legal é a única coisa aqui que pode precisar de correção, e é uma linha. O `package.json` ganhou `"license": "MIT"` (o `"private": true` fica, para impedir publicação acidental no npm) e o `README.md`, uma seção de licença com o quadro das dependências.

@@ -61,8 +61,14 @@ jobs:
       - name: Build
         run: npm run build
 
+      # `enablement: true` liga o Pages pela API na primeira rodada, em vez de
+      # exigir a visita a `Settings > Pages` antes do primeiro deploy. Sem
+      # isso, a ação falha com "Get Pages site failed / Not Found" enquanto o
+      # site não existir. É idempotente: nas rodadas seguintes não faz nada.
       - name: Configurar o Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Empacotar o dist/
         uses: actions/upload-pages-artifact@v3

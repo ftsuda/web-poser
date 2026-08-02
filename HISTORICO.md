@@ -1,6 +1,6 @@
 # WebPoser — histórico de entregas
 
-As **90 entregas** do projeto, uma por sessão de trabalho, em ordem cronológica de conclusão — de 2026-07-22 a 2026-08-02.
+As **91 entregas** do projeto, uma por sessão de trabalho, em ordem cronológica de conclusão — de 2026-07-22 a 2026-08-02.
 
 Saiu do `PLANO.md` em 2026-07-31, onde crescia em quatro blocos separados, dois deles no meio da lista de propostas. **O conteúdo das entradas não foi alterado**: só a ordem (a data de conclusão do título) e o arquivo em que moram. O que o app é e o que falta fazer continua no `PLANO.md`; o porquê de cada escolha, no `DECISOES.md`.
 
@@ -98,6 +98,7 @@ Entrada nova entra no fim, no padrão `### Título ✅ (concluído em AAAA-MM-DD
 - `2026-08-01` — [Remessa da sessão por QR code — item 65](#remessa-da-sessão-por-qr-code--item-65--concluído-em-2026-08-01)
 - `2026-08-02` — [Rename: Virtual Mockup vira WebPoser](#rename-virtual-mockup-vira-webposer--concluído-em-2026-08-02)
 - `2026-08-02` — [Publicação automática no GitHub Pages](#publicação-automática-no-github-pages--concluído-em-2026-08-02)
+- `2026-08-02` — [Licença MIT](#licença-mit--concluído-em-2026-08-02)
 
 ---
 
@@ -1206,4 +1207,21 @@ Pedido do usuário na esteira do levantamento de publicação e do rename (#102)
 - **`README.md` reescrito em inglês** no mesmo dia, a pedido do usuário: o que o app faz (posar, cenário, exportar, animar), as duas cascas e a ponte por QR, tabela de suporte por navegador, comandos, stack, mapa do código, persistência, as cinco regras inegociáveis e os apontadores para os quatro documentos canônicos. É o único documento do projeto em inglês, e diz isso no topo.
 - O smoke de Playwright ficou **fora** do workflow, coerente com o lugar dele no projeto (à parte da suíte).
 
-**Saldo: 2.491 testes, estável** (entrega de infraestrutura e documentação, sem código de aplicação); `tsc -b`, `eslint .` e `npm run build` limpos. Falta a conferência do usuário: ligar o Pages em `Settings > Pages` com a origem em **GitHub Actions** e conferir a primeira rodada — e a decisão de licença (o repositório ainda não tem `LICENSE`), apontada no levantamento como pré-requisito de qualquer publicação.
+**Duas correções depois das primeiras rodadas** (ver `DECISOES.md` #103.1 e #103.2):
+
+- **`package-lock.json` regenerado no Linux.** O `npm ci` do runner recusou o lock (`Missing: @emnapi/core@1.11.3`, `@emnapi/runtime@1.11.3`) — peers de `@napi-rs/wasm-runtime`, que entra pelo fallback wasm do rolldown e que o npm no Windows nunca hoista. Regerar no Windows reproduzia o mesmo defeito; os flags `--os/--cpu/--libc` não resolvem (trocam binário, não peer). Lock gerado em container `node:24`, validado dos dois lados (`npm ci` no Linux: 598 pacotes, exit 0; `npm ci --dry-run` no Windows: up to date). Diff de 112 linhas restritas ao canto `emnapi`/`fsevents`, mais `@napi-rs/wasm-runtime` 1.1.6 → 1.2.2; **nenhuma dependência da aplicação mudou**.
+- **`enablement: true` no `configure-pages`.** A rodada seguinte parou em "Get Pages site failed / Not Found" — o Pages não estava habilitado no repositório. A ação passa a ligá-lo pela API na primeira execução, em vez de exigir uma visita a `Settings > Pages`.
+
+**Saldo: 2.491 testes, estável** (entrega de infraestrutura e documentação, sem código de aplicação); `tsc -b`, `eslint .` e `npm run build` limpos — e confirmados **no runner**, que atravessou instalação, suíte, lint e build antes de parar no passo do Pages. Falta a decisão de licença (o repositório ainda não tem `LICENSE`), apontada no levantamento como pré-requisito de qualquer publicação.
+
+### Licença MIT ✅ (concluído em 2026-08-02)
+
+Decisão do usuário, fechando a última pendência que o levantamento de publicação apontava como pré-requisito de qualquer endereço público. Narrativa em `DECISOES.md` #104.
+
+- **`LICENSE`** (novo, o repositório não tinha nenhum): texto MIT padrão, `Copyright (c) 2026 Fernando Tsuda`.
+- **`package.json`** ganhou `"license": "MIT"`; o `"private": true` ficou, para seguir impedindo publicação acidental no npm.
+- **Compatibilidade das doze dependências de runtime conferida no lock**, não presumida: 10 MIT, `jsqr` Apache-2.0 e `mediabunny` MPL-2.0 (copyleft fraco por arquivo, usada sem modificação — a mesma leitura que aprovou a biblioteca na fase 10).
+- **`README.md`** ganhou seção de licença com esse quadro; o pré-requisito no `PLANO.md` foi marcado ✅.
+- Registrado no #104 o custo honesto da escolha (a MIT autoriza fork comercial sem contrapartida) e por que ela não briga com a monetização levantada: cinco dos seis modelos não vendem acesso ao software, e os packs de conteúdo são JSON, fora do alcance da licença do código.
+
+**Saldo: 2.491 testes, estável** (entrega de licenciamento e documentação, sem código de aplicação).

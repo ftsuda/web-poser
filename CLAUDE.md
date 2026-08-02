@@ -7,8 +7,8 @@ Este arquivo é a porta de entrada. O detalhe mora em três documentos, e **todo
 | Arquivo | O que é |
 |---|---|
 | `PLANO.md` | O que o app é, arquitetura, modelo do boneco e **a lista única de propostas de melhoria** (itens numerados 1–65, grupos A–J) |
-| `DECISOES.md` | As **104 decisões** numeradas (de #1 a #103, com subnúmeros), com a narrativa do porquê. É onde se descobre *por que* algo é como é. Tem índice no topo |
-| `HISTORICO.md` | O log de **90 entregas**, em ordem cronológica — uma entrada por sessão de trabalho. Tem índice no topo |
+| `DECISOES.md` | As **106 decisões** numeradas (de #1 a #104, com subnúmeros), com a narrativa do porquê. É onde se descobre *por que* algo é como é. Tem índice no topo |
+| `HISTORICO.md` | O log de **91 entregas**, em ordem cronológica — uma entrada por sessão de trabalho. Tem índice no topo |
 
 Ao citar uma decisão, use o número (`DECISOES.md` #86); os três documentos se referenciam assim.
 
@@ -65,6 +65,7 @@ Coisas que parecem detalhe e custaram uma decisão inteira. Quebrá-las por desc
 - **Ação que depende de decisão do usuário confirma em MODAL** (#100): `ConfirmDialog`/`ModalDialog` de `src/layout/` (`<dialog>` nativo — Esc cancela, atalhos globais calados), nunca confirm inline em dois passos nem `window.confirm`. Precedentes: regravar keyframe (#69), novo workspace e trazer sessão da outra casca. O botão que abre fica sempre visível; o modal é renderizado condicionalmente ao lado dele.
 - **Junta travada não muda por NADA automático** (#42): slider, gizmo, teclado, IK, sorteio, espelho e aplicar pose — todos respeitam a trava.
 - **Tamanho de objeto de cena é metro por eixo, nunca `scale` de nó** (#80). A contagem de pontos de controle soldados por forma é **contrato de arquivo**, travada por teste.
+- **O `package-lock.json` é gerado no Linux, nunca no Windows** (#103.1). `@napi-rs/wasm-runtime` declara peers que o npm no Windows não hoista, e o `npm ci` do GitHub Actions recusa o lock — sem nenhum aviso local, porque `npm install` é tolerante. Sempre que o lock mudar: `docker run --rm -v "$PWD:/app" -w /app node:24 npm install --package-lock-only`, e confira que as entradas `binding-win32` continuam lá.
 - **Persistência é aditiva.** Campo novo em `SceneExtras` entra sem subir `SCENE_EXTRAS_VERSION` — arquivo antigo tem de continuar abrindo (precedentes: `sceneCamera`, `snapshotCounter`, `props`).
 - **Estado de ferramenta fica fora do undo e fora do arquivo:** travas, papel-cebola, casca do boneco, régua, máscara de enquadramento, preferências de painel, mapa de profundidade.
 - **Mapa de profundidade: três escolhas independentes** (#91) — tela, PNG e MP4. Uma saída normal **força** o normal (`suspendDepthMaterial`), mesmo com a tela em profundidade. O material original de cada objeto fica em marcas de `userData`, e não numa closure: é o que permite a um passe desfazer o que outro fez. E o fundo tem **um dono só**: na tela é o `Viewport`, por React; nos arquivos é o passe. Dois donos deixam a vista presa no preto ao desligar o modo.
