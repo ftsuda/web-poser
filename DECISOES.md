@@ -6,7 +6,7 @@ Registro de problemas encontrados durante a implementação, opções considerad
 
 ## Índice
 
-As **103 decisões**, na ordem em que foram tomadas. Os números **nunca são reaproveitados** — o `PLANO.md`, o `HISTORICO.md` e as próprias entradas se citam por eles. Decisão desdobrada depois ganha subnúmero (78.1, 78.2…) em vez de número novo.
+As **104 decisões**, na ordem em que foram tomadas. Os números **nunca são reaproveitados** — o `PLANO.md`, o `HISTORICO.md` e as próprias entradas se citam por eles. Decisão desdobrada depois ganha subnúmero (78.1, 78.2…) em vez de número novo.
 
 - **#1** — [Aviso "not wrapped in act(...)" nos testes do Toolbar (react-i18next)](#1-aviso-not-wrapped-in-act-nos-testes-do-toolbar-react-i18next)
 - **#2** — [Aviso "THREE.Clock: This module has been deprecated" no console](#2-aviso-threeclock-this-module-has-been-deprecated-no-console)
@@ -114,6 +114,7 @@ As **103 decisões**, na ordem em que foram tomadas. Os números **nunca são re
 - **#100** — [A confirmação da troca de sessão vira modal — o `ConfirmDialog` que já existia](#100-a-confirmação-da-troca-de-sessão-vira-modal--o-confirmdialog-que-já-existia)
 - **#101** — [A sessão atravessa o ar: remessa por QR code, sem rede e sem arquivo (item 65)](#101-a-sessão-atravessa-o-ar-remessa-por-qr-code-sem-rede-e-sem-arquivo-item-65)
 - **#102** — [O app muda de nome: Virtual Mockup vira WebPoser, com migração das chaves](#102-o-app-muda-de-nome-virtual-mockup-vira-webposer-com-migração-das-chaves)
+- **#103** — [O primeiro endereço público: GitHub Pages por workflow, com a suíte como portão](#103-o-primeiro-endereço-público-github-pages-por-workflow-com-a-suíte-como-portão)
 
 ---
 
@@ -3186,3 +3187,17 @@ O modelo de dados não mudou: o par `(onionSkin, onionSkinMode)` do `animationSt
 **O que mudou de nome e o que ficou.** Mudaram: as quatro chaves, o `name` do `package.json` (e do lock), o manifest da PWA, o `<title>`, as duas strings de i18n com o nome à mostra ("WebPoser" na Toolbar e na mensagem de arquivo alheio) e as menções nos quatro documentos canônicos. Ficaram, de propósito: as menções históricas a `extras["virtual-mockup"]` (o bloco do tempo do `.glb` — arquivos antigos REALMENTE tinham essa chave; renomear a história a falsearia) e, obviamente, o prefixo legado dentro da própria migração. O formato de arquivo não tem o nome do app em nenhum campo — nenhum contrato de arquivo mudou.
 
 **Grafia:** `webposer` em identificadores (chaves, package, kebab) e **WebPoser** em texto de exibição (título, manifest, mensagens) — a mesma dupla que "virtual-mockup"/"Virtual Mockup" fazia.
+
+## 103. O primeiro endereço público: GitHub Pages por workflow, com a suíte como portão
+
+**Contexto.** O levantamento de publicação (`PLANO.md` > "Publicação e monetização", 2026-08-02) listou a hospedagem estática gratuita como o caminho 1, o mais barato, e disse que o único trabalho real seria "um workflow de build". O usuário pediu esse workflow, para o GitHub Pages, mencionando o contexto `/webposer`. O rename do #102 tinha acabado de acontecer exatamente por causa da amarra da origem, então a ordem estava certa.
+
+**O `base: './'` já resolvia o "/webposer", e é por isso que ele não mudou.** O repositório se chama `web-poser`, então o Pages padrão serve em `/web-poser/`, não em `/webposer/` — a divergência foi levada ao usuário antes do código. A alternativa seria ler o caminho de uma variável de ambiente no `vite.config.ts` (`base: process.env.VITE_BASE ?? './'`) e fixar `/webposer/` no workflow, o que **exigiria renomear o repositório** e, pior, trocaria uma propriedade por uma configuração: com caminho relativo o bundle funciona em QUALQUER subcaminho — `/web-poser/`, `/webposer/`, um domínio próprio — e continua funcionando dentro da PWA instalada, que é a razão pela qual o `base: './'` existe desde a fase 1. O usuário escolheu manter. Renomear o repositório, se quiser, muda o endereço sozinho e não toca em uma linha de código.
+
+**O portão é a regra do `CLAUDE.md`, não uma invenção do CI.** O job de build roda `npx vitest run`, `npm run lint` e `npm run build` — os três, nessa ordem, antes de o `dist/` virar artefato; o job de deploy tem `needs: build`. É a mesma frase que o projeto aplica a cada entrega ("antes de dar qualquer trabalho por concluído"), agora executada por quem não esquece. O custo é honesto e vale registrar: a suíte leva ~9 minutos nesta máquina, então **publicar deixa de ser instantâneo** — um push na `main` demora perto de dez minutos para chegar ao ar. Foi a escolha consciente do usuário entre esse tempo e o risco de publicar vermelho. O smoke de Playwright ficou de fora, coerente com o lugar que ele já ocupa no projeto: à parte da suíte, rodado por `npm run test:e2e`.
+
+**Detalhes que são decisão, não boilerplate.** O gatilho é `push` na `main` mais `workflow_dispatch` — o histórico do projeto é todo direto na main, e o disparo manual serve para republicar sem commit. A `concurrency` usa `cancel-in-progress: false` de propósito: cancelar um deploy pela metade deixaria o site publicado num estado parcial, e esperar é mais barato que isso. As permissões são as três que o Pages por artefato exige (`contents: read`, `pages: write`, `id-token: write`), sem token pessoal e sem branch `gh-pages` — o artefato vai direto, e o `dist/` continua fora do versionamento.
+
+**Publicar não fere o zero-rede.** Vale deixar escrito, porque a regra é de topo: a rede entrega o bundle **uma vez**; a partir daí o service worker serve tudo do cache, e o app roda offline como sempre rodou. O que a publicação acrescenta é a exigência de HTTPS (service worker e `getUserMedia` da remessa por QR só existem em contexto seguro) — que o Pages atende de graça, e que era um dos dois pré-requisitos técnicos anotados no levantamento.
+
+**Fica em aberto, e é pré-requisito de verdade:** o repositório **não tem `LICENSE`**. O levantamento já o apontava como a maior decisão pendente da publicação; o workflow não a força, mas publicar sem licença deixa o código em terra de ninguém legal. Também continua pendente ligar o Pages no `Settings > Pages` do repositório com a origem em **GitHub Actions** — o workflow não pode fazer isso por conta própria.

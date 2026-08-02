@@ -7,8 +7,8 @@ Este arquivo é a porta de entrada. O detalhe mora em três documentos, e **todo
 | Arquivo | O que é |
 |---|---|
 | `PLANO.md` | O que o app é, arquitetura, modelo do boneco e **a lista única de propostas de melhoria** (itens numerados 1–65, grupos A–J) |
-| `DECISOES.md` | As **106 decisões** numeradas (de #1 a #102, com subnúmeros), com a narrativa do porquê. É onde se descobre *por que* algo é como é. Tem índice no topo |
-| `HISTORICO.md` | O log de **89 entregas**, em ordem cronológica — uma entrada por sessão de trabalho. Tem índice no topo |
+| `DECISOES.md` | As **104 decisões** numeradas (de #1 a #103, com subnúmeros), com a narrativa do porquê. É onde se descobre *por que* algo é como é. Tem índice no topo |
+| `HISTORICO.md` | O log de **90 entregas**, em ordem cronológica — uma entrada por sessão de trabalho. Tem índice no topo |
 
 Ao citar uma decisão, use o número (`DECISOES.md` #86); os três documentos se referenciam assim.
 

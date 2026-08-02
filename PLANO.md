@@ -888,7 +888,7 @@ Duas amarras técnicas que a publicação cria e que convém saber ANTES de esco
 
 ### Caminhos de publicação, do mais barato ao mais envolvido
 
-1. **Hospedagem estática gratuita** — GitHub Pages, Cloudflare Pages ou Netlify: custo zero, HTTPS de graça, deploy por push. É o mínimo viável completo: com isso o app já instala como PWA em qualquer celular/desktop. Único trabalho real: um workflow de build.
+1. ✅ **Hospedagem estática gratuita** — GitHub Pages, Cloudflare Pages ou Netlify: custo zero, HTTPS de graça, deploy por push. É o mínimo viável completo: com isso o app já instala como PWA em qualquer celular/desktop. Único trabalho real: um workflow de build. **Feito em 2026-08-02** (`DECISOES.md` #103): `.github/workflows/pages.yml` publica no GitHub Pages a cada push na `main`, com a suíte, o lint e o build como portão. O `base: './'` dispensou qualquer configuração de caminho — o bundle serve em `/web-poser/`, `/webposer/` ou domínio próprio, indiferente. Falta só ligar o Pages em `Settings > Pages` com a origem em **GitHub Actions**.
 2. **Domínio próprio** (~US$ 10–15/ano) apontando para a hospedagem acima: marca, URL estável (a amarra da origem, acima) e independência do provedor.
 3. **itch.io** — vitrine natural para ferramenta de artista: aceita HTML5, o público é exatamente quem desenha, e o "pague o quanto quiser" já vem embutido. Serve como página de download E como canal de receita ao mesmo tempo.
 4. **Lojas de aplicativo**, cada uma com seu atrito:

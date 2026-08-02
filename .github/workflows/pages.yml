@@ -1,0 +1,82 @@
+# Publicação automática no GitHub Pages.
+#
+# O portão é a mesma regra do `CLAUDE.md`: a suíte, o lint e o build têm de
+# estar os três limpos. Só então o `dist/` vira artefato e sobe — um teste
+# vermelho para o deploy antes de ele existir.
+#
+# O app é publicado com `base: './'` (caminhos relativos, ver `PLANO.md` >
+# "Execução offline e distribuição"), então funciona em QUALQUER subcaminho:
+# `/web-poser/`, `/webposer/` ou um domínio próprio, sem nenhuma variável de
+# ambiente e sem tocar no `vite.config.ts`. Renomear o repositório muda o
+# endereço sozinho.
+#
+# Publicar não fere a regra de zero rede em runtime: o Pages entrega o bundle
+# uma vez, e a partir daí a PWA roda offline, como sempre rodou.
+
+name: Deploy no GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Um deploy de cada vez. `cancel-in-progress: false` de propósito: cancelar um
+# deploy no meio deixaria o site publicado num estado parcial.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Testes, lint e build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node + cache do npm
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # Os três comandos que o projeto exige antes de dar qualquer trabalho por
+      # concluído. Não existe script `npm test` — a suíte roda por `npx vitest
+      # run` (o smoke de Playwright é à parte e não entra aqui).
+      - name: Suíte de testes
+        run: npx vitest run
+
+      - name: Lint
+        run: npm run lint
+
+      # `npm run build` já é `tsc -b && vite build`: o erro de tipo derruba o
+      # workflow antes do bundle.
+      - name: Build
+        run: npm run build
+
+      - name: Configurar o Pages
+        uses: actions/configure-pages@v5
+
+      - name: Empacotar o dist/
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Publicar
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

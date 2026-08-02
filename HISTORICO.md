@@ -1,6 +1,6 @@
 # WebPoser — histórico de entregas
 
-As **89 entregas** do projeto, uma por sessão de trabalho, em ordem cronológica de conclusão — de 2026-07-22 a 2026-08-01.
+As **90 entregas** do projeto, uma por sessão de trabalho, em ordem cronológica de conclusão — de 2026-07-22 a 2026-08-02.
 
 Saiu do `PLANO.md` em 2026-07-31, onde crescia em quatro blocos separados, dois deles no meio da lista de propostas. **O conteúdo das entradas não foi alterado**: só a ordem (a data de conclusão do título) e o arquivo em que moram. O que o app é e o que falta fazer continua no `PLANO.md`; o porquê de cada escolha, no `DECISOES.md`.
 
@@ -97,6 +97,7 @@ Entrada nova entra no fim, no padrão `### Título ✅ (concluído em AAAA-MM-DD
 - `2026-08-01` — [Confirmação da troca de sessão em modal (refino do item 54)](#confirmação-da-troca-de-sessão-em-modal-refino-do-item-54--concluído-em-2026-08-01)
 - `2026-08-01` — [Remessa da sessão por QR code — item 65](#remessa-da-sessão-por-qr-code--item-65--concluído-em-2026-08-01)
 - `2026-08-02` — [Rename: Virtual Mockup vira WebPoser](#rename-virtual-mockup-vira-webposer--concluído-em-2026-08-02)
+- `2026-08-02` — [Publicação automática no GitHub Pages](#publicação-automática-no-github-pages--concluído-em-2026-08-02)
 
 ---
 
@@ -1194,3 +1195,15 @@ Decisão do usuário, na esteira do levantamento de publicação (o nome antigo 
 - Nenhum contrato de arquivo mudou — o formato de cena/animação não carrega o nome do app em campo nenhum.
 
 **Saldo: de 2.487 para 2.491 testes** (+4 da migração de chaves); `tsc -b`, `eslint .` e `npm run build` limpos; e2e 4/4.
+
+### Publicação automática no GitHub Pages ✅ (concluído em 2026-08-02)
+
+Pedido do usuário na esteira do levantamento de publicação e do rename (#102): um GitHub Actions que compila e publica sozinho. Três decisões confirmadas antes do código (manter o `base` relativo; a suíte como portão; push na `main` mais disparo manual). Narrativa em `DECISOES.md` #103.
+
+- **`.github/workflows/pages.yml`** (novo, o primeiro workflow do repositório): job `build` com `npm ci` → `npx vitest run` → `npm run lint` → `npm run build` → `upload-pages-artifact`, e job `deploy` com `needs: build` usando `deploy-pages@v4`. Node 24 com cache do npm.
+- **Nenhuma mudança em código ou configuração de build.** O `base: './'` da fase 1 já entrega o app em qualquer subcaminho — `/web-poser/` (o padrão do repositório atual), `/webposer/` ou domínio próprio — sem variável de ambiente. A alternativa de fixar o caminho foi avaliada e descartada por trocar uma propriedade por uma configuração, e por exigir renomear o repositório.
+- **Permissões mínimas do Pages por artefato** (`contents: read`, `pages: write`, `id-token: write`): sem token pessoal, sem branch `gh-pages`, `dist/` segue fora do versionamento. `concurrency: pages` com `cancel-in-progress: false`, para não publicar um estado parcial.
+- **`README.md` reescrito em inglês** no mesmo dia, a pedido do usuário: o que o app faz (posar, cenário, exportar, animar), as duas cascas e a ponte por QR, tabela de suporte por navegador, comandos, stack, mapa do código, persistência, as cinco regras inegociáveis e os apontadores para os quatro documentos canônicos. É o único documento do projeto em inglês, e diz isso no topo.
+- O smoke de Playwright ficou **fora** do workflow, coerente com o lugar dele no projeto (à parte da suíte).
+
+**Saldo: 2.491 testes, estável** (entrega de infraestrutura e documentação, sem código de aplicação); `tsc -b`, `eslint .` e `npm run build` limpos. Falta a conferência do usuário: ligar o Pages em `Settings > Pages` com a origem em **GitHub Actions** e conferir a primeira rodada — e a decisão de licença (o repositório ainda não tem `LICENSE`), apontada no levantamento como pré-requisito de qualquer publicação.
