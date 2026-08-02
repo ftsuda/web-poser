@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { HAND_PRESET_KEYS, type HandPresetKey } from '../figure/handPresets'
 import { isDraggableJoint } from '../figure/dragSolver'
 import { JOINT_GROUPS, getArmSide, type JointGroupKey } from '../figure/jointGroups'
-import { getLockedJoints } from '../figure/jointLocks'
+import { JOINT_GROUP_LABEL_KEYS } from './jointGroupLabels'
+import { getLockedJoints, getLockedRootAxes, rootAxisLockToken } from '../figure/jointLocks'
+import { frozenJointsByPins, getPinnedJoints, isPlacementPinned } from '../figure/jointPins'
 import { figureBlendState, resolveBlendTarget, type BlendablePose, type BlendSource } from '../figure/poseBlend'
 import { getMirrorScope, type Side } from '../figure/poseMirror'
 import { getPosePairing } from '../figure/posePairs'
@@ -47,6 +49,10 @@ interface AxisSliderProps {
   activeAxisTitle?: string
   /** Junta travada (DECISOES.md #42): o slider fica inerte, e não "volta sozinho". */
   disabled?: boolean
+  /** Cadeado do eixo da raiz (item 64) — só a raiz o passa; `undefined` esconde o botão. */
+  locked?: boolean
+  onToggleLock?: () => void
+  lockLabel?: string
 }
 
 /**
@@ -65,6 +71,9 @@ function AxisSlider({
   onSelectAxis,
   activeAxisTitle,
   disabled,
+  locked,
+  onToggleLock,
+  lockLabel,
 }: AxisSliderProps) {
   const color = AXIS_COLORS[axis]
   const label = axis.toUpperCase()
@@ -98,6 +107,18 @@ function AxisSlider({
         onChange={onChange}
       />
       <span className="properties-panel__value">{Math.round(value)}°</span>
+      {onToggleLock && (
+        <button
+          type="button"
+          className="properties-panel__axis-lock"
+          aria-pressed={locked}
+          aria-label={lockLabel}
+          title={lockLabel}
+          onClick={onToggleLock}
+        >
+          {locked ? '\u{1F512}' : '\u{1F513}'}
+        </button>
+      )}
     </div>
   )
 }
@@ -400,11 +421,14 @@ function PoseFileFieldset({ figure }: { figure: Figure }) {
 function SeatOnGroundButton({ figureId }: { figureId: string }) {
   const { t } = useTranslation()
   const seatFigureOnGround = useFiguresStore((state) => state.seatFigureOnGround)
+  // Assentar move a colocação — congelada quando o boneco tem âncora (item 62).
+  const placementPinned = useFiguresStore((state) => isPlacementPinned(state.jointPins, figureId))
 
   return (
     <button
       type="button"
       className="panel-action properties-panel__reset"
+      disabled={placementPinned}
       onClick={() => seatFigureOnGround(figureId)}
       title={t('panels.properties.seatOnGroundHint')}
     >
@@ -426,7 +450,12 @@ function ResetGroupFieldset({ figureId }: { figureId: string }) {
   const { t } = useTranslation()
   const resetJointGroup = useFiguresStore((state) => state.resetJointGroup)
   const jointLocks = useFiguresStore((state) => state.jointLocks)
-  const locked = new Set(getLockedJoints(jointLocks, figureId))
+  const jointPins = useFiguresStore((state) => state.jointPins)
+  // Grupo inteiro preso (trava ou congelado por âncora) = botão desabilitado.
+  const locked = new Set([
+    ...getLockedJoints(jointLocks, figureId),
+    ...frozenJointsByPins(jointPins, figureId),
+  ])
 
   return (
     <fieldset aria-label={t('panels.properties.resetGroup')}>
@@ -551,14 +580,9 @@ function SymmetryFieldset({ figureId, scopeJoint }: SymmetryFieldsetProps) {
   )
 }
 
-const JOINT_GROUP_LABEL_KEYS: Record<JointGroupKey, string> = {
-  trunk: 'panels.properties.jointGroupTrunk',
-  head: 'panels.properties.jointGroupHead',
-  armRight: 'panels.properties.jointGroupArmRight',
-  armLeft: 'panels.properties.jointGroupArmLeft',
-  legRight: 'panels.properties.jointGroupLegRight',
-  legLeft: 'panels.properties.jointGroupLegLeft',
-}
+// O mapa de rótulos mudou-se para `jointGroupLabels.ts` quando o módulo de
+// poses (item 44) passou a usar o mesmo combo — mesmos grupos, mesmos
+// rótulos, uma fonte só (e exportá-lo daqui quebrava o fast refresh).
 
 /**
  * Prefixo dos valores do combo que apontam para a biblioteca do usuário
@@ -671,6 +695,9 @@ export function PropertiesPanel() {
   const jointLocks = useFiguresStore((state) => state.jointLocks)
   const toggleJointLock = useFiguresStore((state) => state.toggleJointLock)
   const clearJointLocks = useFiguresStore((state) => state.clearJointLocks)
+  const jointPins = useFiguresStore((state) => state.jointPins)
+  const toggleJointPin = useFiguresStore((state) => state.toggleJointPin)
+  const clearJointPins = useFiguresStore((state) => state.clearJointPins)
   const gizmoMode = useUIStore((state) => state.gizmoMode)
   const setGizmoMode = useUIStore((state) => state.setGizmoMode)
   const pairPoseEnabled = useUIStore((state) => state.pairPoseEnabled)
@@ -731,6 +758,19 @@ export function PropertiesPanel() {
   // Travamento de juntas (DECISOES.md #42).
   const lockedJoints = getLockedJoints(jointLocks, figure.id)
   const isSelectedJointLocked = lockedJoints.includes(selectedJointName)
+
+  // Trava por eixo da raiz (item 64): tokens no mesmo mapa, cadeado por
+  // slider. Na contagem de travas eles NÃO contam — a contagem fala de
+  // juntas, e os eixos têm os próprios cadeados à vista.
+  const lockedRootAxes = getLockedRootAxes(jointLocks, figure.id)
+  const lockedJointCount = lockedJoints.length - lockedRootAxes.length
+
+  // Âncoras (item 62): a junta ancorada segue com rotação livre; o que
+  // desabilita são os ANCESTRAIS congelados e a colocação da raiz.
+  const pinnedJoints = getPinnedJoints(jointPins, figure.id)
+  const isSelectedJointPinned = pinnedJoints.includes(selectedJointName)
+  const isSelectedJointFrozen = frozenJointsByPins(jointPins, figure.id).includes(selectedJointName)
+  const placementPinned = isPlacementPinned(jointPins, figure.id)
 
   /** A pose escolhida no combo, no formato comum a presets e biblioteca. */
   const selectedPoseSource: BlendSource | null = savedPose
@@ -856,6 +896,14 @@ export function PropertiesPanel() {
               quadril, ponto confirmado com o usuário. */}
           <GizmoModeFieldset mode={gizmoMode} onSelect={setGizmoMode} />
 
+          {/* Âncora ativa (item 62): a colocação inteira congela — desabilitar
+              aqui é dizer o porquê ANTES de o campo não responder. */}
+          {placementPinned && (
+            <p className="properties-panel__hint properties-panel__hint--warning">
+              {t('panels.properties.placementPinnedHint')}
+            </p>
+          )}
+
           <fieldset aria-label={t('panels.properties.position')}>
             <legend>{t('panels.properties.position')}</legend>
             {POSITION_AXES.map((axis, index) => (
@@ -867,6 +915,7 @@ export function PropertiesPanel() {
                   step={0.01}
                   style={{ accentColor: AXIS_COLORS[axis] }}
                   value={figure.position[index]}
+                  disabled={placementPinned}
                   onChange={handlePositionChange(index)}
                 />
               </label>
@@ -883,19 +932,33 @@ export function PropertiesPanel() {
               mesma interação do resto do painel. */}
           <fieldset aria-label={t('panels.properties.rotation')}>
             <legend>{t('panels.properties.rotation')}</legend>
-            {POSITION_AXES.map((axis) => (
-              <AxisSlider
-                key={axis}
-                axis={axis}
-                value={figure.rotation[axis]}
-                min={ROOT_ROTATION_MIN}
-                max={ROOT_ROTATION_MAX}
-                onChange={handleRootRotationChange(axis)}
-              />
-            ))}
+            {POSITION_AXES.map((axis) => {
+              // Cadeado por eixo (item 64): o slider desabilita e o solver de
+              // arrasto deixa de girar a raiz naquele eixo — a UI e o store
+              // contam a mesma história.
+              const axisLocked = lockedRootAxes.includes(axis)
+              return (
+                <AxisSlider
+                  key={axis}
+                  axis={axis}
+                  value={figure.rotation[axis]}
+                  min={ROOT_ROTATION_MIN}
+                  max={ROOT_ROTATION_MAX}
+                  onChange={handleRootRotationChange(axis)}
+                  disabled={placementPinned || axisLocked}
+                  locked={axisLocked}
+                  onToggleLock={() => toggleJointLock(figure.id, rootAxisLockToken(axis))}
+                  lockLabel={t(
+                    axisLocked ? 'panels.properties.unlockRootAxis' : 'panels.properties.lockRootAxis',
+                    { axis: axis.toUpperCase() },
+                  )}
+                />
+              )
+            })}
             <button
               type="button"
               className="panel-action properties-panel__reset"
+              disabled={placementPinned || lockedRootAxes.length === 3}
               onClick={() => resetJointRotation(figure.id, ROOT_JOINT_NAME)}
             >
               {t('panels.properties.resetRootRotation')}
@@ -1059,13 +1122,26 @@ export function PropertiesPanel() {
           {/* Juntas travadas (DECISOES.md #42): a contagem fica na visão da
               raiz — é o resumo do boneco inteiro — para que o efeito de uma
               trava nunca seja inexplicável ao aplicar uma pose. */}
-          {lockedJoints.length > 0 && (
+          {lockedJointCount > 0 && (
             <div className="properties-panel__locked-summary">
               <p className="properties-panel__hint">
-                {t('panels.properties.lockedJointCount', { count: lockedJoints.length })}
+                {t('panels.properties.lockedJointCount', { count: lockedJointCount })}
               </p>
               <button type="button" onClick={() => clearJointLocks(figure.id)}>
                 {t('panels.properties.unlockAllJoints')}
+              </button>
+            </div>
+          )}
+
+          {/* Mesmo resumo para as âncoras (item 62): o efeito de uma âncora
+              (colocação e cadeia congeladas) nunca pode ficar inexplicável. */}
+          {pinnedJoints.length > 0 && (
+            <div className="properties-panel__locked-summary">
+              <p className="properties-panel__hint">
+                {t('panels.properties.pinnedJointCount', { count: pinnedJoints.length })}
+              </p>
+              <button type="button" onClick={() => clearJointPins(figure.id)}>
+                {t('panels.properties.unpinAllJoints')}
               </button>
             </div>
           )}
@@ -1165,23 +1241,45 @@ export function PropertiesPanel() {
             {t('panels.properties.selectedJoint')}: <span>{selectedJointName}</span>
           </p>
 
-          {/* Travar a junta (DECISOES.md #42): fica no topo da junta
+          {/* Travar (DECISOES.md #42) e ancorar (item 62), no topo da junta
               selecionada porque é o que explica os sliders desabilitados logo
-              abaixo. Estava sozinha dentro da grade de duas colunas das
-              operações de pose, e por isso saía com metade da largura e um
-              buraco ao lado — ação isolada é `.panel-action` (#88). */}
-          <button
-            type="button"
-            className="panel-action properties-panel__lock-joint"
-            aria-pressed={isSelectedJointLocked}
-            title={t('panels.properties.lockJointHint')}
-            onClick={() => toggleJointLock(figure.id, selectedJointName)}
-          >
-            {t(isSelectedJointLocked ? 'panels.properties.unlockJoint' : 'panels.properties.lockJoint')}
-          </button>
+              abaixo. Com a âncora o cadeado deixou de ser ação sozinha: as
+              duas proteções formam um conjunto de duas colunas (#88) —
+              cadeado congela os ÂNGULOS desta junta; âncora congela a
+              POSIÇÃO dela (ancestrais + colocação). */}
+          <div className="panel-actions">
+            <button
+              type="button"
+              className="properties-panel__lock-joint"
+              aria-pressed={isSelectedJointLocked}
+              title={t('panels.properties.lockJointHint')}
+              onClick={() => toggleJointLock(figure.id, selectedJointName)}
+            >
+              {t(isSelectedJointLocked ? 'panels.properties.unlockJoint' : 'panels.properties.lockJoint')}
+            </button>
+            <button
+              type="button"
+              className="properties-panel__pin-joint"
+              aria-pressed={isSelectedJointPinned}
+              title={t('panels.properties.pinJointHint')}
+              onClick={() => toggleJointPin(figure.id, selectedJointName)}
+            >
+              {t(isSelectedJointPinned ? 'panels.properties.unpinJoint' : 'panels.properties.pinJoint')}
+            </button>
+          </div>
           {isSelectedJointLocked && (
             <p className="properties-panel__hint properties-panel__hint--warning">
               {t('panels.properties.jointLockedHint')}
+            </p>
+          )}
+          {isSelectedJointPinned && (
+            <p className="properties-panel__hint properties-panel__hint--warning">
+              {t('panels.properties.jointPinnedHint')}
+            </p>
+          )}
+          {isSelectedJointFrozen && (
+            <p className="properties-panel__hint properties-panel__hint--warning">
+              {t('panels.properties.jointFrozenByPinHint')}
             </p>
           )}
 
@@ -1218,10 +1316,10 @@ export function PropertiesPanel() {
                   activeAxis={activeAxis}
                   onSelectAxis={setActiveAxis}
                   activeAxisTitle={t('panels.properties.makeActiveAxis', { axis: axis.toUpperCase() })}
-                  // Travada: o store recusaria a escrita de qualquer jeito —
-                  // desabilitar é dizer isso ANTES do usuário arrastar e
-                  // ver o slider voltar sozinho.
-                  disabled={isSelectedJointLocked}
+                  // Travada ou congelada por âncora: o store recusaria a
+                  // escrita de qualquer jeito — desabilitar é dizer isso
+                  // ANTES do usuário arrastar e ver o slider voltar sozinho.
+                  disabled={isSelectedJointLocked || isSelectedJointFrozen}
                 />
               )
             })}
@@ -1232,7 +1330,7 @@ export function PropertiesPanel() {
               type="button"
               className="panel-action properties-panel__reset"
               title={t('panels.properties.resetJointHint')}
-              disabled={isSelectedJointLocked}
+              disabled={isSelectedJointLocked || isSelectedJointFrozen}
               onClick={() => resetJointRotation(figure.id, selectedJointName)}
             >
               {t('panels.properties.resetJoint')}

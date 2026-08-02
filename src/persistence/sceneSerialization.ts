@@ -10,7 +10,8 @@
  * #85) não custar uma linha daqui.
  *
  * O nome `extras` nas funções é herança do `.glb`, onde este bloco vivia em
- * `extras["virtual-mockup"]`; hoje ele é o nível de cima do arquivo.
+ * `extras["virtual-mockup"]` (o nome de batismo do app, hoje WebPoser); hoje
+ * ele é o nível de cima do arquivo.
  *
  * A leitura do BONECO não mora aqui desde o #86: é `figure/figureFormat.ts`,
  * compartilhada com a animação, os trechos e a pose avulsa. O que sobra neste
@@ -306,7 +307,7 @@ function environmentFromExtras(extras: unknown): EnvironmentSettings {
   return { background, grid }
 }
 
-/** Monta o bloco `extras["virtual-mockup"]` a partir do estado de uma cena de trabalho. */
+/** Monta o bloco serializável da cena (o antigo `extras` do tempo do glTF) a partir do estado de uma cena de trabalho. */
 export function sceneToExtras(scene: SceneWorkingState): SceneExtras {
   return {
     version: SCENE_EXTRAS_VERSION,

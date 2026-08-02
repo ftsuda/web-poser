@@ -1,6 +1,5 @@
 import { isDraggableJoint, solveJointDrag } from './dragSolver'
-import { getLockedJoints } from './jointLocks'
-import { useFiguresStore } from '../store/figuresStore'
+import { effectiveLockedJoints, useFiguresStore } from '../store/figuresStore'
 
 /**
  * Ação que conecta o solver de arrasto de junta (`dragSolver.ts`, puro) ao
@@ -22,13 +21,16 @@ export function applyJointDrag(
   const figure = state.figures.find((f) => f.id === figureId)
   if (!figure || !isDraggableJoint(jointName)) return null
 
-  const locked = getLockedJoints(state.jointLocks, figureId)
+  // O conjunto efetivo traz travas, congeladas por âncora e a `root` de
+  // boneco ancorado (item 62) — o solver pula tudo isso sozinho.
+  const locked = effectiveLockedJoints(state, figureId)
   const result = solveJointDrag(figure, jointName, targetWorldPosition, locked)
 
   // Uma edição só (e um passo de undo só) por evento de arrasto — a cadeia
-  // inteira entra em `setJointRotations`, que reaplica trava e espelho ao vivo.
-  if (Object.keys(result.rotations).length > 0) {
-    state.setJointRotations(figureId, result.rotations)
+  // inteira E a raiz recrutada (item 63) entram juntas em `setJointRotations`,
+  // que reaplica trava e espelho ao vivo.
+  if (Object.keys(result.rotations).length > 0 || result.rootRotation) {
+    state.setJointRotations(figureId, result.rotations, result.rootRotation)
   }
 
   return result.achievedWorldPosition

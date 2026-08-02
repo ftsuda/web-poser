@@ -229,7 +229,7 @@ describe('CameraPanel — erro de importação (fase 9, item 4)', () => {
     await renderCameraPanel()
     await user.click(screen.getByRole('button', { name: 'Importar bookmarks (.json)' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('não é do Virtual Mockup')
+    expect(await screen.findByRole('alert')).toHaveTextContent('não é do WebPoser')
     expect(useFiguresStore.getState().cameraBookmarks).toHaveLength(0)
   })
 })

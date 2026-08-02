@@ -3,9 +3,12 @@ import {
   clearFigureLocks,
   copyFigureLocks,
   getLockedJoints,
+  getLockedRootAxes,
   isJointLocked,
+  isRootAxisLocked,
   mergeLockedJoints,
   pruneJointLocks,
+  rootAxisLockToken,
   sanitizeJointLocks,
   toggleJointLock,
 } from '../jointLocks'
@@ -51,6 +54,44 @@ describe('jointLocks', () => {
   it('descarta travas de bonecos que não existem mais', () => {
     const locks = { 'figure-1': ['elbow.L'], 'figure-9': ['knee.R'] }
     expect(pruneJointLocks(locks, ['figure-1'])).toEqual({ 'figure-1': ['elbow.L'] })
+  })
+
+  /**
+   * Trava por eixo da raiz (item 64): tokens `root.x`/`root.y`/`root.z` no
+   * MESMO mapa — mesma persistência, cópia e poda das travas de junta. A
+   * `root` crua continua recusada: travar a raiz inteira é travar os três.
+   */
+  describe('trava por eixo da raiz (item 64)', () => {
+    it('trava e destrava um eixo da raiz pelo token', () => {
+      const travado = toggleJointLock({}, 'figure-1', rootAxisLockToken('y'))
+      expect(isRootAxisLocked(travado, 'figure-1', 'y')).toBe(true)
+      expect(isRootAxisLocked(travado, 'figure-1', 'x')).toBe(false)
+
+      const destravado = toggleJointLock(travado, 'figure-1', rootAxisLockToken('y'))
+      expect(isRootAxisLocked(destravado, 'figure-1', 'y')).toBe(false)
+    })
+
+    it('lista os eixos travados na ordem x, y, z, independente da ordem de travar', () => {
+      let locks = toggleJointLock({}, 'figure-1', rootAxisLockToken('z'))
+      locks = toggleJointLock(locks, 'figure-1', rootAxisLockToken('x'))
+      expect(getLockedRootAxes(locks, 'figure-1')).toEqual(['x', 'z'])
+    })
+
+    it('tokens convivem com travas de junta no mesmo boneco', () => {
+      let locks = toggleJointLock({}, 'figure-1', 'elbow.L')
+      locks = toggleJointLock(locks, 'figure-1', rootAxisLockToken('y'))
+
+      expect(isJointLocked(locks, 'figure-1', 'elbow.L')).toBe(true)
+      expect(getLockedRootAxes(locks, 'figure-1')).toEqual(['y'])
+      // O token não vaza como "junta travada" em quem pergunta por nome.
+      expect(isJointLocked(locks, 'figure-1', 'root')).toBe(false)
+    })
+
+    it('sanitize mantém os tokens e continua recusando a root crua', () => {
+      expect(
+        sanitizeJointLocks({ 'figure-1': ['root.y', 'root', 'root.w', 'elbow.L'] }),
+      ).toEqual({ 'figure-1': ['root.y', 'elbow.L'] })
+    })
   })
 
   describe('sanitizeJointLocks', () => {

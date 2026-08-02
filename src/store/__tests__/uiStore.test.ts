@@ -68,14 +68,14 @@ describe('uiStore — casca visual do boneco (DECISOES.md #81)', () => {
     useUIStore.getState().setFigureStyle('stick')
 
     expect(useUIStore.getState().figureStyle).toBe('stick')
-    expect(JSON.parse(localStorage.getItem('virtual-mockup:ui:v1') ?? '{}').figureStyle).toBe('stick')
+    expect(JSON.parse(localStorage.getItem('webposer:ui:v1') ?? '{}').figureStyle).toBe('stick')
   })
 
   it('gravar a casca não apaga as outras preferências do mesmo bloco', () => {
     useUIStore.getState().toggleRuler()
     useUIStore.getState().setFigureStyle('stick')
 
-    const gravado = JSON.parse(localStorage.getItem('virtual-mockup:ui:v1') ?? '{}')
+    const gravado = JSON.parse(localStorage.getItem('webposer:ui:v1') ?? '{}')
     expect(gravado.figureStyle).toBe('stick')
     expect(gravado.rulerVisible).toBe(true)
   })

@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useStore } from 'zustand'
 import { supportedLanguages } from '../i18n'
 import type { FigureStyle } from '../figure/skeleton'
+import { saveWorkspaceToLocalStorage } from '../persistence/autosave'
+import { WORKSPACE_AUTOSAVE_KEY, switchShell } from '../poses/shellChoice'
 import type { FrameMaskSource } from '../scene/frameMask'
 import { useDepthStore } from '../store/depthStore'
 import { useFiguresStore, type BackgroundTone } from '../store/figuresStore'
@@ -172,6 +174,22 @@ export function Toolbar() {
             onClick={toggleHelp}
           >
             ?
+          </button>
+          {/* Módulo de poses (item 44): override persistido + recarga — a
+              troca de casca é recarga de página por desenho (`shellChoice.ts`),
+              porque a chave de autosave é decidida no init dos stores. A
+              sessão do desktop é gravada AGORA (o debounce pode estar no meio). */}
+          <button
+            type="button"
+            className="toolbar__icon-button"
+            aria-label={t('toolbar.posesShell')}
+            title={t('toolbar.posesShellHint')}
+            onClick={() => {
+              saveWorkspaceToLocalStorage(useFiguresStore.getState(), WORKSPACE_AUTOSAVE_KEY)
+              switchShell('poses')
+            }}
+          >
+            &#9995;
           </button>
         </div>
 

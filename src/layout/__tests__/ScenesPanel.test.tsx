@@ -1,8 +1,10 @@
 import '../../i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { POSES_AUTOSAVE_KEY, saveWorkspaceToLocalStorage } from '../../persistence/autosave'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
+import { useAnimationStore } from '../../store/animationStore'
 import { useDepthStore } from '../../store/depthStore'
 import { useFiguresStore } from '../../store/figuresStore'
 import { useUIStore } from '../../store/uiStore'
@@ -157,7 +159,7 @@ describe('ScenesPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Importar cena (.json)' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'O arquivo é um JSON válido, mas não é do Virtual Mockup — falta o campo "version" que todo arquivo do aplicativo grava.',
+      'O arquivo é um JSON válido, mas não é do WebPoser — falta o campo "version" que todo arquivo do aplicativo grava.',
     )
   })
 
@@ -363,10 +365,13 @@ describe('ScenesPanel — novo workspace (fase 9, item 7)', () => {
     await renderScenesPanel()
     await user.click(screen.getByRole('button', { name: 'Novo workspace (limpar tudo)' }))
 
-    expect(screen.getByText(/Isto apaga todos os bonecos/)).toBeInTheDocument()
+    // A confirmação é o MESMO <dialog> modal da troca de sessão (#100).
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText(/Isto apaga todos os bonecos/)).toBeInTheDocument()
     expect(useFiguresStore.getState().figures).toHaveLength(1)
 
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(useFiguresStore.getState().figures).toHaveLength(1)
     expect(useFiguresStore.getState().scenes).toHaveLength(1)
   })
@@ -378,12 +383,120 @@ describe('ScenesPanel — novo workspace (fase 9, item 7)', () => {
     const user = userEvent.setup()
     await renderScenesPanel()
     await user.click(screen.getByRole('button', { name: 'Novo workspace (limpar tudo)' }))
-    await user.click(screen.getByRole('button', { name: 'Limpar tudo' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Limpar tudo' }))
 
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(useFiguresStore.getState().figures).toHaveLength(0)
     expect(useFiguresStore.getState().scenes).toHaveLength(0)
     expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
     expect(screen.getByText('Nenhuma cena salva ainda.')).toBeInTheDocument()
+  })
+})
+
+/**
+ * Item 54 — trazer a sessão do módulo de poses: substitui o workspace atual
+ * pelo que está salvo na chave do módulo, com confirmação em dois passos
+ * (mesmo padrão do "novo workspace" — a troca zera o undo).
+ */
+describe('trazer sessão do módulo de poses (item 54)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useAnimationStore.setState({ visitedKeyframeId: null })
+  })
+
+  it('substitui o workspace pela sessão da outra chave após confirmação', async () => {
+    useFiguresStore.getState().addFigure('Vindo do celular')
+    saveWorkspaceToLocalStorage(useFiguresStore.getState(), POSES_AUTOSAVE_KEY)
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.getState().addFigure('Só do desktop')
+    useAnimationStore.setState({ visitedKeyframeId: 'k1' })
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+    await user.click(screen.getByRole('button', { name: 'Trazer sessão do módulo de poses' }))
+    // A confirmação é um <dialog> MODAL de verdade, não um trecho inline do painel.
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText(/Isto substitui todo o workspace atual/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Substituir tudo' }))
+    // Confirmar fecha o diálogo.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    const state = useFiguresStore.getState()
+    expect(state.figures.map((figure) => figure.name)).toEqual(['Vindo do celular'])
+    expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
+    // A linha do tempo pertencia à sessão que saiu da tela (item 40).
+    expect(useAnimationStore.getState().visitedKeyframeId).toBeNull()
+  })
+
+  it('avisa quando não há sessão salva do módulo neste aparelho', async () => {
+    useFiguresStore.getState().addFigure('Só do desktop')
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+    await user.click(screen.getByRole('button', { name: 'Trazer sessão do módulo de poses' }))
+    await user.click(screen.getByRole('button', { name: 'Substituir tudo' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Não há sessão salva do módulo de poses neste aparelho.',
+    )
+    expect(useFiguresStore.getState().figures.map((figure) => figure.name)).toEqual(['Só do desktop'])
+  })
+
+  it('cancelar fecha o diálogo sem tocar no workspace', async () => {
+    useFiguresStore.getState().addFigure('Vindo do celular')
+    saveWorkspaceToLocalStorage(useFiguresStore.getState(), POSES_AUTOSAVE_KEY)
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.getState().addFigure('Só do desktop')
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+    await user.click(screen.getByRole('button', { name: 'Trazer sessão do módulo de poses' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(useFiguresStore.getState().figures.map((figure) => figure.name)).toEqual(['Só do desktop'])
+  })
+})
+
+/**
+ * Item 65 — enviar a sessão por QR code: a ponte para um aparelho DIFERENTE,
+ * onde as chaves de localStorage do item 54 não alcançam. O modal exibe a
+ * sequência de quadros em ciclo; a coleta acontece do outro lado, pela câmera.
+ */
+describe('enviar sessão por QR code (item 65)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  it('abre o modal, gera os quadros e mostra o contador', async () => {
+    useFiguresStore.getState().addFigure('Viajante')
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+    await user.click(screen.getByRole('button', { name: 'Enviar sessão por QR code' }))
+
+    const dialog = screen.getByRole('dialog')
+    // A geração é assíncrona (deflate + SVG) — espera o contador aparecer.
+    expect(await within(dialog).findByText(/Quadro \d+ de \d+/)).toBeInTheDocument()
+    // O quadro é um SVG gerado localmente pelo `qrcode` — nada de canvas nem rede.
+    expect(dialog.querySelector('.session-qr__frame svg')).not.toBeNull()
+  })
+
+  it('fechar o modal encerra a remessa sem tocar no workspace', async () => {
+    useFiguresStore.getState().addFigure('Viajante')
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+    await user.click(screen.getByRole('button', { name: 'Enviar sessão por QR code' }))
+    const dialog = screen.getByRole('dialog')
+    await within(dialog).findByText(/Quadro \d+ de \d+/)
+    await user.click(within(dialog).getByRole('button', { name: 'Fechar' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(useFiguresStore.getState().figures.map((figure) => figure.name)).toEqual(['Viajante'])
   })
 })
 

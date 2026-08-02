@@ -51,6 +51,35 @@ describe('applyJointDrag', () => {
     }
   })
 
+  it('alvo fora de alcance recruta a raiz (item 63): colocação GIRA sem transladar, num passo de undo só', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    const before = useFiguresStore.temporal.getState().pastStates.length
+
+    applyJointDrag(id, 'wrist.L', [10, 10, 10])
+
+    const updated = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    const rotation = updated.rotation
+    expect(Math.abs(rotation.x) + Math.abs(rotation.y) + Math.abs(rotation.z)).toBeGreaterThan(1)
+    expect(updated.position).toEqual([0, 0, 0])
+    expect(useFiguresStore.temporal.getState().pastStates.length).toBe(before + 1)
+  })
+
+  it('com âncora (item 62) o arrasto respeita a cadeia congelada e NÃO gira a raiz', () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().toggleJointPin(id, 'elbow.L')
+    const before = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    const start = wristWorldPosition(id)
+
+    applyJointDrag(id, 'wrist.L', [start.x + 2, start.y + 2, start.z])
+
+    const after = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    // Só o cotovelo (entre a âncora e o punho) participa; ombro/tronco/raiz ficam.
+    expect(after.pose['shoulder.L']).toEqual(before.pose['shoulder.L'])
+    expect(after.pose['spine']).toEqual(before.pose['spine'])
+    expect(after.rotation).toEqual(before.rotation)
+    expect(after.pose['elbow.L']).not.toEqual(before.pose['elbow.L'])
+  })
+
   it('junta travada não muda ao arrastar outra junta — fica rígida, sem interromper a cadeia', () => {
     const id = useFiguresStore.getState().addFigure() as string
     useFiguresStore.getState().toggleJointLock(id, 'shoulder.L')

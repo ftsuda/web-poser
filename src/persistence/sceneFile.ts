@@ -20,7 +20,8 @@ import {
  * caminho só.
  *
  * **Era `.glb` até DECISOES.md #85.** O `.glb` carregava este mesmo bloco de
- * dados em `extras["virtual-mockup"]` mais uma geometria glTF (esfera por
+ * dados em `extras["virtual-mockup"]` (o nome de batismo do app, hoje
+ * WebPoser) mais uma geometria glTF (esfera por
  * junta, cilindro por osso) que servia só para abrir no Blender: a importação
  * nunca leu a malha de volta, só o `extras`. Medido, isso dava ~200× de peso
  * morto (245 KB contra 1,2 KB para um boneco). Trocado o envelope, o conteúdo

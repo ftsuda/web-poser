@@ -2,6 +2,7 @@ import '../../i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { rootAxisLockToken } from '../../figure/jointLocks'
 import { resolvePosePreset } from '../../figure/posePresets'
 import { AXIS_COLORS } from '../../scene/axisColors'
 import { useFiguresStore } from '../../store/figuresStore'
@@ -762,6 +763,98 @@ describe('PropertiesPanel — biblioteca de poses e travamento (DECISOES.md #42)
 
     expect(useFiguresStore.getState().jointLocks[id]).toBeUndefined()
     expect(screen.queryByText(/juntas travadas neste boneco/)).not.toBeInTheDocument()
+  })
+
+  it('ancora a junta selecionada (item 62): ela continua editável, o ancestral desabilita com o porquê', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().selectJoint('elbow.L')
+    })
+
+    const ancorar = screen.getByRole('button', { name: 'Fixar posição' })
+    expect(ancorar).toHaveAttribute('aria-pressed', 'false')
+    await user.click(ancorar)
+
+    expect(useFiguresStore.getState().jointPins[id]).toEqual(['elbow.L'])
+    expect(screen.getByRole('button', { name: 'Soltar âncora' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText(/Junta ancorada — a posição dela está fixa/)).toBeInTheDocument()
+    // A rotação da própria junta ancorada segue livre.
+    const rotacao = screen.getByRole('group', { name: 'Rotação (°)' })
+    expect(within(rotacao).getByRole('slider', { name: 'X' })).toBeEnabled()
+
+    // O ancestral congelado desabilita, explicando de onde veio o congelamento.
+    act(() => {
+      useFiguresStore.getState().selectJoint('shoulder.L')
+    })
+    expect(screen.getByText(/Congelada por uma âncora abaixo/)).toBeInTheDocument()
+    const rotacaoOmbro = screen.getByRole('group', { name: 'Rotação (°)' })
+    expect(within(rotacaoOmbro).getByRole('slider', { name: 'X' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Resetar esta junta' })).toBeDisabled()
+  })
+
+  it('com âncora, a colocação desabilita na raiz: posição, rotação, assentar e reset', async () => {
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().toggleJointPin(id, 'elbow.L')
+      useFiguresStore.getState().selectJoint('root')
+    })
+
+    expect(await screen.findByText(/Colocação congelada por âncora/)).toBeInTheDocument()
+    const posicao = screen.getByRole('group', { name: 'Posição (m)' })
+    expect(within(posicao).getByLabelText('X')).toBeDisabled()
+    const rotacao = screen.getByRole('group', { name: 'Rotação (°)' })
+    expect(within(rotacao).getByRole('slider', { name: 'Y' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Apoiar no chão' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Resetar rotação' })).toBeDisabled()
+  })
+
+  it('trava um eixo da rotação da raiz (item 64): o token grava e o slider do eixo desabilita', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().selectJoint('root')
+    })
+
+    const rotacao = screen.getByRole('group', { name: 'Rotação (°)' })
+    const travarY = within(rotacao).getByRole('button', { name: 'Travar eixo Y' })
+    expect(travarY).toHaveAttribute('aria-pressed', 'false')
+    await user.click(travarY)
+
+    expect(useFiguresStore.getState().jointLocks[id]).toEqual(['root.y'])
+    expect(within(rotacao).getByRole('button', { name: 'Destravar eixo Y' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(rotacao).getByRole('slider', { name: 'Y' })).toBeDisabled()
+    expect(within(rotacao).getByRole('slider', { name: 'X' })).toBeEnabled()
+  })
+
+  it('com os três eixos travados o reset da rotação desabilita — e os tokens não contam como juntas travadas', async () => {
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      for (const axis of ['x', 'y', 'z'] as const) {
+        useFiguresStore.getState().toggleJointLock(id, rootAxisLockToken(axis))
+      }
+      useFiguresStore.getState().selectJoint('root')
+    })
+
+    expect(screen.getByRole('button', { name: 'Resetar rotação' })).toBeDisabled()
+    // A contagem de travas fala de JUNTAS — os eixos da raiz têm os próprios cadeados à vista.
+    expect(screen.queryByText(/juntas travadas neste boneco/)).not.toBeInTheDocument()
+  })
+
+  it('mostra quantas juntas estão ancoradas e solta todas de uma vez', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().toggleJointPin(id, 'elbow.L')
+      useFiguresStore.getState().toggleJointPin(id, 'knee.R')
+    })
+
+    expect(await screen.findByText('2 juntas ancoradas neste boneco.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Soltar todas as âncoras' }))
+
+    expect(useFiguresStore.getState().jointPins[id]).toBeUndefined()
+    expect(screen.queryByText(/juntas ancoradas neste boneco/)).not.toBeInTheDocument()
   })
 
 })

@@ -31,7 +31,7 @@ describe('Toolbar', () => {
 
   it('shows the app title', async () => {
     await renderToolbar()
-    expect(screen.getByRole('heading', { name: 'Virtual Mockup' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'WebPoser' })).toBeInTheDocument()
   })
 
   it('changes the background tone in the scene store', async () => {
@@ -130,14 +130,14 @@ describe('Toolbar', () => {
 
     await user.selectOptions(select, 'wide')
     expect(useUIStore.getState().frameMaskSource).toBe('wide')
-    expect(localStorage.getItem('virtual-mockup:ui:v1')).toContain('"frameMaskSource":"wide"')
+    expect(localStorage.getItem('webposer:ui:v1')).toContain('"frameMaskSource":"wide"')
 
     await user.selectOptions(select, 'vertical')
     expect(useUIStore.getState().frameMaskSource).toBe('vertical')
 
     await user.selectOptions(select, 'square')
     expect(useUIStore.getState().frameMaskSource).toBe('square')
-    expect(localStorage.getItem('virtual-mockup:ui:v1')).toContain('"frameMaskSource":"square"')
+    expect(localStorage.getItem('webposer:ui:v1')).toContain('"frameMaskSource":"square"')
   })
 
   it('desligar a máscara larga o retângulo junto, para ela não ficar pintada na tela', async () => {

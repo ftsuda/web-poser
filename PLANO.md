@@ -1,4 +1,4 @@
-# Virtual Mockup — Plano do Projeto
+# WebPoser — Plano do Projeto
 
 Aplicativo frontend 3D, totalmente offline, para posar bonecos articulados (manequins de desenhista) e exportar imagens estáticas de referência (**instantâneos**). Desde a fase 10, também **anima entre poses-chave e exporta MP4** — ver "Mini animador"; até ali, "geração de animações" era escopo declarado como fora, e a mudança é decisão do usuário (`DECISOES.md` #52).
 
@@ -678,7 +678,7 @@ Duas restrições de escopo valem para tudo o que segue: **nenhuma dependência 
     - **Contrato de colocação**, definido pelo usuário: grava como se o boneco estivesse no (0,0) do plano horizontal (X/Z zerados, Y preservado) e carrega mantendo X/Z do boneco de destino, trazendo do arquivo apenas o Y. Onde ele pisa é composição; agachar e pular são pose.
     - **Preferência de tela, não de cena:** a casca vale para todos os bonecos, fica fora do undo e não viaja no `.glb` nem no `workspace.json` — mesmo tratamento da régua e da máscara de enquadramento.
 
-44. ⏳ **Versão "Lite" — PWA de posagem para celular e tablet** (registrado em 2026-07-30 a pedido do usuário; **nada implementado**). Uma segunda casca de UI sobre o mesmo núcleo, desenhada para o dedo e para tela pequena.
+44. ✅ **Versão "Lite" — PWA de posagem para celular e tablet** (concluído em 2026-07-31, ver `DECISOES.md` #92 e o `HISTORICO.md`). O nome de uso ficou **"Módulo de poses"** — "Lite" era o apelido de projeto —, e o pedido de implementação acrescentou uma decisão de layout: o painel de controle fica **embaixo em tela vertical e à direita em tela horizontal**. Os ❓ do fim do item foram todos respondidos pelo usuário antes do código; as respostas estão anotadas neles. Texto original do item: Uma segunda casca de UI sobre o mesmo núcleo, desenhada para o dedo e para tela pequena.
 
     **Uma vista por vez, em qualquer aparelho.** A ideia de dividir o viewport — o quadrante 2×2 avaliado antes, e depois a grade 2×3/3×2 em tablet — está **descartada**, inclusive em tablet e computador (decisão do usuário). O viewport é sempre um só, ocupando a tela toda, e o usuário ALTERNA entre as vistas. A razão vale para telas grandes também: cada vista ortográfica precisa de área para a junta virar alvo de dedo, e seis painéis pequenos entregam seis alvos ruins em vez de um bom. Uma vista grande com troca rápida também mantém uma única casca a manter, em vez de dois modos de viewport com regras próprias de foco e de gizmo.
 
@@ -695,7 +695,9 @@ Duas restrições de escopo valem para tudo o que segue: **nenhuma dependência 
     | Lado esquerdo | X (lateral) | Z, Y | flexão/extensão, o perfil da pose |
     | Lado direito | X (lateral) | Z, Y | o mesmo, pelo outro lado |
     | Cima | Y (altura) | X, Z | torções do tronco e a colocação no chão |
-    | Livre | — | nada | conferir a pose em 3D, sem risco de mexer nela |
+    | Livre | — | nada¹ | conferir a pose em 3D, sem risco de mexer nela |
+
+    > ¹ **Revisto em 2026-07-31** (`DECISOES.md` #93): a Livre ganhou edição **destravável** por um cadeado na barra — travada (padrão), continua exatamente como descrito; destravada, mostra o palito e edita por arrasto no plano da tela + gizmo de três setas de eixo (translação apenas, sem rotação e sem as setas do painel).
 
     São seis, e como só uma aparece de cada vez, acrescentar ou remover uma vista depois custa apenas uma entrada a mais no seletor — não há layout a rever junto.
 
@@ -771,15 +773,97 @@ Duas restrições de escopo valem para tudo o que segue: **nenhuma dependência 
     - **Componentes compartilhados só ganham props aditivas e opcionais**, com o default reproduzindo o comportamento de hoje. Se um teste existente precisar mudar para continuar passando, a fronteira foi violada.
     - **Detecção da casca:** ponteiro grosso **e** viewport estreito (não só a largura), decidida uma vez no carregamento, com override explícito e persistido para testar a Lite no desktop.
 
-    #### ❓ A decidir com o usuário antes de implementar
+    #### ❓ A decidir com o usuário antes de implementar — **todas respondidas em 2026-07-31** (ver `DECISOES.md` #92)
 
-    - **Autosave:** a Lite compartilha a chave `virtual-mockup:workspace:v1` com o desktop (recomendado — abrir no celular e continuar de onde parou, no mesmo aparelho), usa chave própria, ou não autossalva?
-    - **Quanto de linha do tempo a Lite administra.** O papel-cebola de anterior/posterior implica que existe uma sequência e uma posição corrente nela — então a Lite precisa de ao menos um navegador de keyframes. Fica só em "acrescentar e navegar", ou também reordenar, substituir e apagar?
-    - **A Lite abre um JSON existente** para continuar uma animação começada no desktop, ou só exporta?
-    - **Desfazer:** a Lite tem histórico próprio (o `zundo` do `figuresStore` viria de graça) ou fica sem?
-    - **Altura e colocação no chão:** a Lite deixa mudar a altura do boneco e posicionar os cinco no plano? A vista de cima é o lugar natural para o X/Z, e com cinco bonecos alguma separação é necessária.
-    - **Vista livre:** mostra só o boneco em edição ou a cena toda?
-    - **Torção:** confirmar o gesto de dois dedos como caminho para o eixo que o arrasto planar não alcança, ou preferir um controle no rodapé.
+    - **Autosave:** a Lite compartilha a chave `webposer:workspace:v1` com o desktop (recomendado — abrir no celular e continuar de onde parou, no mesmo aparelho), usa chave própria, ou não autossalva? → **Chave própria** (`webposer:poses:v1`): a sessão do módulo é separada da do desktop.
+    - **Quanto de linha do tempo a Lite administra.** O papel-cebola de anterior/posterior implica que existe uma sequência e uma posição corrente nela — então a Lite precisa de ao menos um navegador de keyframes. Fica só em "acrescentar e navegar", ou também reordenar, substituir e apagar? → **Gestão completa**: capturar, ir para, regravar, reordenar e apagar (duração e câmera continuam no desktop; regravar preserva a câmera gravada).
+    - **A Lite abre um JSON existente** para continuar uma animação começada no desktop, ou só exporta? → **Abre e exporta** (substituindo ou anexando à linha do tempo de trabalho), sem remapeamento de elenco.
+    - **Desfazer:** a Lite tem histórico próprio (o `zundo` do `figuresStore` viria de graça) ou fica sem? → **Tem, por botões** — sem os gestos de dois/três dedos.
+    - **Altura e colocação no chão:** a Lite deixa mudar a altura do boneco e posicionar os cinco no plano? A vista de cima é o lugar natural para o X/Z, e com cinco bonecos alguma separação é necessária. → **Os dois liberados**: altura no painel de Bonecos; colocação por arrasto/setas da raiz, com a vista de cima andando no plano do chão.
+    - **Vista livre:** mostra só o boneco em edição ou a cena toda? → **A cena toda**, com o manequim completo; o filtro "mostrar só o boneco em edição" (de tela, não o `visible`) continua valendo.
+    - **Torção:** confirmar o gesto de dois dedos como caminho para o eixo que o arrasto planar não alcança, ou preferir um controle no rodapé. → **Os dois**: slider no painel + giro de dois dedos (que só vence a câmera após 10° acumulados).
+
+*(itens 45–59 acrescentados em 2026-07-31: as 15 sugestões de melhoria do módulo de poses levantadas após a entrega do item 44, registradas a pedido do usuário — a numeração continua do fim, sem renumerar nada. Os marcados ✅ foram implementados no mesmo dia, ver `DECISOES.md` #94.)*
+
+45. ✅ **Arrasto solto fora do canvas** (concluído em 2026-07-31). Os listeners de `pointermove`/`pointerup` do arrasto e do gesto de torção passaram do canvas para a `window`: um arrasto rápido levava o dedo para fora do canvas antes do soltar, e o arrasto ficava "grudado" até o toque seguinte.
+
+46. ✅ **Wake Lock re-pedido ao voltar à aba** (concluído em 2026-07-31). O navegador solta o lock quando a página perde visibilidade e o pedido era único; agora o `visibilitychange` re-pede ao ficar visível.
+
+47. ✅ **Arrasto coalescido por `requestAnimationFrame`** (concluído em 2026-07-31). O solver e a re-renderização dos bonecos rodavam por `pointermove`; agora cada quadro resolve só o último evento — mitigação de desempenho para celular médio, sem mudança de comportamento.
+
+48. ✅ **Gizmo com tamanho constante em tela** (concluído em 2026-07-31). As setas da vista Livre (#93) tinham 0,3 m fixos — minúsculas longe, gigantes perto; o grupo é reescalado por quadro pela distância da câmera.
+
+49. ✅ **Botão "Enquadrar boneco"** (concluído em 2026-07-31). Com pan/zoom livres é fácil perder o boneco da vista; o botão da barra recentra a vista no boneco em edição — nas ortográficas repõe câmera e zoom da vista, na Livre mantém a direção de órbita.
+
+50. ✅ **Duplo toque na junta = travar/destravar** (concluído em 2026-07-31). Estava na lista de facilidades do item 44 e tinha ficado de fora; põe o cadeado onde a mão já está (a raiz fica de fora — não trava).
+
+51. ✅ **Botões ±1°/±5° nos sliders** (concluído em 2026-07-31). Torção e rotação da raiz ganharam ajuste fino por botão — dedo em slider é impreciso, e o grampeamento continua o dos limites.
+
+52. ⏳ **Poses de partida na aba Boneco.** `applyPosePreset` já existe (em pé, sentado, T-pose…); montar pose do zero no celular sem ponto de partida é trabalhoso. O plano tirou os presets da Lite ("O que sai da Lite"), então é uma revisão consciente a decidir.
+
+53. ⏳ **Indicador de autosave no módulo.** O módulo grava na chave própria mas não mostra estado; o `uiStore` já marca pendente/salvo/falha — falta só o badge.
+
+54. ✅ **Trazer/levar a sessão entre as cascas** (concluído em 2026-08-01, ver DECISOES.md #98). As sessões são separadas por decisão (#92); no mesmo aparelho, um botão "trazer a sessão da outra casca" (com confirmação — substitui a sessão atual e zera o undo) no painel de Cenas do desktop e na aba Arquivos do módulo completa o desenho para quem começa numa casca e continua na outra.
+
+55. ⏳ **Aba Arquivos aceitar pose avulsa.** O leitor de "Pose em arquivo" (#81/#87) aceita a família inteira de formatos; a aba só abre animação. Aplicar um JSON de pose ao boneco selecionado reusaria `parseFigurePoseFile` quase de graça.
+
+56. ✅ **Atalho do PWA para o módulo de poses** (concluído em 2026-07-31). Entrada `shortcuts` no manifest apontando para `./?shell=poses`; a URL vence o override gravado (é o gesto mais explícito), e os botões de troca de casca removem o parâmetro ao navegar — sem isso, um app aberto pelo atalho ficaria preso à casca da URL.
+
+57. ✅ **Playwright para o que o unit test não alcança** (concluído em 2026-08-01, ver `DECISOES.md` #95). Quatro smokes em `e2e/poses.spec.ts` (`npm run test:e2e`, Chromium sobre o dev server): casca por URL e troca pelos botões, arrasto REAL da raiz na vista de frente (asserção pelo autosave do módulo), pan de um dedo que não toca na pose, e vista Livre com cadeado — todos conferindo console limpo. Texto original: Arrasto, gizmo, pan por um dedo e troca de casca são conferência manual hoje; #31.5 já provou que o Playwright alcança arrasto. Um smoke por vista pagaria o custo rápido.
+
+58. ⏳ **Extrair a lógica de arrasto do `PosesViewport`.** O componente concentra arrasto planar, por eixo, gesto de torção e gizmo; um módulo/hook testável separado deixaria a matemática coberta e o componente só com a cola.
+
+59. ✅ **Espelho por membro na aba Simetria** (concluído em 2026-07-31). Seletor de alcance — boneco inteiro ou a partir da junta selecionada — usando o mesmo `scopeJoint` do desktop (#34); a opção por junta desabilita quando a selecionada não tem par no escopo.
+
+*(itens 60–61 planejados em 2026-08-01 a pedido do usuário — desenho decidido com ele antes de qualquer código; implementados no mesmo dia, em sessão seguinte; a numeração continua do fim.)*
+
+60. ✅ **Sliders de rotação por eixo na aba Junta + anéis gimbal de leitura** (concluído em 2026-08-01, ver `DECISOES.md` #96). Substitui o slider único de torção por **um bloco por eixo de DOF** da junta selecionada (`getJointAxes`, 1–3 eixos), no mesmo estilo dos sliders da raiz — min/max dos limites efetivos (override do workspace ?? `skeleton.ts`), aplicado via `setJointRotation` (clamp e trava valem). Decisões já tomadas:
+    - **A torção não perde nada**: era só o eixo `y`, que vira um dos sliders; o gesto de dois dedos continua no `y`. O caso "sem torção" (joelho) desaparece — toda junta tem ≥1 DOF — e as chaves `twist*` do i18n saem.
+    - **Cores por eixo, o padrão do gizmo**: X `#e04040`, Y `#40a840`, Z `#4060e0` (as mesmas das setas de translação) no rótulo e no `accent-color` do slider — nos da raiz também. As chaves `rootRotation*` do i18n unificam-se em `rotation*`.
+    - **Indicador visual: ANÉIS GIMBAL, não interativos** (decisão do usuário), na junta selecionada do boneco em edição, em **todas as vistas de edição** (ortográficas + Livre destravada; na Livre convive com as setas de translação — setas arrastam, anéis só leem). Um anel colorido por eixo de DOF, **fiel ao Euler XYZ**: anel X no frame do pai, Y no frame após a rotação X, Z após X e Y — senão o anel mentiria em junta já rodada. Matemática pura num helper `jointAxisFrames(figure, junta)` (frame do pai via `buildJointFrames` + dois quaternions), testável por unidade; componente `JointAxisRings` só desenha, com tamanho constante em tela (mesmo mecanismo do gizmo de setas). Raiz: três anéis nos eixos do mundo.
+    - Custo: painel + CSS + i18n baixos (RTL); anéis médios (helper por unidade, desenho para o e2e/visual).
+
+61. ✅ **Botão "voltar ao inicial" por eixo, no meio dos botões finos** (concluído em 2026-08-01, ver `DECISOES.md` #96). A linha de ajuste fino vira **[−5°, −1°, ⟲, +1°, +5°]** (grade de 5 colunas); o ⟲ devolve **só aquele eixo** ao valor inicial. Decisões já tomadas:
+    - **A referência é a MESMA do `resetJointRotation` do store**: `resolvePosePreset('standing')[junta]?.[eixo] ?? 0` — o cotovelo volta a y=90, não a zero cru. Raiz: 0 no eixo (a referência de colocação do reset).
+    - Aplicado via `setJointRotation`/`setRootRotation` — trava e clamp respeitados; botão desabilitado com a junta travada.
+    - Testes: reset do `elbow.L.y` ao neutro sem tocar no `x`; reset de um eixo da raiz; estado desabilitado por trava.
+
+*(item 62 planejado em 2026-08-01 a pedido do usuário — desenho decidido com ele antes de qualquer código; implementado no mesmo dia, junto do 63, em sessão seguinte; a numeração continua do fim.)*
+
+62. ✅ **Âncora de junta: fixar a posição no espaço e congelar tudo que vem antes** (concluído em 2026-08-01, ver `DECISOES.md` #97). Ancorar uma junta fixa a posição DELA no mundo: exemplo do usuário — cotovelo ancorado não sai do lugar, mas punho e dedos se movem "considerando a limitação do cotovelo"; nada proximal a ele mexe. Pelo modelo FK isso **não pede solver novo**: a posição de uma junta depende só dos ancestrais + raiz, então a âncora equivale a um **conjunto de travas derivado** — `getJointChain(junta)` inteiro, sem a própria junta — somado às travas manuais em todos os pontos que já as consultam (`mergeLockedJoints`, `solveJointDrag`, sliders/gizmo/teclado). No arrasto, o recrutamento progressivo do CCD morre naturalmente na âncora, sem tocar no solver. Decisões já tomadas (perguntadas antes de qualquer código):
+    - **A rotação da própria junta ancorada continua livre** — cotovelo ancorado ainda dobra (isso move o punho, não o cotovelo). Rigidez total = âncora + cadeado na mesma junta.
+    - **Várias âncoras por boneco**: o conjunto congelado é a UNIÃO das cadeias de ancestrais.
+    - **A raiz congela junto** — parte genuinamente nova: âncora implica colocação congelada (gizmo de raiz na cena, arrasto de raiz no módulo de poses, sliders de raiz da aba Junta e campos do painel de Propriedades, todos desabilitados com o porquê). Âncora em `spine`/`hip.*` congela só a raiz — vira um "congelar colocação" útil por si.
+    - **UI nas duas cascas**: botão ao lado do cadeado no painel de Propriedades e na aba Junta do módulo de poses, ícone próprio (âncora ≠ cadeado), indicador visual na junta ancorada e contagem visível como a das travas.
+    - **Mesmo regime de persistência da trava (#42)**: estado de ferramenta — sessão/autosave, fora do undo e fora do arquivo de cena; duplicar boneco leva as âncoras junto.
+    - Efeitos colaterais aceitos (regra única do #42): espelho/sorteio/aplicar pose preservam a cadeia congelada; reprodução de animação fica por fora, como as travas.
+    - Custo estimado: uma sessão cheia — módulo puro `jointPins.ts` espelhando `jointLocks.ts` + derivação da cadeia, threading do conjunto derivado nos consumidores de trava, congelamento da raiz (a superfície mais espalhada), UI + i18n, tudo por TDD. Nenhum risco algorítmico.
+
+*(item 63 planejado em 2026-08-01 a pedido do usuário — desenho decidido com ele antes de qualquer código; implementado no mesmo dia, junto do 62, em sessão seguinte; a numeração continua do fim.)*
+
+63. ✅ **Raiz rotacionável no arrasto de junta — girar sim, transladar nunca** (concluído em 2026-08-01, ver `DECISOES.md` #97). Muda a regra "a raiz nunca se move" do `dragSolver`: no arrasto de junta, a raiz entra como **último elo recrutável** do recrutamento progressivo, com um passo de CCD que só GIRA a colocação (`figure.rotation`, pivô no quadril — é onde `buildJointFrames` aplica a rotação) — a translação da raiz continua proibida. Todo alvo alcançável pela cadeia se comporta exatamente como hoje (a raiz só entra depois de TODA a cadeia saturar); alvo fora de alcance faz o boneco girar atrás dele, em vez de o gizmo travar na borda. Decisões já tomadas (perguntadas antes de qualquer código):
+    - **Os TRÊS eixos de rotação** (decisão do usuário, contra a recomendação de só Y): o corpo pode inclinar/tombar para alcançar o alvo. O passo do elo raiz fica idêntico ao das juntas (menor rotação no mundo levando efetuador→alvo), sem clamp — a raiz não tem limites. Efeito colateral aceito: com o pivô no quadril, inclinar tira os pés do plano do chão, e o "gizmo trava na borda" praticamente desaparece (o corpo sempre pode girar na direção do alvo).
+    - **Sempre ativa, sem alternância de UI**: o recrutamento por último já protege o caso comum; quem não quiser o giro num boneco usa a **âncora (item 62)**, que congela a colocação e tira a raiz do recrutamento — é a válvula de escape para pés plantados.
+    - **`hip.L`/`hip.R` continuam fora do arrasto**: com a raiz girando o gizmo deles deixaria de nascer morto, mas o ganho é marginal — `isDraggableJoint` fica como está (`spine` continua morto de qualquer jeito: está sobre o eixo do pivô).
+    - **Contrato e escrita**: `JointDragResult` ganha a rotação resultante da raiz; `applyJointDrag` e o caminho do módulo de poses gravam juntas + raiz **num passo de undo só** (ação combinada no store). Espelho, sorteio e aplicar pose não tocam na raiz — inalterados.
+    - Custo estimado: meia sessão a uma sessão — passo do elo raiz no solver + contrato, ação combinada nos dois stores, testes TDD dos dois caminhos. Sem UI nova e sem risco algorítmico.
+
+*(item 64 planejado em 2026-08-01 a partir de um bug relatado pelo usuário — a raiz não tinha NENHUM caminho funcional de trava: `toggleJointLock` a ignora desde o #42, o desktop nem mostra o cadeado para ela e o módulo o mostra desabilitado; desde o item 63 o solver a recruta sem que haja como impedir sem âncora)*
+
+64. ✅ **Trava por eixo na rotação da raiz** (concluído em 2026-08-01, ver `DECISOES.md` #99). A raiz ganha três cadeados independentes — um por eixo de rotação (X/Y/Z) — no lugar do cadeado geral que nunca funcionou nela. Eixo travado não muda por NADA (regime único do #42): o arrasto de junta (item 63) só gira a raiz nos eixos destravados (os três travados = raiz fora do recrutamento, o efeito que o cadeado deveria ter), slider/ajuste fino/⟲ do eixo desabilitam, teclado e gesto de torção são recusados no store, e pose aplicada preserva os eixos travados da colocação. Decisões já tomadas (perguntadas antes de qualquer código):
+    - **Vale para tudo**, não só para o arrasto — sem uma trava com regras próprias para lembrar.
+    - **Cadeado ao lado de cada slider** de rotação da raiz, nas duas cascas.
+    - **Sem cadeado geral na raiz**: travar a raiz inteira = travar os três eixos.
+    - Mecanismo: tokens `root.x`/`root.y`/`root.z` no MESMO mapa de travas do #42 (mesma persistência, cópia no duplicar, poda e sanitização); eles nunca colidem com nome de junta e passam ilesos por `mergeLockedJoints` (nunca são chave de pose). No solver, o passo da raiz devolve o eixo travado ao valor de partida — o mesmo regime do clamp de limites das juntas.
+
+*(item 65 planejado em 2026-08-01 a pedido do usuário — trazer a animação do desktop para um celular DIFERENTE, onde as chaves de localStorage do item 54 não alcançam, sem app externo e sem rede)*
+
+65. ✅ **Remessa da sessão por QR code — desktop → celular, sem rede e sem arquivo** (concluído em 2026-08-01, ver `DECISOES.md` #101). O desktop exibe a sessão inteira como uma **sequência de QR codes em ciclo** ("Enviar sessão por QR code", painel de Cenas); o celular coleta com a câmera ("Receber sessão por QR code", aba Arquivo do módulo de poses), em qualquer ordem, até completar — e confirma a substituição no próprio modal (#100). Decisões já tomadas (perguntadas antes de qualquer código):
+    - **Sequência de QRs**, não arquivo por cabo nem rede local — zero rede preservado; o único canal é a câmera olhando a tela.
+    - **A sessão inteira viaja**, no MESMO payload do autosave (formato do item 54) — nenhum formato novo; no destino é o mesmo `loadRestoredWorkspace` do "Trazer sessão".
+    - **Leitor nativo com fallback**: `BarcodeDetector` onde existe (Android/Chrome), `jsQR` empacotado no resto (iOS/Safari) — decidido uma vez, em `qrFrameReader.ts`.
+    - Protocolo em `src/persistence/qrTransfer.ts`: deflate nativo (`CompressionStream`, o JSON repetitivo encolhe ~10×) → base64 → fatias `VMQR1|id|índice|total|payload`; o id (FNV-1a) separa remessas, o checksum do deflate denuncia corrupção. Coleta tolera ordem, repetição e QR alheio.
+    - A coleta com câmera de verdade fica de **conferência visual no navegador** (como o arrasto de gizmo); o resto — protocolo, remontagem, geração de SVG e os dois modais — é coberto por unit test.
 
 ### Integração com o Blender por rigging 🔴 ❓
 
@@ -788,3 +872,128 @@ Duas restrições de escopo valem para tudo o que segue: **nenhuma dependência 
 Substitui a ponte de `.glb` removida em 2026-07-31 (`DECISOES.md` #85), e não a restaura: exportação de **mão única** com armature de verdade (`THREE.Bone` a partir do `skeleton.ts`, `SkinnedMesh` com pesos rígidos 1,0 por segmento, `AnimationClip` com trilhas de quaternion vindas do `animations.json`). O detalhamento está em "Persistência (formato da cena)" > "Integração com o Blender (rigging)".
 
 Favorecido por o `Figure.tsx` já desenhar o boneco como segmentos rígidos por junta: **não precisa de weight painting**. Marcado ❓ porque falta decidir quando — e se o refino de animação no Blender é mesmo um fluxo desejado, ou se o MP4 basta.
+
+## Publicação e monetização — levantamento ❓
+
+*(levantamento feito em 2026-08-02 a pedido do usuário; nada aqui está decidido — são as opções sobre a mesa, com custos e tensões, para escolher quando chegar a hora)*
+
+### O ponto de partida joga a favor
+
+O app já é, por arquitetura, a coisa mais barata que existe de publicar: **build 100% estático** (`base: './'`), **PWA instalável** configurada (`vite-plugin-pwa`, manifest em pt-BR, atalho do módulo de poses), **zero backend, zero contas, zero telemetria**. Publicar é servir arquivos; não há servidor para manter, escalar ou pagar. E o "zero rede em runtime" **permanece intacto**: a rede só entrega o app uma vez — depois disso o service worker serve tudo do cache, offline, como hoje.
+
+Duas amarras técnicas que a publicação cria e que convém saber ANTES de escolher endereço:
+
+- **HTTPS é obrigatório**, não opcional: service worker (PWA) e `getUserMedia` (a câmera da remessa por QR, item 65) só existem em contexto seguro. Fora de `localhost`, sem HTTPS o app nem instala.
+- **A origem é um casamento**: a PWA instalada, o `localStorage` (autosave das duas sessões, #92) e as preferências ficam presos ao domínio. Trocar de endereço depois órfã cada instalação existente — o endereço definitivo deve ser escolhido cedo e não mudar.
+
+### Caminhos de publicação, do mais barato ao mais envolvido
+
+1. **Hospedagem estática gratuita** — GitHub Pages, Cloudflare Pages ou Netlify: custo zero, HTTPS de graça, deploy por push. É o mínimo viável completo: com isso o app já instala como PWA em qualquer celular/desktop. Único trabalho real: um workflow de build.
+2. **Domínio próprio** (~US$ 10–15/ano) apontando para a hospedagem acima: marca, URL estável (a amarra da origem, acima) e independência do provedor.
+3. **itch.io** — vitrine natural para ferramenta de artista: aceita HTML5, o público é exatamente quem desenha, e o "pague o quanto quiser" já vem embutido. Serve como página de download E como canal de receita ao mesmo tempo.
+4. **Lojas de aplicativo**, cada uma com seu atrito:
+   - **Google Play** via TWA (Bubblewrap): o app continua sendo a PWA, embrulhada; taxa única de US$ 25.
+   - **Microsoft Store** via PWABuilder: gratuito, o mesmo embrulho.
+   - **App Store (iOS)**: exige wrapper de verdade (Capacitor), US$ 99/ano e revisão da Apple — o maior atrito, para deixar por último. Nota: no iOS a PWA instalada pelo Safari já funciona sem loja nenhuma.
+5. **Desktop empacotado** (Tauri) só se aparecer demanda real de "quero um .exe" — a PWA instalada em janela própria já cobre o caso.
+
+### Monetização — o que a arquitetura permite (e o que ela proíbe)
+
+A restrição estruturante vem das regras do projeto: zero rede em runtime + sem contas + sem telemetria ⇒ **anúncios, assinatura com verificação online e analytics estão fora por construção**. Isso não é perda — é o argumento de venda: um app de artista que funciona no avião e não olha para o usuário. As opções compatíveis:
+
+1. **Doação/apoio** — Pix, Ko-fi, GitHub Sponsors, Apoia.se: atrito zero, o app continua inteiro e gratuito; o link mora na página de apresentação (e no "sobre" do app, nunca como interrupção).
+2. **Pague-o-quanto-quiser / preço fixo no itch.io ou Gumroad**: vende-se a conveniência do download organizado — quem quiser compilar do repositório, compila.
+3. **Preço nas lojas**: o mesmo app, pago onde a loja já cuida do pagamento; a versão web gratuita fica sendo a demo sem limite de tempo. É o modelo "grátis na web, pago onde é cômodo".
+4. **Packs de conteúdo** — a opção mais alinhada com o que o app já é: poses, animações, trechos e cenas são **arquivos JSON que o app importa hoje** (`poses.json`, `animations.json`, `clips.json`, cenas). Packs temáticos (combate, corrida, dança, poses de modelo vivo; cenários prontos) vendem-se como arquivos no itch.io/Gumroad **sem uma linha de código nova e sem DRM** — monetiza o conteúdo, não tranca a ferramenta. A folha de contato (`npm run poses:folha`) já gera o material de divulgação de cada pack.
+5. **Licença educacional/institucional**: escolas e cursos de desenho pagando por uso em turma (material de apoio, packs sob medida, prioridade em pedidos). Não exige mecanismo técnico nenhum — é contrato, não código.
+6. **Freemium com chave local** — só se 1–4 não bastarem: recursos "pro" (ex.: MP4, depth map) destravados por chave assinada validada offline (verificação de assinatura no bundle, sem servidor). Registrada a honestidade do modelo: código no navegador é inspecionável, a trava afasta o desonesto casual, não o determinado. Custo real de suporte e fricção; é a última opção, não a primeira.
+
+### Pré-requisitos que valem para qualquer caminho
+
+- **Licença do código** — o repositório **não tem `LICENSE` hoje**; decidir entre proprietário fechado e código aberto (com monetização de conveniência — modelos 1–5 convivem bem com código aberto) é pré-requisito de qualquer publicação. É a maior decisão em aberto desta seção.
+- **Nome e domínio**: ✅ renomeado — o app nasceu "Virtual Mockup" (genérico, difícil de marcar) e virou **WebPoser** em 2026-08-02 (`DECISOES.md` #102), antes do primeiro endereço público, exatamente pela amarra da origem. Falta só conferir a disponibilidade do domínio.
+- **Ícones raster**: hoje só há `icon.svg`; lojas e o manifest pedem PNGs (192/512, maskable) e screenshots. Meio dia de trabalho.
+- **Página de apresentação**: uma landing com GIFs do fluxo (posar → animar → exportar) — o material sai do próprio app (PNG/MP4 exportados, folha de contato).
+- **Política de privacidade**: por arquitetura ela é uma frase ("nenhum dado sai do seu aparelho"), mas as lojas exigem a página; a LGPD está praticamente resolvida por construção.
+- **Changelog visível**: o service worker atualiza sozinho (`autoUpdate`); com usuários de verdade, um "o que mudou" dentro do app evita a surpresa muda.
+
+## MCP de análise de pose — imagem/vídeo → keyframes ❓
+
+*(proposta sem número — avaliação de viabilidade feita em 2026-08-02 a pedido do usuário; viável, mas as decisões de desenho abaixo ficam em aberto até ele responder)*
+
+Um servidor **MCP** (Model Context Protocol) que ferramentas de IA usam para analisar poses em imagens ou vídeos e gerar keyframes **no formato do app** (`animations.json`). Veredito da avaliação: **viável — e o MCP é a parte fácil** (~20% do trabalho); os 80% que decidem a qualidade moram no *retargeting*: converter landmarks em rotações por junta.
+
+**A arquitetura não briga com nenhuma regra do projeto.** O MCP vive FORA do app — processo separado que escreve um `animations.json`; o arquivo entra pelo caminho de importação que já existe e que já sanitiza entrada não confiável (juntas desconhecidas fora, ângulos grampeados, keyframes inválidos ignorados). É o regime da regra "dado externo só entra por arquivo local que o usuário escolhe": zero-rede em runtime intacto, nenhuma dependência nova no bundle. Vantagem estrutural: o repositório é TypeScript, então o servidor pode **importar os módulos do próprio app** (`skeleton.ts`, limites, `serializeAnimationFile`) — uma fonte de verdade só; mudança no esqueleto quebra em compile, não em runtime.
+
+**Pipeline:** imagem/vídeo → landmarks 3D (MediaPipe BlazePose, Apache 2.0, local, 33 pontos) → retargeting (vetores de osso → rotações relativas nas convenções do `buildJointFrames`) → clamp pelos limites → `animations.json`.
+
+**Onde mora a dificuldade — e a saída honesta:**
+- O **retargeting** é trabalho de precisão, não de pesquisa, e é 100% testável por TDD (fixture de T-pose → rotações zero; braço levantado → ângulo conhecido no ombro).
+- O que os landmarks **não contam** fica **neutro** no keyframe: torção ao longo do osso, dedos/polegar (as cadeias de falange do app), o detalhe da coluna. O resultado é um **rascunho de pose** — e o app é exatamente o editor para refinar rascunho: acerta o grosso (tronco, membros, cabeça), o usuário ajusta o resto em minutos em vez de posar do zero.
+- Profundidade monocular é ruidosa; o clamp da importação corta os absurdos e suavização temporal (filtro 1-euro) resolve o tremor em vídeo.
+- Em vídeo, a escolha de QUAIS instantes viram keyframe é a divisão certa de trabalho do MCP: **LLM para semântica** ("os 6 momentos-chave do soco"), **modelo local para geometria** (pedir ângulos 3D direto ao LLM não funciona).
+
+**Forma recomendada:** biblioteca + CLI primeiro (`pose:from-image`, na família de `pose:preset`/`poses:folha` em `tools/`), com o servidor MCP como **casca fina por cima** — o CLI serve sem cliente de IA no meio, e construir só o MCP deixaria o valor refém do protocolo.
+
+**Custo estimado, por etapa (cada uma útil sozinha):**
+
+| Etapa | O quê | Custo |
+|---|---|---|
+| 1 | Núcleo de retargeting (landmarks → rotações, TDD com fixtures) | 1–2 sessões — **é aqui que mora o risco** |
+| 2 | Imagem → pose (MediaPipe + CLI) | ~1 sessão |
+| 3 | Vídeo → keyframes (amostragem + suavização + seleção de instantes) | 1–2 sessões |
+| 4 | Casca MCP (tools `pose_from_image`, `keyframes_from_video`) | ~1 sessão |
+
+**Dúvidas em aberto ❓ — responder antes de virar item numerado:**
+
+1. **Runtime do modelo:** MediaPipe em Node/wasm (uma língua só no projeto, integração menos batida) × sidecar Python (caminho mais sólido para vídeo, mas segunda runtime)?
+2. **Escopo do primeiro corte:** só imagem → pose (etapas 1–2, valor imediato e risco menor) × já mirar vídeo → keyframes?
+3. **Onde mora:** dentro do repositório (`tools/`, importando `src/` — recomendação, pela fonte de verdade única) × pacote separado?
+4. **Multi-pessoa:** primeiro corte assume UMA pessoa por imagem (multi-pessoa complica a associação com os bonecos da cena)?
+
+## Objetos pré-modelados e amarração a juntas ❓
+
+*(proposta sem número — avaliação de viabilidade feita em 2026-08-02 a pedido do usuário; parecer favorável com ressalvas, decisões de desenho em aberto abaixo; nada implementado)*
+
+O pedido tem duas metades independentes, com custos e riscos muito diferentes:
+
+1. **Amarrar um objeto a uma junta** — espada seguindo a mão direita, escudo na esquerda, bainha na perna;
+2. **Objetos pré-modelados** — armas, motos, animais (cachorro, touro, dinossauro) prontos para usar.
+
+### Metade 1 — amarração: viável, e o caminho certo NÃO revoga o "cenário estático"
+
+A tensão de frente: a decisão de topo nº 2 dos objetos de cena (item 42, `sceneProp.ts`) diz **"o objeto NÃO entra no retrato dos keyframes — cenário não anda"**, e foi ela que manteve animação, biblioteca de trechos e remapeamento intactos. Uma espada que acompanha a mão parece exigir revogá-la — mas não exige:
+
+- **Amarração é DERIVAÇÃO, não conteúdo de keyframe.** O objeto ganha um campo `{figureId, jointName, offset}`; a colocação em mundo passa a ser *calculada* a cada quadro a partir do frame da junta (que `buildJointFrames` já fornece, e o `Figure.tsx` já expõe como grupos nomeados `joint-*`). O keyframe continua registrando SÓ bonecos + câmera — e a espada acompanha a animação, a reprodução e o MP4 **de graça**, porque quem anda é a mão, não ela. A decisão nº 2 sai intacta: o que o arquivo guarda do objeto continua estático; o movimento é emprestado.
+- Persistência **aditiva** em `SceneExtras` (campo novo, sem subir versão — regra do projeto); sanitização poda amarração para boneco/junta que não existe; remover o boneco devolve o objeto à própria colocação (recomendação — ver dúvidas).
+- Espelho, sorteio e travas não precisam de caso especial: a amarração referencia a junta, e a junta é quem se move. Trocar a espada de mão é gesto do usuário, não efeito colateral.
+- Fora do escopo recomendado: empunhadura com DUAS mãos (restrição de cadeia dupla — problema de IK novo, custo desproporcional).
+
+**Custo da amarração: 1–2 sessões** (campo + render derivado + UI no painel do objeto + persistência + testes), e ela já vale com as 6 formas atuais — uma "espada" de paralelepípedo amarrada à mão já testa o mecanismo inteiro.
+
+### Metade 2 — pré-modelados: viável DENTRO da regra, com custo por modelo
+
+A regra "sem assets externos para geometria" (nada de `.glb`/`.fbx`) **não bloqueia** a proposta — o boneco inteiro é a prova: pré-modelado aqui significa **composições de primitivas geradas em código** (`buildSword()`, `buildShield()`…), no mesmo mecanismo de `propGeometry`. Formas novas são **aditivas** ao contrato de arquivo (arquivo antigo continua abrindo; a contagem de pontos de controle por forma continua travada por teste). E o arquivo continua barato: grava `forma + tamanho`, nunca malha — o catálogo não pesa no `localStorage`.
+
+O custo é o de MODELAR, um a um, como foi com o manequim:
+
+| Classe | Exemplos | Custo estimado |
+|---|---|---|
+| Armas e acessórios | espada, escudo, bainha, lança | ~1 sessão o kit — poucas primitivas cada |
+| Veículos | moto | 1–2 sessões por objeto — composição grande |
+| Animais RÍGIDOS (estátua estilizada) | cachorro, touro, dinossauro | ~1 sessão por espécie simples; mais para dino |
+| Animais ARTICULADOS (posáveis) | — | **fora deste parecer** — ver abaixo |
+
+**A ressalva grande: animal posável é outro projeto.** O app inteiro assume UM esqueleto (32 juntas humanas): `JOINT_NAMES` global, poses, presets, espelho, IK, limites, biblioteca — tudo. Um cachorro que corre exige um segundo rig (quadrúpede), e multi-esqueleto atravessa cada um desses sistemas. Se um dia valer, é proposta separada com custo de várias fases — o parecer recomenda **animais rígidos primeiro** (decoração de cena, que o depth map e o PNG/MP4 já servem), e a decisão de articular fica adiada sem dívida.
+
+### Ordem recomendada
+
+Amarração primeiro (metade 1, mecanismo que valoriza tudo que vier depois) → kit de armas (o caso de uso que motivou o pedido, e o mais barato) → moto/animais rígidos conforme demanda.
+
+**Dúvidas em aberto ❓ — responder antes de virar item numerado:**
+
+1. **Amarração no arquivo da cena** (recomendação: sim, campo aditivo em `SceneExtras`) — e ao remover o boneco/junta amarrada, o objeto **volta à própria colocação** (recomendação) × é removido junto?
+2. **Offset da amarração:** editado arrastando o objeto com o gizmo normal (o arrasto vira offset relativo à junta — recomendação) × só campos numéricos no painel?
+3. **Formas compostas deformam?** Tamanho por eixo em metros e vértice livre valem para espada/moto (esticar lâmina = feature) × compostas têm tamanho uniforme e sem vértice livre (modelo "íntegro")?
+4. **Primeiro kit:** armas (espada, escudo, bainha) primeiro, como recomendado? E o teto `MAX_PROPS = 20` continua valendo com objetos compostos?
+5. **Animais:** confirma rígidos-primeiro, com articulados adiados para proposta própria?

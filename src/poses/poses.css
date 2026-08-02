@@ -1,0 +1,479 @@
+/*
+ * CSS do MÓDULO DE POSES (item 44) — tudo sob a classe raiz `.poses-shell`,
+ * sem tocar no CSS da casca completa (fronteira do plano). Reusa os tokens de
+ * tema do `index.css` (`--bg`, `--panel-bg`, `--border`, `--text-h`…) e as
+ * classes de botão de painel (#88), engordadas aqui para alvo de dedo.
+ *
+ * O RESPONSIVO É O CROMO, não o viewport: o painel de controle fica EMBAIXO
+ * em tela vertical e À DIREITA em tela horizontal (decisão do usuário); o
+ * viewport ocupa o resto nos dois casos.
+ */
+
+.poses-shell {
+  display: grid;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+/* Vertical (celular em pé): barra em cima, viewport no meio, painel embaixo.
+   A coluna é `minmax(0, 1fr)`, e não a `auto` implícita: com `auto`, o grid
+   assume o MAX-CONTENT do item mais largo (a barra de vistas, cujos botões
+   não encolhem de propósito) e a página inteira estoura a tela — era o
+   defeito visto no DevTools em 425 px. */
+@media (orientation: portrait) {
+  .poses-shell {
+    grid-template-rows: auto 1fr auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'topbar'
+      'viewport'
+      'panel';
+  }
+
+  .poses-panel {
+    grid-area: panel;
+    max-height: 40dvh;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* Horizontal (celular deitado / tablet / desktop): painel na lateral direita. */
+@media (orientation: landscape) {
+  .poses-shell {
+    grid-template-rows: auto 1fr;
+    /* `minmax(0, 1fr)` pela mesma razão da coluna do retrato: `1fr` sozinho
+       tem mínimo `auto`, e o max-content da barra de vistas estouraria. */
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem);
+    grid-template-areas:
+      'topbar topbar'
+      'viewport panel';
+  }
+
+  .poses-panel {
+    grid-area: panel;
+    border-left: 1px solid var(--border);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Barra superior: vistas, setas, desfazer/refazer, volta ao desktop  */
+/* ------------------------------------------------------------------ */
+
+.poses-topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem 0.35rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+  min-width: 0;
+}
+
+/* Linha ROLÁVEL: os botões não encolhem (flex: none) — o que não cabe rola,
+   em vez de espremer o rótulo até sumir (pedido do usuário, 2026-07-31).
+   `flex: 0 1 auto` (e não `flex: 1`): a linha só ocupa o que as vistas pedem,
+   para a seta › ficar COLADA nelas em tela larga, e não longe, perto do
+   desfazer (pedido do usuário) — quem empurra as ações para a direita é o
+   `margin-left: auto` delas. */
+.poses-topbar__views {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 0.2rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.poses-topbar__view {
+  flex: none;
+  min-height: 36px;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.poses-topbar__view[aria-pressed='true'] {
+  border-color: var(--text-h);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.poses-topbar__icon {
+  flex: none;
+  min-width: 36px;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+  font-size: 1rem;
+}
+
+.poses-topbar__icon:disabled {
+  opacity: 0.4;
+}
+
+.poses-topbar__actions {
+  display: flex;
+  flex: none;
+  gap: 0.2rem;
+  margin-left: auto;
+}
+
+/* ------------------------------------------------------------------ */
+/* Viewport + botão flutuante de captura                               */
+/* ------------------------------------------------------------------ */
+
+.poses-shell__viewport {
+  grid-area: viewport;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.poses-viewport {
+  position: absolute;
+  inset: 0;
+}
+
+.poses-capture {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  width: 52px;
+  height: 52px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel-bg);
+  color: var(--danger);
+  font-size: 1.3rem;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+}
+
+.poses-capture:disabled {
+  opacity: 0.4;
+}
+
+/* ------------------------------------------------------------------ */
+/* Painel em abas                                                      */
+/* ------------------------------------------------------------------ */
+
+.poses-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel-bg);
+}
+
+.poses-panel__content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.6rem;
+}
+
+/* Também rolável, como a linha de vistas: botão não encolhe, o excesso rola. */
+.poses-panel__tabs {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.25rem;
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Em tela horizontal as abas ficam no TOPO da coluna do painel, não embaixo
+   — o polegar segura a borda direita, e o conteúdo rola abaixo delas. */
+@media (orientation: landscape) {
+  .poses-panel {
+    flex-direction: column-reverse;
+  }
+
+  .poses-panel__tabs {
+    border-top: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+.poses-panel__tab {
+  flex: 1 0 auto;
+  min-height: 36px;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.poses-panel__tab[aria-pressed='true'] {
+  border-color: var(--text-h);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ */
+/* Conteúdo das abas                                                   */
+/* ------------------------------------------------------------------ */
+
+.poses-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* Alvo de dedo: os botões de painel (#88) ganham altura mínima aqui —
+   36 px (era 44, que estourava a tela de celular; pedido do usuário). */
+.poses-shell .panel-action,
+.poses-shell .panel-actions > button {
+  min-height: 36px;
+  font-size: 0.85rem;
+}
+
+.poses-tab__empty,
+.poses-tab__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.poses-tab__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.poses-tab__label {
+  margin: 0;
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.poses-tab__slider,
+.poses-tab__toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.poses-tab__toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 36px;
+}
+
+/* Campo com rótulo em cima (o combo de juntas). */
+.poses-tab__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.poses-tab__field > select {
+  min-height: 36px;
+  font: inherit;
+}
+
+/* Setas de translação fina: cruz de 3 colunas. */
+.poses-nudge {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-areas:
+    '. up .'
+    'left . right'
+    '. down .';
+  gap: 0.25rem;
+}
+
+.poses-nudge > button {
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+}
+
+.poses-nudge__up {
+  grid-area: up;
+}
+
+.poses-nudge__down {
+  grid-area: down;
+}
+
+.poses-nudge__left {
+  grid-area: left;
+}
+
+.poses-nudge__right {
+  grid-area: right;
+}
+
+/* Lista de bonecos */
+.poses-figures {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.poses-figures__select {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 36px;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.poses-figures__select[aria-pressed='true'] {
+  border-color: var(--text-h);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.poses-figures__swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* Slider + botões de ajuste fino (item 51). */
+.poses-slider-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* [−5°, −1°, ⟲, +1°, +5°] — o ⟲ do meio é o reset por eixo (item 61). */
+.poses-fine {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.25rem;
+}
+
+/* Na raiz a linha ganha uma sexta coluna: o cadeado do eixo (item 64). */
+.poses-fine--root {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+.poses-fine > button[aria-pressed='true'] {
+  background: var(--text-h);
+}
+
+.poses-fine > button {
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.poses-fine > button:disabled {
+  opacity: 0.4;
+}
+
+/* Papel-cebola: rótulo + dois checkboxes na mesma linha. */
+.poses-onion {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.poses-onion__label {
+  color: var(--text-h);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.poses-onion .poses-tab__toggle {
+  min-height: 36px;
+}
+
+/* Lista de keyframes */
+.poses-keyframes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.poses-keyframes__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+/* A marca "este keyframe está na bancada" — mesma semântica do item 40. */
+.poses-keyframes__item[aria-current='true'] {
+  border-color: var(--text-h);
+}
+
+.poses-keyframes__item[aria-current='true'] .poses-keyframes__label {
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.poses-keyframes__label {
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.poses-keyframes__actions {
+  display: flex;
+  gap: 0.2rem;
+  flex: none;
+}
+
+.poses-keyframes__actions > button {
+  min-width: 32px;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--text-h);
+  font: inherit;
+}
+
+.poses-keyframes__actions > button:disabled {
+  opacity: 0.4;
+}

@@ -21,6 +21,7 @@ import { BACKGROUND_COLORS, CAMERA_DEFAULTS } from './constants'
 import { DEPTH_BACKGROUND } from './depthMap'
 import { DepthPreview } from './DepthPreview'
 import { GridAlignmentIndicator } from './GridAlignmentIndicator'
+import { frozenJointsByPins, isPlacementPinned } from '../figure/jointPins'
 import { JointDragGizmo } from './JointDragGizmo'
 import { SnapshotCapture } from './SnapshotCapture'
 import { SceneContent } from './SceneContent'
@@ -89,6 +90,19 @@ export function Viewport() {
     gizmoMode === 'translate' &&
     isDraggableJoint(selectedJointName)
 
+  // Âncora (item 62): o `TransformControls` MUTA o objeto da cena antes de o
+  // store confirmar — num alvo congelado (raiz de boneco ancorado, junta
+  // congelada pela cadeia) a recusa do store deixaria a tela dessincronizada
+  // do estado. Não montar o gizmo é a única supressão segura; o painel de
+  // Propriedades explica o porquê.
+  const jointPins = useFiguresStore((state) => state.jointPins)
+  const gizmoFrozenByPin =
+    selectedFigureId !== null &&
+    selectedJointName !== null &&
+    (selectedJointName === ROOT_JOINT_NAME
+      ? isPlacementPinned(jointPins, selectedFigureId)
+      : frozenJointsByPins(jointPins, selectedFigureId).includes(selectedJointName))
+
   // Qual posição o indicador de alinhamento acompanha (fase 9, item 10): só a
   // colocação do boneco no chão — rotações e arrasto de junta não mexem na
   // colocação em X/Z, então não acendem nada.
@@ -132,7 +146,7 @@ export function Viewport() {
             translúcidos e sem escrita de profundidade, e desenhar por último é
             o que os deixa somar por cima em vez de recortar a cena. */}
         <OnionSkin />
-        {gizmoTarget && selectedFigureId && selectedJointName && !useJointDrag && (
+        {gizmoTarget && selectedFigureId && selectedJointName && !useJointDrag && !gizmoFrozenByPin && (
           <SelectionGizmo
             figureId={selectedFigureId}
             jointName={selectedJointName}

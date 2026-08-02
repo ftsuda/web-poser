@@ -1,4 +1,4 @@
-import { JOINT_NAMES, ROOT_JOINT_NAME } from './skeleton'
+import { JOINT_NAMES, ROOT_JOINT_NAME, type Axis } from './skeleton'
 
 /**
  * Travamento de juntas (PLANO.md > "Ideias e melhorias" > A.5): marcar uma
@@ -15,12 +15,38 @@ import { JOINT_NAMES, ROOT_JOINT_NAME } from './skeleton'
  * continua contendo só a pose. Por isso também fica fora do histórico de undo:
  * travar não é uma edição do boneco.
  *
- * O mapa é por boneco (`id` → juntas travadas). A `root` nunca entra: ela é a
- * colocação do boneco na cena, não parte da pose.
+ * O mapa é por boneco (`id` → juntas travadas). A `root` crua nunca entra:
+ * ela é a colocação do boneco na cena, não parte da pose. O que entra por ela
+ * são os TOKENS DE EIXO do item 64 (`root.x`/`root.y`/`root.z`) — a trava por
+ * eixo da rotação da raiz, no mesmo mapa para herdar persistência, cópia no
+ * duplicar e poda sem um segundo mecanismo. Os tokens nunca colidem com nome
+ * de junta e passam ilesos por `mergeLockedJoints` (não são chave de pose).
  */
 export type JointLockMap = Record<string, readonly string[]>
 
 const NO_LOCKS: readonly string[] = []
+
+/** Ordem canônica dos eixos da raiz — a mesma dos sliders. */
+const ROOT_AXES: readonly Axis[] = ['x', 'y', 'z']
+
+/** O token de trava do eixo da raiz (item 64): `root.x`, `root.y` ou `root.z`. */
+export function rootAxisLockToken(axis: Axis): string {
+  return `${ROOT_JOINT_NAME}.${axis}`
+}
+
+function isRootAxisToken(name: string): boolean {
+  return ROOT_AXES.some((axis) => name === rootAxisLockToken(axis))
+}
+
+/** Eixos da raiz travados no boneco, sempre na ordem x, y, z. */
+export function getLockedRootAxes(locks: JointLockMap, figureId: string): readonly Axis[] {
+  const locked = getLockedJoints(locks, figureId)
+  return ROOT_AXES.filter((axis) => locked.includes(rootAxisLockToken(axis)))
+}
+
+export function isRootAxisLocked(locks: JointLockMap, figureId: string, axis: Axis): boolean {
+  return getLockedJoints(locks, figureId).includes(rootAxisLockToken(axis))
+}
 
 export function getLockedJoints(locks: JointLockMap, figureId: string): readonly string[] {
   return locks[figureId] ?? NO_LOCKS
@@ -30,9 +56,14 @@ export function isJointLocked(locks: JointLockMap, figureId: string, jointName: 
   return getLockedJoints(locks, figureId).includes(jointName)
 }
 
-/** Trava/destrava uma junta. Nomes desconhecidos e a `root` são ignorados (devolve o mesmo mapa). */
+/**
+ * Trava/destrava uma junta — ou um EIXO da raiz, pelo token do item 64.
+ * Nomes desconhecidos e a `root` crua são ignorados (devolve o mesmo mapa).
+ */
 export function toggleJointLock(locks: JointLockMap, figureId: string, jointName: string): JointLockMap {
-  if (jointName === ROOT_JOINT_NAME || !JOINT_NAMES.includes(jointName)) return locks
+  const lockable =
+    isRootAxisToken(jointName) || (jointName !== ROOT_JOINT_NAME && JOINT_NAMES.includes(jointName))
+  if (!lockable) return locks
 
   const current = getLockedJoints(locks, figureId)
   const next = current.includes(jointName)
@@ -73,7 +104,7 @@ export function pruneJointLocks(locks: JointLockMap, figureIds: readonly string[
   return next
 }
 
-/** Sanitiza o mapa vindo do autosave (nunca confiável): só nomes de junta conhecidos, sem `root` e sem repetição. */
+/** Sanitiza o mapa vindo do autosave (nunca confiável): nomes de junta conhecidos e tokens de eixo da raiz, sem `root` crua e sem repetição. */
 export function sanitizeJointLocks(raw: unknown): JointLockMap {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {}
 
@@ -84,7 +115,9 @@ export function sanitizeJointLocks(raw: unknown): JointLockMap {
       ...new Set(
         joints.filter(
           (joint): joint is string =>
-            typeof joint === 'string' && joint !== ROOT_JOINT_NAME && JOINT_NAMES.includes(joint),
+            typeof joint === 'string' &&
+            (isRootAxisToken(joint) ||
+              (joint !== ROOT_JOINT_NAME && JOINT_NAMES.includes(joint))),
         ),
       ),
     ]

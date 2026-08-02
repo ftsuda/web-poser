@@ -676,6 +676,22 @@ fieldset > .panel-action + .panel-actions {
   text-align: right;
 }
 
+/* Cadeado do eixo da raiz (item 64) — na linha do slider que ele trava. */
+.properties-panel__axis-lock {
+  flex: 0 0 auto;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.properties-panel__axis-lock[aria-pressed='true'] {
+  background: var(--text-h);
+}
+
 .camera-panel__field {
   display: flex;
   flex-direction: column;
@@ -1122,6 +1138,41 @@ code {
 .confirm-dialog,
 .apply-camera {
   max-width: 22rem;
+}
+
+/* Remessa da sessão por QR code (item 65): o quadro precisa de fundo BRANCO
+   mesmo no tema escuro — a zona de sossego do QR faz parte do código, e um QR
+   invertido não escaneia em todo leitor. */
+.session-qr {
+  max-width: 24rem;
+}
+
+.session-qr__frame {
+  background: #fff;
+  padding: 0.5rem;
+  width: min(64vmin, 20rem);
+  margin: 0 auto;
+}
+
+.session-qr__frame svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.session-qr__counter {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.session-qr__video {
+  display: block;
+  width: 100%;
+  max-height: 55vh;
+  background: #000;
+  border-radius: 4px;
+  margin: 0.5rem 0;
 }
 
 .animation-import__summary {

@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import ReactThreeTestRenderer from '@react-three/test-renderer'
 import * as THREE from 'three'
+import { rootAxisLockToken } from '../../figure/jointLocks'
+import { useFiguresStore } from '../../store/figuresStore'
 import { SelectionGizmo } from '../SelectionGizmo'
+
+beforeEach(() => {
+  useFiguresStore.setState(useFiguresStore.getInitialState())
+})
 
 function makeTarget() {
   return new THREE.Group()
@@ -89,5 +95,29 @@ describe('SelectionGizmo — gizmo de rotação da raiz (fase 9, item 13)', () =
     // Espaço local: girar em torno do próprio pivô do quadril, e não de uma
     // origem externa — ponto confirmado com o usuário.
     expect(props.space).toBe('local')
+  })
+
+  it('esconde o anel do eixo travado da raiz (item 64) no modo rotate', async () => {
+    useFiguresStore.getState().toggleJointLock('f1', rootAxisLockToken('y'))
+    const renderer = await ReactThreeTestRenderer.create(
+      <SelectionGizmo figureId="f1" jointName="root" target={makeTarget()} rootMode="rotate" />,
+    )
+
+    const props = findControlsProps(renderer)
+    expect(props.showX).toBe(true)
+    expect(props.showY).toBe(false)
+    expect(props.showZ).toBe(true)
+  })
+
+  it('a trava de eixo NÃO afeta o gizmo de translação da raiz — ela só trava rotação', async () => {
+    useFiguresStore.getState().toggleJointLock('f1', rootAxisLockToken('y'))
+    const renderer = await ReactThreeTestRenderer.create(
+      <SelectionGizmo figureId="f1" jointName="root" target={makeTarget()} rootMode="translate" />,
+    )
+
+    const props = findControlsProps(renderer)
+    expect(props.showX).toBe(true)
+    expect(props.showY).toBe(true)
+    expect(props.showZ).toBe(true)
   })
 })

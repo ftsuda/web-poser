@@ -2,7 +2,7 @@
  * Preferências de layout da UI persistidas em `localStorage` (fase 9, item
  * 8): quais painéis laterais estão recolhidos.
  *
- * Fica numa chave PRÓPRIA (`virtual-mockup:ui:v1`), separada do autosave do
+ * Fica numa chave PRÓPRIA (`webposer:ui:v1`), separada do autosave do
  * workspace (`autosave.ts`), de propósito: o estado recolhido/expandido é
  * preferência de quem está usando o app, não conteúdo da cena — se entrasse
  * no mesmo bloco, viajaria junto no arquivo da cena e no `workspace.json`,
@@ -13,7 +13,7 @@
 import { DEFAULT_FIGURE_STYLE, FIGURE_STYLES, type FigureStyle } from '../figure/skeleton'
 import { FRAME_MASK_SOURCES, type FrameMaskSource } from '../scene/frameMask'
 
-const UI_PREFERENCES_KEY = 'virtual-mockup:ui:v1'
+const UI_PREFERENCES_KEY = 'webposer:ui:v1'
 
 /** Aceita só os três valores conhecidos: um arquivo editado à mão não pode ligar uma máscara inexistente. */
 function isFrameMaskSource(value: unknown): value is FrameMaskSource {

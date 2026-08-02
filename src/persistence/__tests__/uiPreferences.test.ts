@@ -88,7 +88,7 @@ describe('uiPreferences (fase 9, item 8)', () => {
 
   it('arquivo antigo, sem as seções, abre com elas recolhidas', () => {
     localStorage.setItem(
-      'virtual-mockup:ui:v1',
+      'webposer:ui:v1',
       JSON.stringify({ version: 1, collapsedPanels: { figures: true } }),
     )
 
@@ -96,7 +96,7 @@ describe('uiPreferences (fase 9, item 8)', () => {
   })
 
   it('ignora conteúdo corrompido e volta ao padrão, sem lançar', () => {
-    localStorage.setItem('virtual-mockup:ui:v1', '{isto não é json')
+    localStorage.setItem('webposer:ui:v1', '{isto não é json')
     expect(loadUIPreferences().collapsedPanels).toEqual({
       ...createExpandedPanels(),
       animation: true,
@@ -106,7 +106,7 @@ describe('uiPreferences (fase 9, item 8)', () => {
 
   it('preenche com defaults as chaves ausentes de uma versão antiga', () => {
     localStorage.setItem(
-      'virtual-mockup:ui:v1',
+      'webposer:ui:v1',
       JSON.stringify({ version: 1, collapsedPanels: { figures: true } }),
     )
 
@@ -117,7 +117,7 @@ describe('uiPreferences (fase 9, item 8)', () => {
 
   it('não grava no bloco do workspace (autosave) — chave própria', () => {
     saveUIPreferences(prefs({ collapsedPanels: { ...createExpandedPanels(), figures: true }, rulerVisible: true }))
-    expect(localStorage.getItem('virtual-mockup:workspace:v1')).toBeNull()
+    expect(localStorage.getItem('webposer:workspace:v1')).toBeNull()
   })
 
   it('faz round-trip da régua vertical (fase 9, item 11), desligada por padrão', () => {
@@ -136,7 +136,7 @@ describe('uiPreferences (fase 9, item 8)', () => {
 
   it('recusa uma fonte de máscara desconhecida e volta a desligada', () => {
     localStorage.setItem(
-      'virtual-mockup:ui:v1',
+      'webposer:ui:v1',
       JSON.stringify({ version: 1, frameMaskSource: 'holograma' }),
     )
     expect(loadUIPreferences().frameMaskSource).toBe('off')
@@ -160,7 +160,7 @@ describe('uiPreferences (fase 9, item 8)', () => {
 
   it('casca desconhecida no arquivo cai no padrão, sem derrubar a leitura', () => {
     localStorage.setItem(
-      'virtual-mockup:ui:v1',
+      'webposer:ui:v1',
       JSON.stringify({ version: 1, figureStyle: 'plasticina' }),
     )
     expect(loadUIPreferences().figureStyle).toBe('wooden')

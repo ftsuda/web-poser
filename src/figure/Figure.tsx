@@ -50,6 +50,13 @@ export interface FigureProps {
    * desse modo vem vazio/ausente: o cadeado em si já é mostrado pelo painel.
    */
   lockedJointNames?: readonly string[] | null
+  /**
+   * Juntas ANCORADAS a destacar (tom azulado, item 62): âncora = posição
+   * fixa no mundo. Diferente da trava, o destaque fica visível sempre que o
+   * chamador passa a lista — a âncora congela ancestrais e colocação, e um
+   * efeito desses não pode depender de gizmo ativo para se explicar.
+   */
+  pinnedJointNames?: readonly string[] | null
   /** Chamado com o nome da junta quando o usuário clica no seu corpo/pivô. */
   onSelectJoint?: (jointName: string) => void
   /** Registra/desregistra (null) o `Group` ao vivo de cada junta — usado para anexar o gizmo. */
@@ -62,6 +69,20 @@ export interface FigureProps {
    * mesmos nas duas, então trocar de casca não mexe em nada da cena.
    */
   style?: FigureStyle
+  /**
+   * Raio (m, no espaço local da junta) de uma esfera INVISÍVEL de toque por
+   * junta — o alvo que o dedo acerta no módulo de poses (item 44). Invisível
+   * não escapa do Raycaster (mesma razão do comentário em `JointNode`), então
+   * ela recebe clique e pointerdown como qualquer malha. Ausente (o default,
+   * e o desktop), nenhuma esfera é criada.
+   */
+  touchTargetRadius?: number
+  /**
+   * Início de arrasto numa junta (módulo de poses): dispara no `pointerdown`
+   * do alvo de toque, antes do clique de seleção. Opcional e aditivo — sem
+   * ele, nada muda no comportamento de hoje.
+   */
+  onJointPointerDown?: (jointName: string, event: ThreeEvent<PointerEvent>) => void
 }
 
 /**
@@ -87,6 +108,15 @@ const SELECTED_EMISSIVE_INTENSITY = 0.6
  */
 const LOCKED_EMISSIVE = '#ef4444'
 const LOCKED_EMISSIVE_INTENSITY = 0.5
+
+/**
+ * Cor emissiva da junta ANCORADA (item 62): azul = "isto está fixo no
+ * espaço". Mesma intensidade da trava; a seleção continua vencendo, e a
+ * trava vence a âncora quando as duas valem para a mesma peça (o vermelho é
+ * o aviso mais urgente: rígida no arrasto).
+ */
+const PINNED_EMISSIVE = '#3b82f6'
+const PINNED_EMISSIVE_INTENSITY = 0.5
 
 /** Cor fixa dos olhos — sempre preta, independente da cor do boneco. */
 const EYE_COLOR = '#0a0a0a'
@@ -183,21 +213,23 @@ interface PartMeshProps {
   selected: boolean
   /** Junta travada com o gizmo de translação ativo — destaque avermelhado (a seleção vence). */
   locked?: boolean
+  /** Junta ancorada (item 62) — destaque azulado (seleção e trava vencem). */
+  pinned?: boolean
   ghost?: GhostStyle | null
   onClick?: (event: ThreeEvent<MouseEvent>) => void
 }
 
 /** Uma peça visual de junta (`SegmentPart` do `skeleton.ts`), no espaço local da junta. */
-function PartMesh({ part, name, color, selected, locked, ghost, onClick }: PartMeshProps) {
+function PartMesh({ part, name, color, selected, locked, pinned, ghost, onClick }: PartMeshProps) {
   const isEye = part.tint === 'eye'
   const isMarker = part.tint === 'marker'
   const fixedColor = isEye ? EYE_COLOR : isMarker ? MARKER_COLOR : null
 
   // Mesmas exclusões do destaque de seleção: fantasma é silhueta de
-  // referência e os olhos ficam sempre pretos. Seleção > trava quando os dois
-  // valem para a mesma peça.
-  const highlight: 'selected' | 'locked' | null =
-    isEye || ghost ? null : selected ? 'selected' : locked ? 'locked' : null
+  // referência e os olhos ficam sempre pretos. Seleção > trava > âncora
+  // quando mais de um vale para a mesma peça.
+  const highlight: 'selected' | 'locked' | 'pinned' | null =
+    isEye || ghost ? null : selected ? 'selected' : locked ? 'locked' : pinned ? 'pinned' : null
 
   const latheProfile = useMemo(() => {
     if (part.kind !== 'lathe') return null
@@ -233,14 +265,22 @@ function PartMesh({ part, name, color, selected, locked, ghost, onClick }: PartM
       <meshStandardMaterial
         color={ghost ? ghost.color : (fixedColor ?? color)}
         emissive={
-          highlight === 'selected' ? SELECTED_EMISSIVE : highlight === 'locked' ? LOCKED_EMISSIVE : '#000000'
+          highlight === 'selected'
+            ? SELECTED_EMISSIVE
+            : highlight === 'locked'
+              ? LOCKED_EMISSIVE
+              : highlight === 'pinned'
+                ? PINNED_EMISSIVE
+                : '#000000'
         }
         emissiveIntensity={
           highlight === 'selected'
             ? SELECTED_EMISSIVE_INTENSITY
             : highlight === 'locked'
               ? LOCKED_EMISSIVE_INTENSITY
-              : 0
+              : highlight === 'pinned'
+                ? PINNED_EMISSIVE_INTENSITY
+                : 0
         }
         transparent={Boolean(ghost)}
         opacity={ghost ? ghost.opacity : 1}
@@ -326,13 +366,27 @@ interface JointBodyProps {
   color: string
   selected: boolean
   locked?: boolean
+  pinned?: boolean
   ghost?: GhostStyle | null
   style: FigureStyle
   onSelect?: () => void
+  touchTargetRadius?: number
+  onPointerDown?: (event: ThreeEvent<PointerEvent>) => void
 }
 
 /** Todas as peças da junta. O destaque emissivo cobre a peça inteira (ovo+nariz/orelhas na cabeça); os olhos ficam sempre pretos e sem destaque. */
-function JointBody({ name, color, selected, locked, ghost, style, onSelect }: JointBodyProps) {
+function JointBody({
+  name,
+  color,
+  selected,
+  locked,
+  pinned,
+  ghost,
+  style,
+  onSelect,
+  touchTargetRadius,
+  onPointerDown,
+}: JointBodyProps) {
   const parts = getJointParts(name, style)
   const handleClick = createSelectHandler(onSelect)
 
@@ -346,10 +400,18 @@ function JointBody({ name, color, selected, locked, ghost, style, onSelect }: Jo
           color={color}
           selected={selected}
           locked={locked}
+          pinned={pinned}
           ghost={ghost}
           onClick={handleClick}
         />
       ))}
+      {/* Alvo de toque invisível (módulo de poses): maior que a geometria da
+          junta, fecha o que o palito não engordou. Fantasma não recebe. */}
+      {touchTargetRadius && !ghost && (handleClick || onPointerDown) && (
+        <mesh visible={false} onClick={handleClick} onPointerDown={onPointerDown}>
+          <sphereGeometry args={[touchTargetRadius, 8, 8]} />
+        </mesh>
+      )}
     </>
   )
 }
@@ -359,10 +421,13 @@ interface JointNodeProps {
   figure: FigureData
   selectedJointName?: string | null
   lockedJointNames?: readonly string[] | null
+  pinnedJointNames?: readonly string[] | null
   ghost?: GhostStyle | null
   style: FigureStyle
   onSelectJoint?: (jointName: string) => void
   onJointRef?: (jointName: string, object: THREE.Group | null) => void
+  touchTargetRadius?: number
+  onJointPointerDown?: (jointName: string, event: ThreeEvent<PointerEvent>) => void
 }
 
 function JointNode({
@@ -370,10 +435,13 @@ function JointNode({
   figure,
   selectedJointName,
   lockedJointNames,
+  pinnedJointNames,
   ghost,
   style,
   onSelectJoint,
   onJointRef,
+  touchTargetRadius,
+  onJointPointerDown,
 }: JointNodeProps) {
   const joint = getJoint(name)
   const isRoot = name === ROOT_JOINT_NAME
@@ -408,9 +476,16 @@ function JointNode({
         color={figure.color}
         selected={name === selectedJointName}
         locked={lockedJointNames?.includes(name) ?? false}
+        pinned={pinnedJointNames?.includes(name) ?? false}
         ghost={ghost}
         style={style}
         onSelect={onSelectJoint && interactive ? () => onSelectJoint(name) : undefined}
+        touchTargetRadius={touchTargetRadius}
+        onPointerDown={
+          onJointPointerDown && interactive
+            ? (event) => onJointPointerDown(name, event)
+            : undefined
+        }
       />
       {children.map((child) => {
         const boneStyle = getBoneStyle(child.name, style)
@@ -432,10 +507,13 @@ function JointNode({
           figure={figure}
           selectedJointName={selectedJointName}
           lockedJointNames={lockedJointNames}
+          pinnedJointNames={pinnedJointNames}
           ghost={ghost}
           style={style}
           onSelectJoint={onSelectJoint}
           onJointRef={onJointRef}
+          touchTargetRadius={touchTargetRadius}
+          onJointPointerDown={onJointPointerDown}
         />
       ))}
     </group>
@@ -469,21 +547,28 @@ export function Figure({
   figure,
   selectedJointName,
   lockedJointNames,
+  pinnedJointNames,
   onSelectJoint,
   onJointRef,
   ghost,
   style = DEFAULT_FIGURE_STYLE,
+  touchTargetRadius,
+  onJointPointerDown,
 }: FigureProps) {
   const scale = getHeightScale(figure.height)
   const [x, , z] = figure.position
 
   // Fantasma não é um boneco da cena: não recebe clique, não registra junta
-  // para gizmo, não tem junta selecionada nem destaque de trava. Cortar aqui,
-  // num lugar só, é o que evita ter de lembrar disso em cada ponto de chamada.
+  // para gizmo, não tem junta selecionada nem destaque de trava/âncora.
+  // Cortar aqui, num lugar só, é o que evita ter de lembrar disso em cada
+  // ponto de chamada.
   const selected = ghost ? null : selectedJointName
   const locked = ghost ? null : lockedJointNames
+  const pinned = ghost ? null : pinnedJointNames
   const handleSelectJoint = ghost ? undefined : onSelectJoint
   const handleJointRef = ghost ? undefined : onJointRef
+  const handleJointPointerDown = ghost ? undefined : onJointPointerDown
+  const touchRadius = ghost ? undefined : touchTargetRadius
 
   return (
     <>
@@ -504,10 +589,13 @@ export function Figure({
           figure={figure}
           selectedJointName={selected}
           lockedJointNames={locked}
+          pinnedJointNames={pinned}
           ghost={ghost}
           style={style}
           onSelectJoint={handleSelectJoint}
           onJointRef={handleJointRef}
+          touchTargetRadius={touchRadius}
+          onJointPointerDown={handleJointPointerDown}
         />
       </group>
 

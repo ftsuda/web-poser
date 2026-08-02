@@ -1,6 +1,6 @@
-# Virtual Mockup — histórico de entregas
+# WebPoser — histórico de entregas
 
-As **79 entregas** do projeto, uma por sessão de trabalho, em ordem cronológica de conclusão — de 2026-07-22 a 2026-07-31.
+As **89 entregas** do projeto, uma por sessão de trabalho, em ordem cronológica de conclusão — de 2026-07-22 a 2026-08-01.
 
 Saiu do `PLANO.md` em 2026-07-31, onde crescia em quatro blocos separados, dois deles no meio da lista de propostas. **O conteúdo das entradas não foi alterado**: só a ordem (a data de conclusão do título) e o arquivo em que moram. O que o app é e o que falta fazer continua no `PLANO.md`; o porquê de cada escolha, no `DECISOES.md`.
 
@@ -87,6 +87,16 @@ Entrada nova entra no fim, no padrão `### Título ✅ (concluído em AAAA-MM-DD
 - `2026-07-31` — [Ajustes de layout e régua numerada na linha do tempo](#ajustes-de-layout-e-régua-numerada-na-linha-do-tempo--concluído-em-2026-07-31)
 - `2026-07-31` — [Consolidação da documentação: `CLAUDE.md`, `HISTORICO.md` e dois índices](#consolidação-da-documentação-claudemd-historicomd-e-dois-índices--concluído-em-2026-07-31)
 - `2026-07-31` — [Fase 13 — Mapa de profundidade](#fase-13--mapa-de-profundidade--concluída-em-2026-07-31)
+- `2026-07-31` — [Módulo de poses — a casca de toque (item 44)](#módulo-de-poses--a-casca-de-toque-item-44--concluído-em-2026-07-31)
+- `2026-07-31` — [Lote de acabamento do módulo de poses (itens 45–51, 56 e 59)](#lote-de-acabamento-do-módulo-de-poses-itens-4551-56-e-59--concluído-em-2026-07-31)
+- `2026-08-01` — [Smoke de Playwright do módulo de poses (item 57)](#smoke-de-playwright-do-módulo-de-poses-item-57--concluído-em-2026-08-01)
+- `2026-08-01` — [Rotação por eixo, anéis gimbal e reset por eixo no módulo de poses (itens 60 e 61)](#rotação-por-eixo-anéis-gimbal-e-reset-por-eixo-no-módulo-de-poses-itens-60-e-61--concluído-em-2026-08-01)
+- `2026-08-01` — [Âncora de junta e raiz rotacionável no arrasto (itens 62 e 63)](#âncora-de-junta-e-raiz-rotacionável-no-arrasto-itens-62-e-63--concluído-em-2026-08-01)
+- `2026-08-01` — [Trazer a sessão da outra casca (item 54)](#trazer-a-sessão-da-outra-casca-item-54--concluído-em-2026-08-01)
+- `2026-08-01` — [Trava por eixo na rotação da raiz (item 64)](#trava-por-eixo-na-rotação-da-raiz-item-64--concluído-em-2026-08-01)
+- `2026-08-01` — [Confirmação da troca de sessão em modal (refino do item 54)](#confirmação-da-troca-de-sessão-em-modal-refino-do-item-54--concluído-em-2026-08-01)
+- `2026-08-01` — [Remessa da sessão por QR code — item 65](#remessa-da-sessão-por-qr-code--item-65--concluído-em-2026-08-01)
+- `2026-08-02` — [Rename: Virtual Mockup vira WebPoser](#rename-virtual-mockup-vira-webposer--concluído-em-2026-08-02)
 
 ---
 
@@ -1019,3 +1029,168 @@ Pedido do usuário logo em seguida — "alteração no chão para evitar conflit
 - **Sem folga na faixa**, também decidido aqui: a escala inteira continua sendo usada.
 
 **Suíte de 2.262 para 2.309** (+29 de `depthMap`, +7 do store, +4 de nomenclatura, +7 de painel), toda verde; `tsc -b`, `eslint .` e `npm run build` limpos.
+
+### Módulo de poses — a casca de toque (item 44) ✅ (concluído em 2026-07-31)
+
+O item 44 inteiro, com o nome de uso "Módulo de poses" ("Lite" era o apelido de projeto) e as decisões em aberto todas respondidas pelo usuário antes do código — escopo (keyframes de animação), sessão própria, undo por botões, torção por painel E gesto, gestão completa da linha do tempo, abre e exporta JSON, altura e X/Z liberados, vista livre com a cena toda, painel embaixo (vertical) / à direita (horizontal). O porquê de cada escolha está em `DECISOES.md` #92.
+
+- **Escolha de casca** (`src/poses/shellChoice.ts`): ponteiro grosso + menor dimensão ≤ 1024 px abre o módulo; override persistido (`webposer:shell:v1`) vence a detecção, com botão de ida na Toolbar do desktop e de volta na barra do módulo — trocar de casca grava a sessão e recarrega a página. `App.tsx` escolhe entre `AppShell` e `PosesShell`.
+- **Sessão própria**: `webposer:poses:v1`, mesma serialização do workspace; as chaves e `resolveAutosaveKey` moram no `shellChoice.ts` (módulo-folha) por causa do ciclo de import do init do `figuresStore` — ver #92. `autosave.ts` ganhou só o parâmetro opcional `key`.
+- **Seis vistas, uma por vez** (`posesViews.ts`): cinco ortográficas travando um eixo cada + livre (navegação, manequim completo). Base de tela derivada da base da câmera — "trás" e "lado direito" espelham sem caso especial. Câmera ortográfica/perspectiva trocada por vista num `<Canvas>` próprio (`PosesViewport.tsx`); um dedo edita, dois são da câmera (`OrbitControls` sem rotação nas ortográficas).
+- **Edição por um caminho só** (`posesEdit.ts`): arrasto projeta o toque no plano da junta e resolve com o `solveJointDrag` de sempre; as setas do painel são o mesmo arrasto em passos de 2 cm; raiz translada (X/Z na vista de cima, com Y travado). Torção = DOF `y` (`jointTwist.ts`), por slider e por giro de dois dedos (o gesto só vence a câmera após 10° acumulados). Vibração ao saturar limite (onde a API existe).
+- **Painel em abas** (`PosesPanel.tsx` + cinco abas): Junta (trava, reset, setas, torção), Simetria (copiar lados, inverter, espelhar, ao vivo), Bonecos (1–5, escolha explícita, altura, "mostrar só o boneco em edição" — filtro de TELA, não o `visible`), Keyframes (ir para/regravar/mover/apagar + papel-cebola ancorado no keyframe corrente), Arquivo (abrir substituindo/anexando, exportar, Web Share). Botão flutuante captura keyframe com câmera padrão; regravar PRESERVA a câmera gravada.
+- **Aditivo no compartilhado**: `Figure.tsx` ganhou `touchTargetRadius` (esfera invisível de toque por junta) e `onJointPointerDown`, opcionais com default no comportamento de hoje; nenhum teste existente mudou.
+- **CSS próprio** sob `.poses-shell` (alvos ≥ 44 px, `touch-action: none` no canvas, grid por `orientation`); i18n `poses.*` + 2 chaves de Toolbar nos dois dicionários; Wake Lock de melhor esforço.
+
+**Suíte de 2.309 para 2.376** (+67: escolha de casca 9, vistas 18, torção 4, edição 10, store da casca 4, chave de autosave 4, painel 15, barra/captura 3); toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual no navegador** (arrasto, gesto de torção, pinça, Web Share — aparelho de toque real).
+
+#### Adendo do mesmo dia: ajustes de UI após teste em tela de celular (ver `DECISOES.md` #92)
+
+- **Botões menores** (mínimos de 44 → 36 px; ações de keyframe 32; captura 52) — os alvos de 44 px somados estouravam a tela.
+- **Barras de vistas e de abas roláveis**: botão não encolhe, o excesso rola — antes o que não coubesse ficava inalcançável.
+- **Reordenação**: vistas em Lado dir., Frente, Lado esq., Trás, Cima, Livre (um giro em volta do boneco); abas em **Boneco, Junta, Simetria, Keyframes, Arquivos**, com a inicial na primeira.
+- **Combo de juntas do desktop na aba Junta**: o mesmo `<select>` com `<optgroup>` do painel de Propriedades, ligado ao mesmo `selectJoint`; substituiu o botão de raiz e o rótulo da junta. O mapa de rótulos mudou-se para `layout/jointGroupLabels.ts` (exportar constante de arquivo de componente derruba o fast refresh — o lint barrou).
+
+**Suíte de 2.376 para 2.377** (+1, o combo de juntas); `tsc -b`, `eslint .` e `npm run build` limpos. A conferência visual em aparelho de toque continua pendente.
+
+#### Segundo adendo do mesmo dia: estouro horizontal e câmera de trabalho (ver `DECISOES.md` #92)
+
+- **Correção do estouro horizontal**: a coluna implícita `auto` do grid da casca assumia o max-content da barra de vistas e alargava a página inteira — `grid-template-columns: minmax(0, 1fr)` nos dois layouts resolve.
+- **Seta › colada nas vistas** (a linha de vistas deixou de ter `flex: 1`; as ações foram para a direita por `margin-left: auto`).
+- **Rotação da raiz por três sliders livres** (X/Y/Z, `setRootRotation`) no lugar do slider de torção quando a raiz está selecionada.
+- **Pan e zoom nas vistas de edição**: um dedo/botão esquerdo em espaço vazio desloca, pinça/roda aproxima; sobre a junta continua sendo arrasto de pose.
+
+**Suíte de 2.377 para 2.378** (+1, sliders da raiz); `tsc -b`, `eslint .` e `npm run build` limpos. A conferência visual em aparelho de toque continua pendente.
+
+#### Terceiro adendo do mesmo dia: vista Livre com edição destravável (ver `DECISOES.md` #93)
+
+Avaliação pedida pelo usuário ("a Livre aceitar edição, com translação livre, sem rotação"), levada com custo/poréns e respondida com um desenho melhor que as variantes oferecidas:
+
+- **Cadeado na barra** (só na vista Livre): travada, a vista continua a de conferência do item 44 — manequim completo, navegação pura; destravada, mostra o **palito** e edita.
+- **Arrasto no plano paralelo à tela** (normal = direção da câmera no momento do toque) + **gizmo de três setas de eixo** com haste invisível gorda para o dedo — o alvo da seta é o ponto da reta do eixo mais próximo do raio do toque (`closestPointOnAxisToRay`, pura). Rotação segue de fora; setas do painel não existem na Livre (decisão do usuário — o gizmo faz o papel).
+- Vistas ortográficas intactas; estado do cadeado é ferramenta (fora do undo/arquivo, não persiste — volta travada).
+
+**Suíte de 2.378 para 2.386** (+8: projeção em plano arbitrário 3, arrasto por eixo 3, cadeado no store 1, cadeado na barra 1); `tsc -b`, `eslint .` e `npm run build` limpos. Falta a conferência visual do arrasto e do gizmo no navegador.
+
+#### Quarto adendo do mesmo dia: papel-cebola por dois checkboxes (ver `DECISOES.md` #92, terceiro adendo)
+
+- O liga/desliga geral + três botões de modo viraram **dois checkboxes** (Anterior/Posterior) na aba Keyframes, com o estado inferido da combinação — nenhum marcado desliga.
+- O modelo `(onionSkin, onionSkinMode)` do `animationStore` não mudou: os checkboxes são derivação, e o teste do painel cobre as quatro combinações.
+
+**Suíte estável em 2.386** (o teste do papel-cebola foi reescrito, sem saldo); `tsc -b`, `eslint .` e `npm run build` limpos.
+
+### Lote de acabamento do módulo de poses (itens 45–51, 56 e 59) ✅ (concluído em 2026-07-31)
+
+O usuário pediu sugestões de melhoria; as quinze levantadas viraram os itens 45–59 do grupo J no `PLANO.md`, e nove foram implementadas no mesmo dia (decisão dele). Narrativa completa em `DECISOES.md` #94.
+
+- **45** — arrasto e gesto de torção com `pointermove`/`pointerup` na **window**: o dedo saindo do canvas não deixa mais o arrasto "grudado".
+- **46** — Wake Lock re-pedido no `visibilitychange` (o pedido único morria na primeira troca de aba).
+- **47** — arrasto coalescido por `requestAnimationFrame`: um solve por quadro, não por evento.
+- **48** — gizmo da vista Livre com tamanho constante em tela (reescalado pela distância da câmera, com grampo).
+- **49** — botão **"Enquadrar boneco"** na barra: contador de comando no `posesShellStore` consumido pelo viewport; ortográficas repõem câmera/zoom da vista, a Livre mantém a direção de órbita.
+- **50** — duplo toque na junta trava/destrava (previsto no item 44; raiz de fora).
+- **51** — botões **±1°/±5°** nos sliders de torção e da raiz, grampeados pelos limites.
+- **56** — atalho do PWA (`shortcuts` no manifest → `./?shell=poses`); a URL vence o override, e `switchShell` remove o parâmetro ao trocar de casca — sem isso o app aberto pelo atalho ficaria preso à casca da URL.
+- **59** — seletor de **alcance** na aba Simetria (boneco inteiro / da junta selecionada), com o mesmo `scopeJoint` do desktop (#34) e a opção desabilitada quando a junta não tem par.
+- Ficaram registrados para depois: 52 (poses de partida), 53 (badge de autosave), 54 (sessão entre cascas), 55 (pose avulsa na aba Arquivos), 57 (Playwright), 58 (extração da lógica de arrasto).
+
+**Suíte de 2.386 para 2.394** (+8: `?shell=` na URL 3, comando de enquadrar 2, ajuste fino 1, alcance da simetria 2); toda verde; `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual no navegador** (duplo toque, gizmo reescalado, enquadrar, arrasto na window e o atalho do PWA instalado).
+
+### Smoke de Playwright do módulo de poses (item 57) ✅ (concluído em 2026-08-01)
+
+A dívida registrada no item 57: automatizar o que o unit test não alcança. Narrativa e fronteiras em `DECISOES.md` #95.
+
+- **Infra**: `@playwright/test` como devDependency + Chromium, `playwright.config.ts` (viewport 425×900, dev server subido sozinho, 1 worker), specs em `e2e/`, comando **`npm run test:e2e`**. `e2e/**` excluído do vitest; artefatos no `.gitignore`.
+- **Quatro smokes**, todos exigindo console limpo (`pageerror` + `console.error` vazios):
+  1. casca por `?shell=poses` e troca pelos botões, conferindo que a volta **limpa o parâmetro da URL** (#94);
+  2. **arrasto real da raiz** na vista de frente — coordenadas derivadas das constantes do viewport, asserção pelo **autosave do módulo** (X/Y mudam, Z travado pela vista) — e captura de keyframe aparecendo na aba;
+  3. pan de um dedo no vazio é câmera, não pose;
+  4. vista Livre: cadeado alterna, órbita travada não toca na pose.
+- **Lição**: o primeiro run falhou na troca de casca porque o dev server compila os módulos da outra casca na primeira visita (>5 s) — timeouts pós-navegação folgados, com comentário.
+- A ressalva "falta a conferência visual" **encolheu**: arrasto, pan, órbita, troca de casca e captura agora rodam em navegador real a cada `test:e2e`. Continuam manuais: gesto de torção, duplo toque, dedo nas setas do gizmo, Web Share e o atalho do PWA instalado.
+
+**Suíte do vitest estável em 2.394** (o e2e é ferramenta à parte: **4 smokes** verdes em ~1 min); `tsc -b`, `eslint .` e `npm run build` limpos.
+
+### Rotação por eixo, anéis gimbal e reset por eixo no módulo de poses (itens 60 e 61) ✅ (concluído em 2026-08-01)
+
+Execução do plano registrado nos itens 60–61 do `PLANO.md`. Narrativa e decisões em `DECISOES.md` #96.
+
+- **Sliders por eixo (item 60)**: a aba Junta trocou o slider único de torção por um bloco por eixo de DOF (`getJointAxes`), no estilo dos da raiz — limites efetivos, `setJointRotation` (clamp e trava valem). O joelho mostra um slider só; o caso "sem torção" desapareceu. O gesto de dois dedos continua no `y`.
+- **Cores por eixo unificadas**: novo `src/poses/gizmoStyle.ts` (X `#e04040`, Y `#40a840`, Z `#4060e0` + escala por distância do item 48), lido pelas setas do gizmo, pelos anéis e pelos sliders (rótulo e `accent-color`). Chaves de i18n `twist*`/`rootRotation*` unificadas em `rotation*`.
+- **Anéis gimbal de leitura**: `jointAxisFrames.ts` (matemática pura, fiel ao Euler XYZ — anel X no frame do pai, Y após X, Z após X e Y; raiz nos eixos do mundo) + componente `JointAxisRings` (toros não interativos, `raycast` nulo, tamanho constante em tela), em todas as vistas de edição.
+- **⟲ por eixo (item 61)**: linha fina virou `[−5°, −1°, ⟲, +1°, +5°]`; a referência é a MESMA do `resetJointRotation` (`resolvePosePreset('standing')` — cotovelo volta a y=90; raiz a 0); desabilitado com a junta travada.
+- **Bug latente corrigido, achado pelo e2e**: o `handleUp` do arrasto descartava o `pendingMove` coalescido por rAF — a compilação de shader dos anéis no meio do gesto tornava o descarte fatal (arrasto inteiro engolido). Agora soltar o dedo DESPACHA o movimento pendente. No smoke: poll que não aceita mais autosave vazio como sucesso, e espera de dois rAF entre criar o boneco e arrastá-lo (o Canvas é raiz React própria).
+
+**Saldo: de 2.394 para 2.404 testes** (7 de `jointAxisFrames`, +3 líquidos na aba Junta); e2e com **4 smokes** verdes (rodada tripla limpa); `tsc -b`, `eslint .` e `npm run build` limpos.
+
+### Âncora de junta e raiz rotacionável no arrasto (itens 62 e 63) ✅ (concluído em 2026-08-01)
+
+Execução do plano registrado nos itens 62–63 do `PLANO.md`, desenhados com o usuário antes de qualquer código. Narrativa e decisões em `DECISOES.md` #97.
+
+- **Âncora (item 62)**: novo `src/figure/jointPins.ts` espelhando `jointLocks.ts` + as derivações puras `frozenJointsByPins` (união das cadeias de ancestrais) e `isPlacementPinned`. A junta ancorada fica com a posição fixa no mundo: ancestrais e colocação congelam, a rotação dela própria segue livre; várias âncoras se somam; mesmo regime de persistência da trava (sessão/autosave, fora do undo e do arquivo de cena; duplicar copia, remover/poda limpam).
+- **Um funil só**: `effectiveLockedJoints` (travas ∪ congeladas ∪ `root` de boneco ancorado) substituiu a leitura direta de `jointLocks` em todos os consumidores do #42 — sliders, gizmo, teclado, IK, sorteio, espelho, aplicar/copiar/misturar/importar pose. Colocação congelada: recusa no store (`setPosition`, `setRootRotation`, assentar, reset da raiz) + `keepPinnedPlacement` nas poses aplicadas + supressão do `TransformControls` do desktop (mutaria a cena antes de o store recusar).
+- **Raiz rotacionável (item 63)**: no `dragSolver`, a raiz virou o ÚLTIMO elo recrutável do CCD — mesmo passo das juntas, sem clamp, pivô no quadril, três eixos (decisão do usuário) — e nunca translada. Alvo alcançável pela cadeia se comporta como antes; fora de alcance, o corpo gira atrás dele. Resultado em campo próprio `rootRotation`, gravado com as juntas **num passo de undo só** (`setJointRotations(id, rotations, rootRotation)`) nos dois caminhos de arrasto.
+- **UI nas duas cascas**: botão "Fixar posição" ao lado do cadeado (agora um conjunto de duas colunas, #88) no painel de Propriedades e na aba Junta; avisos distintos para ancorada, congelada por âncora e colocação congelada; sliders/setas/resets desabilitados com o porquê; contagem de âncoras + "soltar todas"; destaque AZUL na junta ancorada (sempre visível no desktop, diferente do vermelho da trava).
+- Dois testes antigos do solver mudaram de contrato de propósito: "todos os ancestrais travados" agora termina com o corpo girando (e ganhou a variante com `root` travado = âncora), e o replay de FK inclui a rotação da raiz.
+
+**Saldo: de 2.404 para 2.441 testes** (11 de `jointPins`, 14 do store de âncoras, +3 no solver, +2 no arrasto, +1 no autosave, +3 na aba Junta, +3 no painel de Propriedades); `tsc -b`, `eslint .` e `npm run build` limpos. Falta a conferência visual no navegador: giro de corpo no arrasto, supressão do gizmo e o destaque azul.
+
+### Trazer a sessão da outra casca (item 54) ✅ (concluído em 2026-08-01)
+
+Execução do item 54 do `PLANO.md`, com três decisões confirmadas antes do código (workspace inteiro; gesto "trazer"; painel de Cenas + aba Arquivos). Narrativa em `DECISOES.md` #98.
+
+- **Ação nova no store**: `loadRestoredWorkspace` aplica um `RestoredWorkspace` inteiro ao store vivo — o mesmo mapa de campos que o init consome do autosave, passando pelo mesmo funil de sanitização (`loadWorkspaceFromLocalStorage`); limpa a seleção e zera o undo, como o `resetWorkspace` (a troca de sessão não é desfazível).
+- **Desktop**: botão "Trazer sessão do módulo de poses" no painel de Cenas, com a confirmação em dois passos do "novo workspace"; ao trazer, a linha do tempo reseta (`resetTimeline` — o keyframe visitado pertencia à sessão que saiu). Sem sessão salva na outra chave, aviso e nada muda.
+- **Módulo de poses**: botão "Trazer sessão do desktop" na aba Arquivos, mesma confirmação; ao trazer, `currentKeyframeId` zera. A sessão trazida se grava sozinha na chave da casca atual, pelo assinante de sempre do autosave.
+- Chaves de i18n novas nos dois dicionários (`panels.scenes.bringPosesSession*` e `poses.file.bringSession*`).
+
+**Saldo: de 2.441 para 2.448 testes** (3 de `sessionTransfer`, +2 no painel de Cenas, +2 na aba Arquivos); `tsc -b`, `eslint .` e `npm run build` limpos.
+
+### Trava por eixo na rotação da raiz (item 64) ✅ (concluído em 2026-08-01)
+
+Nasceu de um bug relatado pelo usuário — o cadeado da raiz "não funcionava" e, na verdade, nunca existiu funcionalmente. Desenho decidido com ele antes do código (vale para tudo; cadeado por slider; sem cadeado geral na raiz). Narrativa em `DECISOES.md` #99.
+
+- **Tokens no mapa do #42**: `root.x`/`root.y`/`root.z` entram pelo próprio `toggleJointLock` (`rootAxisLockToken`/`getLockedRootAxes` em `jointLocks.ts`; `root` crua segue recusada) — persistência, cópia, poda e sanitização herdadas, e o trânsito até o solver pelo `effectiveLockedJoints` que já existia.
+- **Solver**: no passo da raiz do CCD (item 63), o eixo travado volta ao valor de partida a cada varredura — mesmo regime do clamp de limites. X+Z travados = corpo só gira de pé; os três = raiz fora do recrutamento.
+- **Store**: `setRootRotation` filtra os eixos travados (slider, fino, teclado e gesto de torção num caminho só); reset da raiz zera só os destravados; `keepPinnedPlacement` (62) generalizou-se em `keepGuardedPlacement` — âncora congela a colocação inteira, eixo travado preserva só aquele eixo — cobrindo preset/par, biblioteca, cópia, colagem, mistura e pose importada; a parte da raiz de `setJointRotations` filtra também.
+- **UI**: cadeado por eixo ao lado de cada slider da raiz (desktop: botão na linha do `AxisSlider`; módulo: sexta coluna da linha fina `[−5°, −1°, ⟲, +1°, +5°, 🔒]`); o botão geral de travar sumiu da raiz nas duas cascas ("Destravar todas" ficou); no gizmo do desktop o anel do eixo travado não aparece (`showX/Y/Z`); a contagem "N juntas travadas" desconta os tokens.
+- Um teste antigo do módulo mudou de contrato de propósito ("a raiz não trava" → "a raiz trava por eixo").
+- De quebra, o smoke de troca de casca do e2e ganhou `exact: true` no localizador "Módulo de poses": o botão "Trazer sessão do módulo de poses" (item 54) passou a casar com a busca por substring e o modo estrito acusava dois elementos.
+
+**Saldo: de 2.448 para 2.468 testes** (4 de `jointLocks`, +3 no solver, 7 de `rootAxisLocks`, +2 no `SelectionGizmo`, +2 no painel de Propriedades, +2 na aba Junta); `tsc -b`, `eslint .` e `npm run build` limpos. Falta a conferência visual no navegador: o giro só-de-pé no arrasto e o anel oculto no gizmo.
+
+### Confirmação da troca de sessão em modal (refino do item 54) ✅ (concluído em 2026-08-01)
+
+Pedido do usuário: a confirmação do "trazer sessão da outra casca" em elemento `<dialog>`, no lugar do bloco inline em dois passos. Narrativa em `DECISOES.md` #100.
+
+- Reuso do **`ConfirmDialog`/`ModalDialog` que já existiam** (confirmação de Regravar keyframe): `showModal` real no navegador, Esc cancela, atalhos globais calados, caminho degradado do jsdom já resolvido.
+- Painel de Cenas (desktop) e aba Arquivos (módulo de poses) renderizam o modal condicionalmente; o botão de trazer fica sempre visível. Primeiro componente de `layout/` montado pelo módulo de poses.
+- Chave órfã `poses.file.bringSessionCancel` removida dos dois dicionários (o "Cancelar" é o do próprio diálogo).
+- Testes ajustados para exigir `role="dialog"` (aparece ao abrir, some ao confirmar/cancelar) + um novo de cancelamento sem efeito.
+- Na sequência, a pedido do usuário, o **"Novo workspace" foi para o mesmo modal** — o painel de Cenas ficou sem nenhum confirm inline; os dois testes dele passaram a exigir o `role="dialog"` (saldo estável).
+
+**Saldo: de 2.468 para 2.469 testes** (+1 no painel de Cenas); `tsc -b`, `eslint .` e `npm run build` limpos.
+
+### Remessa da sessão por QR code — item 65 ✅ (concluído em 2026-08-01)
+
+Pedido do usuário: trazer a animação do desktop para um celular DIFERENTE — onde as chaves de `localStorage` do item 54 não alcançam — sem app externo. Avaliação antes do código (QR único não carrega uma animação; arquivo por cabo é malabarismo; rede local feriria o zero-rede) e três decisões confirmadas na recomendação: sequência de QRs, sessão inteira, leitor nativo com fallback. Narrativa em `DECISOES.md` #101.
+
+- **`src/persistence/qrTransfer.ts`** (novo): deflate nativo (`CompressionStream`) → base64 → fatias `VMQR1|id|índice|total|payload` de 800 chars; id FNV-1a separa remessas, o Adler-32 do zlib denuncia corrupção. Coletor aceita fatias em qualquer ordem, ignora repetição, QR alheio e fatia de outra remessa; remontagem corrompida devolve `null`.
+- **`autosave.ts` refatorado**: `serializeWorkspacePayload`/`parseWorkspacePayload` extraídos do par de `localStorage` — a remessa usa EXATAMENTE o payload e a sanitização do autosave, nenhum formato novo.
+- **Desktop** (`SessionQrSendDialog`, painel de Cenas): "Enviar sessão por QR code" abre modal que cicla os quadros (SVG do `qrcode`, 600 ms cada, fundo branco fixo — QR invertido não escaneia); a sessão é fotografada na abertura.
+- **Módulo de poses** (`PosesQrReceiveDialog` + `qrFrameReader.ts`, aba Arquivo): "Receber sessão por QR code" abre a câmera (`getUserMedia`), decodifica com `BarcodeDetector` nativo ou `jsQR` empacotado, mostra o progresso ("N de M quadros") e confirma "Substituir tudo" DENTRO do modal (#100) antes de aplicar via `loadRestoredWorkspace` (keyframe corrente zerado, undo limpo — regime do item 54).
+- Dependências novas empacotadas: `qrcode` (+`@types/qrcode`) e `jsqr`; `npm audit` zerado na sequência (bump do `brace-expansion`).
+- i18n: 5 chaves em `panels.scenes` + 8 em `poses.file`, nos dois dicionários.
+
+**Saldo: de 2.469 para 2.487 testes** (11 do protocolo `qrTransfer`, 4 do `qrFrameReader`, +2 no painel de Cenas, +1 no módulo de poses); `tsc -b`, `eslint .` e `npm run build` limpos. Falta a conferência visual com dois aparelhos: a coleta com câmera de verdade (foco, moiré, cadência do ciclo).
+
+### Rename: Virtual Mockup vira WebPoser ✅ (concluído em 2026-08-02)
+
+Decisão do usuário, na esteira do levantamento de publicação (o nome antigo era genérico e o rename tinha de vir antes do primeiro endereço público). O diretório local fica como está, a pedido. Narrativa em `DECISOES.md` #102.
+
+- **Migração das chaves de `localStorage`** (`migrateLegacyLocalStorage`, em `shellChoice.ts`, TDD com 4 testes novos): `virtual-mockup:{shell,workspace,poses,ui}:v1` → prefixo `webposer:`, copiando a legada só se a nova não existe e removendo a antiga (cota). Roda no escopo do módulo-folha, e o `main.tsx` o importa como primeira linha — sem a migração, o rename apagaria o autosave das duas cascas.
+- Renomeados: `package.json`/lock (`webposer`), manifest da PWA e `<title>` ("WebPoser"), as 2 strings de i18n com o nome à mostra (nos dois dicionários), as chaves literais nos testes e as referências nos quatro documentos canônicos.
+- Mantidos de propósito: as menções históricas a `extras["virtual-mockup"]` (o bloco do tempo do `.glb` — renomeá-las falsearia a história) e o prefixo legado dentro da migração.
+- Nenhum contrato de arquivo mudou — o formato de cena/animação não carrega o nome do app em campo nenhum.
+
+**Saldo: de 2.487 para 2.491 testes** (+4 da migração de chaves); `tsc -b`, `eslint .` e `npm run build` limpos; e2e 4/4.

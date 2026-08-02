@@ -19,12 +19,22 @@ import {
   clearFigureLocks,
   copyFigureLocks,
   getLockedJoints,
+  getLockedRootAxes,
   isJointLocked,
   mergeLockedJoints,
   pruneJointLocks,
   toggleJointLock as toggleLockInMap,
   type JointLockMap,
 } from '../figure/jointLocks'
+import {
+  clearFigurePins,
+  copyFigurePins,
+  frozenJointsByPins,
+  isPlacementPinned,
+  pruneJointPins,
+  toggleJointPin as togglePinInMap,
+  type JointPinMap,
+} from '../figure/jointPins'
 import {
   clampAnimationSpeed,
   clampKeyframeDuration,
@@ -75,7 +85,7 @@ import {
   type PosePairing,
 } from '../figure/posePairs'
 import { resolveRandomPose } from '../figure/randomPose'
-import { loadWorkspaceFromLocalStorage } from '../persistence/autosave'
+import { loadWorkspaceFromLocalStorage, type RestoredWorkspace } from '../persistence/autosave'
 import { normalizeHexColor } from '../scene/hexColor'
 import { controlPointCount, controlPointPosition, propGroundOffset } from '../props/propGeometry'
 import {
@@ -298,6 +308,13 @@ export interface FiguresState {
    */
   jointLocks: JointLockMap
   /**
+   * Âncoras de junta por boneco (item 62): posição fixa no mundo — congela os
+   * ancestrais e a colocação, a rotação da própria junta continua livre.
+   * Mesmo regime da trava: estado de TRABALHO, na sessão e no autosave, fora
+   * do undo e fora do arquivo de cena.
+   */
+  jointPins: JointPinMap
+  /**
    * Espelhar edições ao vivo: cada ajuste numa junta pareada escreve a
    * reflexão sagital na junta do outro lado. Como as travas (#42), é MODO DE
    * TRABALHO — fica fora do `partialize`, e por isso fora do histórico de
@@ -324,9 +341,16 @@ export interface FiguresState {
    * espelho ao vivo) num único `set`, e portanto num único passo de undo.
    * Existe para o arrasto de junta (`dragSolver.ts`), que escreve a cadeia
    * inteira de ancestrais a cada evento de mouse — uma chamada por junta
-   * empilharia até 5 passos de undo por pixel arrastado.
+   * empilharia até 5 passos de undo por pixel arrastado. `rootRotation`
+   * (item 63) entra no MESMO passo: quando o arrasto recruta a raiz como
+   * último elo, juntas e colocação mudam juntas — e desfazem juntas. Com
+   * âncora no boneco a parte da raiz é descartada (colocação congelada).
    */
-  setJointRotations: (id: string, rotations: Record<string, Partial<JointRotation>>) => void
+  setJointRotations: (
+    id: string,
+    rotations: Record<string, Partial<JointRotation>>,
+    rootRotation?: Partial<JointRotation> | null,
+  ) => void
   /** Liga/desliga o espelho ao vivo (ver `liveMirrorEnabled`). */
   toggleLiveMirror: () => void
   /**
@@ -694,6 +718,14 @@ export interface FiguresState {
   toggleJointLock: (figureId: string, jointName: string) => void
   /** Destrava todas as juntas do boneco. */
   clearJointLocks: (figureId: string) => void
+  /**
+   * Ancora/solta uma junta (item 62): fixa a posição DELA no mundo congelando
+   * os ancestrais + a colocação. A rotação da própria junta segue livre. A
+   * `root` não é ancorável (âncora em `spine`/`hip.*` congela só a colocação).
+   */
+  toggleJointPin: (figureId: string, jointName: string) => void
+  /** Solta todas as âncoras do boneco. */
+  clearJointPins: (figureId: string) => void
   /** Instala limites articulares customizados (JSON do workspace) e ajusta as poses já carregadas para dentro deles. */
   applyJointLimits: (raw: unknown) => void
   /** Volta aos limites do código, reajustando poses que tenham ficado fora da faixa padrão. */
@@ -707,6 +739,15 @@ export interface FiguresState {
    * confirmação antes de chamar).
    */
   resetWorkspace: () => void
+  /**
+   * Trazer a sessão da outra casca (item 54): aplica ao store vivo um
+   * `RestoredWorkspace` inteiro — a mesma forma que o init consome do
+   * autosave — substituindo a sessão atual. Como o `resetWorkspace`, limpa a
+   * seleção e zera o histórico de undo (a UI pede confirmação antes); o
+   * autosave da casca em vigor grava o resultado na chave DELA em seguida,
+   * pelo assinante de `useWorkspaceAutosave`.
+   */
+  loadRestoredWorkspace: (restored: RestoredWorkspace) => void
   /**
    * Substitui a pose interna do boneco por um preset e o assenta no chão
    * conforme o preset pedir (rotação do boneco e altura do quadril — ver
@@ -899,6 +940,60 @@ function withPose(
 
 function withPosePreset(figure: Figure, key: PosePresetKey, locked: readonly string[]): Figure {
   return withPose(figure, resolvePosePreset(key), resolvePosePresetPlacement(key), locked)
+}
+
+/**
+ * O conjunto que TODA escrita de pose respeita (item 62): travas manuais do
+ * #42 + juntas congeladas pelas âncoras (os ancestrais de cada junta
+ * ancorada) + a `root` quando a colocação está congelada — é assim que o
+ * solver de arrasto (item 63) sabe não recrutar a raiz de boneco ancorado.
+ * Passa nos mesmos funis das travas — `mergeLockedJoints`, o solver e as
+ * recusas pontuais — sem um segundo mecanismo. Exportada para os dois
+ * caminhos de arrasto (`dragActions.ts` e o módulo de poses).
+ */
+export function effectiveLockedJoints(
+  state: { jointLocks: JointLockMap; jointPins: JointPinMap },
+  figureId: string,
+): readonly string[] {
+  const locked = getLockedJoints(state.jointLocks, figureId)
+  if (!isPlacementPinned(state.jointPins, figureId)) return locked
+  const frozen = frozenJointsByPins(state.jointPins, figureId)
+  return [...new Set([...locked, ...frozen, ROOT_JOINT_NAME])]
+}
+
+function isJointEffectivelyLocked(
+  state: { jointLocks: JointLockMap; jointPins: JointPinMap },
+  figureId: string,
+  jointName: string,
+): boolean {
+  return (
+    isJointLocked(state.jointLocks, figureId, jointName) ||
+    frozenJointsByPins(state.jointPins, figureId).includes(jointName)
+  )
+}
+
+/**
+ * As duas proteções de COLOCAÇÃO, num guardião só para toda pose aplicada
+ * (preset, biblioteca, cópia, mistura, arquivo):
+ * - âncora (item 62): a posição e a rotação ATUAIS vencem as da pose — mover
+ *   a raiz moveria a junta fixada;
+ * - trava por eixo da raiz (item 64): cada eixo travado preserva o valor
+ *   atual da rotação, e o resto da colocação entra normalmente.
+ */
+function keepGuardedPlacement(
+  state: { jointLocks: JointLockMap; jointPins: JointPinMap },
+  figureId: string,
+  original: Figure,
+  updated: Figure,
+): Figure {
+  if (isPlacementPinned(state.jointPins, figureId)) {
+    return { ...updated, position: original.position, rotation: original.rotation }
+  }
+  const lockedAxes = getLockedRootAxes(state.jointLocks, figureId)
+  if (lockedAxes.length === 0) return updated
+  const rotation = { ...updated.rotation }
+  for (const axis of lockedAxes) rotation[axis] = original.rotation[axis]
+  return { ...updated, rotation }
 }
 
 /**
@@ -1123,6 +1218,7 @@ export const useFiguresStore = create<FiguresState>()(
       animations: restoredWorkspace?.animations ?? [],
       nextAnimationSeq: restoredWorkspace?.nextAnimationSeq ?? 1,
       jointLocks: restoredWorkspace?.jointLocks ?? {},
+      jointPins: restoredWorkspace?.jointPins ?? {},
       liveMirrorEnabled: false,
 
       addFigure: (name) => {
@@ -1153,9 +1249,10 @@ export const useFiguresStore = create<FiguresState>()(
       removeFigure: (id) => {
         set((state) => ({
           figures: state.figures.filter((figure) => figure.id !== id),
-          // Travas são por boneco: sem o boneco, elas ficariam órfãs esperando
-          // um id que volta a ser usado.
+          // Travas e âncoras são por boneco: sem o boneco, ficariam órfãs
+          // esperando um id que volta a ser usado.
           jointLocks: clearFigureLocks(state.jointLocks, id),
+          jointPins: clearFigurePins(state.jointPins, id),
           selectedFigureId: state.selectedFigureId === id ? null : state.selectedFigureId,
           selectedJointName: state.selectedFigureId === id ? null : state.selectedJointName,
           activeAxis: state.selectedFigureId === id ? null : state.activeAxis,
@@ -1189,9 +1286,10 @@ export const useFiguresStore = create<FiguresState>()(
         set((state) => ({
           figures: [...figures, duplicate],
           nextFigureSeq: nextFigureSeq + 1,
-          // A cópia nasce com a mesma pose: as travas vêm junto, senão a cópia
-          // seria justamente a versão desprotegida do trabalho já feito.
+          // A cópia nasce com a mesma pose: travas e âncoras vêm junto, senão
+          // a cópia seria justamente a versão desprotegida do trabalho feito.
           jointLocks: copyFigureLocks(state.jointLocks, id, newId),
+          jointPins: copyFigurePins(state.jointPins, id, newId),
         }))
         return newId
       },
@@ -1263,26 +1361,41 @@ export const useFiguresStore = create<FiguresState>()(
       },
 
       setPosition: (id, position) => {
-        set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({ ...figure, position })),
-        }))
+        set((state) => {
+          // Colocação congelada por âncora (item 62): mover a raiz moveria a
+          // junta fixada — vale para gizmo, teclado, painel e arrasto.
+          if (isPlacementPinned(state.jointPins, id)) return {}
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({ ...figure, position })),
+          }
+        })
       },
 
       setRootRotation: (id, rotation) => {
-        set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({
-            ...figure,
-            rotation: { ...figure.rotation, ...rotation },
-          })),
-        }))
+        set((state) => {
+          if (isPlacementPinned(state.jointPins, id)) return {}
+          // Trava por eixo (item 64): o eixo travado sai da escrita — e este é
+          // o caminho de TODA edição direta da rotação da raiz: slider, ajuste
+          // fino, teclado e o gesto de torção do módulo de poses.
+          const lockedAxes = getLockedRootAxes(state.jointLocks, id)
+          const allowed = { ...rotation }
+          for (const axis of lockedAxes) delete allowed[axis]
+          if (Object.keys(allowed).length === 0) return {}
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              rotation: { ...figure.rotation, ...allowed },
+            })),
+          }
+        })
       },
 
       setJointRotation: (id, jointName, rotation) => {
         set((state) => {
           // Junta travada não muda por nada automático (DECISOES.md #42) — e
           // este é o caminho de TODA edição de junta: slider, gizmo, teclado e
-          // o resultado do IK.
-          if (isJointLocked(state.jointLocks, id, jointName)) return {}
+          // o resultado do IK. O conjunto inclui as congeladas por âncora (62).
+          if (isJointEffectivelyLocked(state, id, jointName)) return {}
 
           // Espelho ao vivo: o par recebe a REFLEXÃO SAGITAL da rotação
           // inteira, não uma cópia. As juntas pareadas são espelhadas só em
@@ -1293,7 +1406,7 @@ export const useFiguresStore = create<FiguresState>()(
           // garante que as duas nunca divirjam.
           const mirroredName = state.liveMirrorEnabled ? getMirroredJointName(jointName) : null
           const mirrorTarget =
-            mirroredName && !isJointLocked(state.jointLocks, id, mirroredName) ? mirroredName : null
+            mirroredName && !isJointEffectivelyLocked(state, id, mirroredName) ? mirroredName : null
 
           return {
             figures: updateFigure(state.figures, id, (figure) => {
@@ -1317,60 +1430,88 @@ export const useFiguresStore = create<FiguresState>()(
         })
       },
 
-      setJointRotations: (id, rotations) => {
-        set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => {
-            const pose = { ...figure.pose }
-            for (const [jointName, rotation] of Object.entries(rotations)) {
-              // Mesmas regras da escrita unitária: junta travada não muda
-              // (DECISOES.md #42) e o espelho ao vivo recebe a reflexão
-              // sagital, nunca uma cópia crua (#14/#30).
-              if (isJointLocked(state.jointLocks, id, jointName)) continue
+      setJointRotations: (id, rotations, rootRotation) => {
+        set((state) => {
+          // A raiz recrutada pelo arrasto (item 63) entra no MESMO passo de
+          // undo das juntas; com âncora, a colocação está congelada e a parte
+          // da raiz é simplesmente descartada. Eixo travado (item 64) sai da
+          // escrita — o solver já o preserva, mas a regra mora no store.
+          const applyRoot = rootRotation != null && !isPlacementPinned(state.jointPins, id)
+          const lockedRootAxes = getLockedRootAxes(state.jointLocks, id)
+          const allowedRoot = applyRoot ? { ...rootRotation } : null
+          if (allowedRoot) for (const axis of lockedRootAxes) delete allowedRoot[axis]
+          return {
+            figures: updateFigure(state.figures, id, (figure) => {
+              const pose = { ...figure.pose }
+              for (const [jointName, rotation] of Object.entries(rotations)) {
+                // Mesmas regras da escrita unitária: junta travada não muda
+                // (DECISOES.md #42, incluindo as congeladas por âncora) e o
+                // espelho ao vivo recebe a reflexão sagital, nunca uma cópia
+                // crua (#14/#30).
+                if (isJointEffectivelyLocked(state, id, jointName)) continue
 
-              const updated = clampJointRotation(jointName, { ...pose[jointName], ...rotation })
-              pose[jointName] = updated
+                const updated = clampJointRotation(jointName, { ...pose[jointName], ...rotation })
+                pose[jointName] = updated
 
-              const mirroredName = state.liveMirrorEnabled ? getMirroredJointName(jointName) : null
-              if (mirroredName && !isJointLocked(state.jointLocks, id, mirroredName)) {
-                pose[mirroredName] = clampJointRotation(mirroredName, mirrorRotation(updated))
+                const mirroredName = state.liveMirrorEnabled ? getMirroredJointName(jointName) : null
+                if (mirroredName && !isJointEffectivelyLocked(state, id, mirroredName)) {
+                  pose[mirroredName] = clampJointRotation(mirroredName, mirrorRotation(updated))
+                }
               }
-            }
-            return { ...figure, pose }
-          }),
-        }))
+              return {
+                ...figure,
+                pose,
+                ...(allowedRoot && Object.keys(allowedRoot).length > 0
+                  ? { rotation: { ...figure.rotation, ...allowedRoot } }
+                  : {}),
+              }
+            }),
+          }
+        })
       },
 
       toggleLiveMirror: () => set((state) => ({ liveMirrorEnabled: !state.liveMirrorEnabled })),
 
       seatFigureOnGround: (id) => {
-        set((state) => ({
-          figures: updateFigure(state.figures, id, (figure) => ({
-            ...figure,
-            // Só a altura: onde o boneco está no chão é encenação de quem monta
-            // a cena, e a pose não é tocada.
-            position: [
-              figure.position[0],
-              seatOnGround(figure.pose, figure.rotation, figure.height),
-              figure.position[2],
-            ],
-          })),
-        }))
+        set((state) => {
+          // Assentar é mover a colocação — congelada por âncora (item 62).
+          if (isPlacementPinned(state.jointPins, id)) return {}
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              // Só a altura: onde o boneco está no chão é encenação de quem monta
+              // a cena, e a pose não é tocada.
+              position: [
+                figure.position[0],
+                seatOnGround(figure.pose, figure.rotation, figure.height),
+                figure.position[2],
+              ],
+            })),
+          }
+        })
       },
 
       resetJointRotation: (id, jointName) => {
         if (jointName === ROOT_JOINT_NAME) {
-          set((state) => ({
-            figures: updateFigure(state.figures, id, (figure) => ({
-              ...figure,
-              rotation: { ...ZERO_ROTATION },
-            })),
-          }))
+          set((state) => {
+            if (isPlacementPinned(state.jointPins, id)) return {}
+            // Trava por eixo (item 64): o reset zera só os eixos destravados.
+            const lockedAxes = getLockedRootAxes(state.jointLocks, id)
+            if (lockedAxes.length === 3) return {}
+            return {
+              figures: updateFigure(state.figures, id, (figure) => {
+                const rotation = { ...ZERO_ROTATION }
+                for (const axis of lockedAxes) rotation[axis] = figure.rotation[axis]
+                return { ...figure, rotation }
+              }),
+            }
+          })
           return
         }
 
         const neutral = resolvePosePreset('standing')[jointName] ?? ZERO_ROTATION
         set((state) => {
-          if (isJointLocked(state.jointLocks, id, jointName)) return {}
+          if (isJointEffectivelyLocked(state, id, jointName)) return {}
 
           return {
             figures: updateFigure(state.figures, id, (figure) => ({
@@ -1387,7 +1528,7 @@ export const useFiguresStore = create<FiguresState>()(
 
         const neutral = resolvePosePreset('standing')
         set((state) => {
-          const locked = new Set(getLockedJoints(state.jointLocks, id))
+          const locked = new Set(effectiveLockedJoints(state, id))
           const reset: Record<string, JointRotation> = {}
           for (const jointName of joints) {
             if (locked.has(jointName)) continue
@@ -1506,10 +1647,11 @@ export const useFiguresStore = create<FiguresState>()(
           selectedPropId: null,
           selectedJointName: null,
           activeAxis: null,
-          // Os ids de boneco vêm da cena carregada: travas de bonecos que não
-          // estão mais em cena iriam recair sobre bonecos diferentes com o
-          // mesmo id. A biblioteca de poses, essa sim, atravessa as cenas.
+          // Os ids de boneco vêm da cena carregada: travas e âncoras de
+          // bonecos que não estão mais em cena iriam recair sobre bonecos
+          // diferentes com o mesmo id. A biblioteca de poses atravessa as cenas.
           jointLocks: pruneJointLocks(state.jointLocks, snapshot.data.figures.map((figure) => figure.id)),
+          jointPins: pruneJointPins(state.jointPins, snapshot.data.figures.map((figure) => figure.id)),
         }))
         return true
       },
@@ -1531,6 +1673,7 @@ export const useFiguresStore = create<FiguresState>()(
         set((state) => ({
           figures: data.figures,
           jointLocks: pruneJointLocks(state.jointLocks, data.figures.map((figure) => figure.id)),
+          jointPins: pruneJointPins(state.jointPins, data.figures.map((figure) => figure.id)),
           nextFigureSeq: data.nextFigureSeq,
           props: data.props,
           nextPropSeq: data.nextPropSeq,
@@ -1551,19 +1694,22 @@ export const useFiguresStore = create<FiguresState>()(
       applyImportedFigurePose: (id, imported) => {
         const height = clampHeight(imported.height)
         set((state) => {
-          const locked = getLockedJoints(state.jointLocks, id)
+          const locked = effectiveLockedJoints(state, id)
           return {
-            figures: updateFigure(state.figures, id, (figure) => ({
-              ...figure,
-              height,
+            figures: updateFigure(state.figures, id, (figure) =>
               // O Y entra CRU, sem a escala por altura que `withPose` aplica ao
               // `groundOffsetM` de uma pose salva: aqui a altura do boneco vem do
               // mesmo arquivo, então o boneco fica do tamanho em que aquele Y foi
-              // medido e a medida absoluta já é a certa.
-              position: [figure.position[0], imported.positionY, figure.position[2]],
-              rotation: { ...imported.rotation },
-              pose: mergeLockedJoints(figure.pose, imported.pose, locked),
-            })),
+              // medido e a medida absoluta já é a certa. Âncora (62) e eixos
+              // travados da raiz (64) valem pelo guardião comum.
+              keepGuardedPlacement(state, id, figure, {
+                ...figure,
+                height,
+                position: [figure.position[0], imported.positionY, figure.position[2]],
+                rotation: { ...imported.rotation },
+                pose: mergeLockedJoints(figure.pose, imported.pose, locked),
+              }),
+            ),
           }
         })
       },
@@ -1626,6 +1772,7 @@ export const useFiguresStore = create<FiguresState>()(
             selectedJointName: null,
             activeAxis: null,
             jointLocks: pruneJointLocks(state.jointLocks, active.data.figures.map((figure) => figure.id)),
+            jointPins: pruneJointPins(state.jointPins, active.data.figures.map((figure) => figure.id)),
           }))
         } else {
           // Sem cena ativa a cena de trabalho atual continua na tela, e ela não
@@ -1679,7 +1826,8 @@ export const useFiguresStore = create<FiguresState>()(
           activeSceneId: null,
           jointLimits: {},
           // "Novo workspace" limpa TUDO — a biblioteca de poses é do
-          // workspace, e as travas não sobrevivem aos bonecos que protegiam.
+          // workspace, e travas/âncoras não sobrevivem aos bonecos que
+          // protegiam.
           poseLibrary: [],
           nextPoseSeq: 1,
           clipLibrary: [],
@@ -1687,10 +1835,50 @@ export const useFiguresStore = create<FiguresState>()(
           animations: [],
           nextAnimationSeq: 1,
           jointLocks: {},
+          jointPins: {},
         })
         // Depois do `set`: limpar o workspace não é desfazível (o próprio
         // histórico faz parte do que é resetado). Se fosse antes, este `set`
         // empilharia uma entrada nova e um Ctrl+Z traria tudo de volta.
+        useFiguresStore.temporal.getState().clear()
+      },
+
+      loadRestoredWorkspace: (restored) => {
+        // Reinstala os limites da sessão trazida ANTES do `set`, para que o
+        // espelho `jointLimits` e o `skeleton.ts` fiquem coerentes — o
+        // `loadWorkspaceFromLocalStorage` já fez isso ao ler, mas a ação não
+        // depende de quem construiu o `RestoredWorkspace`.
+        setJointLimitOverrides(restored.jointLimits)
+        set({
+          figures: restored.workingScene.figures,
+          props: restored.workingScene.props,
+          nextPropSeq: restored.workingScene.nextPropSeq,
+          selectedFigureId: null,
+          selectedPropId: null,
+          selectedJointName: null,
+          activeAxis: null,
+          nextFigureSeq: restored.workingScene.nextFigureSeq,
+          cameraBookmarks: restored.workingScene.cameraBookmarks,
+          nextCameraBookmarkSeq: restored.workingScene.nextCameraBookmarkSeq,
+          environment: restored.workingScene.environment,
+          sceneCamera: restored.workingScene.sceneCamera,
+          sceneName: restored.workingScene.name,
+          nextSnapshotNumber: restored.workingScene.nextSnapshotNumber,
+          scenes: restored.scenes,
+          nextSceneSnapshotSeq: restored.nextSceneSnapshotSeq,
+          activeSceneId: restored.activeSceneId,
+          jointLimits: restored.jointLimits,
+          poseLibrary: restored.poseLibrary,
+          nextPoseSeq: restored.nextPoseSeq,
+          clipLibrary: restored.clipLibrary,
+          nextClipSeq: restored.nextClipSeq,
+          animations: restored.animations,
+          nextAnimationSeq: restored.nextAnimationSeq,
+          jointLocks: restored.jointLocks,
+          jointPins: restored.jointPins,
+        })
+        // Como no `resetWorkspace`: a troca de sessão não é desfazível — o
+        // histórico pertencia à sessão que acabou de sair da tela.
         useFiguresStore.temporal.getState().clear()
       },
 
@@ -1699,7 +1887,14 @@ export const useFiguresStore = create<FiguresState>()(
           const anchor = state.figures.find((figure) => figure.id === id)
           if (!anchor) return {}
 
-          const posed = withPosePreset(anchor, key, getLockedJoints(state.jointLocks, id))
+          // Com âncora, a colocação que o preset traria é descartada — e com
+          // eixo da raiz travado (item 64), aquele eixo fica como está.
+          const posed = keepGuardedPlacement(
+            state,
+            id,
+            anchor,
+            withPosePreset(anchor, key, effectiveLockedJoints(state, id)),
+          )
           const pairing = options?.pairPartner === false ? null : getPosePairing(key)
           // Pose em dupla com DOIS bonecos em cena: o outro recebe a metade
           // correspondente, já posicionada. Com três ou mais não há como saber
@@ -1715,7 +1910,12 @@ export const useFiguresStore = create<FiguresState>()(
             figures: state.figures.map((figure) => {
               if (figure.id === id) return posed
               if (figure.id === partnerId) {
-                return withPairedPreset(figure, posed, key, pairing!, getLockedJoints(state.jointLocks, figure.id))
+                return keepGuardedPlacement(
+                  state,
+                  figure.id,
+                  figure,
+                  withPairedPreset(figure, posed, key, pairing!, effectiveLockedJoints(state, figure.id)),
+                )
               }
               return figure
             }),
@@ -1726,7 +1926,7 @@ export const useFiguresStore = create<FiguresState>()(
       applyHandPreset: (id, side, key) => {
         const hand = resolveHandPreset(key, side)
         set((state) => {
-          const locked = getLockedJoints(state.jointLocks, id)
+          const locked = effectiveLockedJoints(state, id)
           return {
             figures: updateFigure(state.figures, id, (figure) => ({
               ...figure,
@@ -1738,7 +1938,7 @@ export const useFiguresStore = create<FiguresState>()(
 
       applyRandomPose: (id) => {
         set((state) => {
-          const locked = getLockedJoints(state.jointLocks, id)
+          const locked = effectiveLockedJoints(state, id)
           return {
             figures: updateFigure(state.figures, id, (figure) => ({
               ...figure,
@@ -1750,7 +1950,7 @@ export const useFiguresStore = create<FiguresState>()(
 
       mirrorSide: (id, from, scopeJoint) => {
         set((state) => {
-          const locked = getLockedJoints(state.jointLocks, id)
+          const locked = effectiveLockedJoints(state, id)
           return {
             figures: updateFigure(state.figures, id, (figure) => ({
               ...figure,
@@ -1762,7 +1962,7 @@ export const useFiguresStore = create<FiguresState>()(
 
       mirrorWholeFigure: (id) => {
         set((state) => {
-          const locked = getLockedJoints(state.jointLocks, id)
+          const locked = effectiveLockedJoints(state, id)
           return {
             figures: updateFigure(state.figures, id, (figure) => ({
               ...figure,
@@ -1774,7 +1974,7 @@ export const useFiguresStore = create<FiguresState>()(
 
       swapSides: (id, scopeJoint) => {
         set((state) => {
-          const locked = getLockedJoints(state.jointLocks, id)
+          const locked = effectiveLockedJoints(state, id)
           return {
             figures: updateFigure(state.figures, id, (figure) => ({
               ...figure,
@@ -1810,7 +2010,7 @@ export const useFiguresStore = create<FiguresState>()(
             const joints = JOINT_GROUPS.find((candidate) => candidate.key === group)?.joints
             if (!joints) return {}
 
-            const locked = new Set(getLockedJoints(state.jointLocks, toId))
+            const locked = new Set(effectiveLockedJoints(state, toId))
             const copied: Record<string, JointRotation> = {}
             for (const jointName of joints) {
               if (locked.has(jointName)) continue
@@ -1835,7 +2035,12 @@ export const useFiguresStore = create<FiguresState>()(
 
           return {
             figures: updateFigure(state.figures, toId, (figure) =>
-              withPose(figure, captured.pose, captured, getLockedJoints(state.jointLocks, toId)),
+              keepGuardedPlacement(
+                state,
+                toId,
+                figure,
+                withPose(figure, captured.pose, captured, effectiveLockedJoints(state, toId)),
+              ),
             ),
           }
         })
@@ -1848,7 +2053,12 @@ export const useFiguresStore = create<FiguresState>()(
 
           return {
             figures: updateFigure(state.figures, figureId, (figure) =>
-              withPose(figure, saved.pose, saved, getLockedJoints(state.jointLocks, figureId)),
+              keepGuardedPlacement(
+                state,
+                figureId,
+                figure,
+                withPose(figure, saved.pose, saved, effectiveLockedJoints(state, figureId)),
+              ),
             ),
           }
         })
@@ -1857,7 +2067,12 @@ export const useFiguresStore = create<FiguresState>()(
       pasteFigurePose: (figureId, pose) => {
         set((state) => ({
           figures: updateFigure(state.figures, figureId, (figure) =>
-            withPose(figure, pose.pose, pose, getLockedJoints(state.jointLocks, figureId)),
+            keepGuardedPlacement(
+              state,
+              figureId,
+              figure,
+              withPose(figure, pose.pose, pose, effectiveLockedJoints(state, figureId)),
+            ),
           ),
         }))
       },
@@ -1868,18 +2083,21 @@ export const useFiguresStore = create<FiguresState>()(
           if (!figure) return {}
 
           const blended = blendPoses(base, target, amount, figure.height)
-          const locked = getLockedJoints(state.jointLocks, figureId)
+          const locked = effectiveLockedJoints(state, figureId)
 
           return {
-            figures: updateFigure(state.figures, figureId, (figure) => ({
-              ...figure,
-              pose: mergeLockedJoints(figure.pose, blended.pose, locked),
+            figures: updateFigure(state.figures, figureId, (figure) =>
               // As duas pontas já vêm resolvidas no mundo (heading e escala
-              // embutidos), então aqui a rotação e a altura entram literais —
-              // é o que faz 100% coincidir com aplicar a pose.
-              rotation: blended.rotation,
-              position: [figure.position[0], blended.positionY, figure.position[2]],
-            })),
+              // embutidos), então rotação e altura entram literais — é o que
+              // faz 100% coincidir com aplicar a pose. Âncora (62) e eixos
+              // travados da raiz (64) valem pelo guardião comum.
+              keepGuardedPlacement(state, figureId, figure, {
+                ...figure,
+                pose: mergeLockedJoints(figure.pose, blended.pose, locked),
+                rotation: blended.rotation,
+                position: [figure.position[0], blended.positionY, figure.position[2]],
+              }),
+            ),
           }
         })
       },
@@ -2583,6 +2801,7 @@ export const useFiguresStore = create<FiguresState>()(
             selectedJointName: keeps ? state.selectedJointName : null,
             activeAxis: keeps ? state.activeAxis : null,
             jointLocks: pruneJointLocks(state.jointLocks, ids),
+            jointPins: pruneJointPins(state.jointPins, ids),
           }
         })
       },
@@ -2798,6 +3017,14 @@ export const useFiguresStore = create<FiguresState>()(
 
       clearJointLocks: (figureId) => {
         set((state) => ({ jointLocks: clearFigureLocks(state.jointLocks, figureId) }))
+      },
+
+      toggleJointPin: (figureId, jointName) => {
+        set((state) => ({ jointPins: togglePinInMap(state.jointPins, figureId, jointName) }))
+      },
+
+      clearJointPins: (figureId) => {
+        set((state) => ({ jointPins: clearFigurePins(state.jointPins, figureId) }))
       },
     }),
     {

@@ -1,6 +1,12 @@
+// PRIMEIRO import de propósito: `shellChoice` é módulo-folha e precisa estar
+// inicializado quando o ciclo autosave → poseLibrary → figureFormat →
+// figuresStore chama `loadWorkspaceFromLocalStorage` no meio da avaliação —
+// é também por isso que as chaves e a resolução moram lá, e aqui só passam.
+import { resolveAutosaveKey } from '../poses/shellChoice'
 import { sanitizeAnimations, type Animation } from '../animation/animation'
 import { sanitizeSavedClips, type SavedClip } from '../animation/clipLibrary'
 import { sanitizeJointLocks, type JointLockMap } from '../figure/jointLocks'
+import { sanitizeJointPins, type JointPinMap } from '../figure/jointPins'
 import { sanitizeSavedPoses, type SavedPose } from '../figure/poseLibrary'
 import { setJointLimitOverrides, type JointLimitOverrides } from '../figure/skeleton'
 import type { CameraViewState } from '../scene/cameraMove'
@@ -18,7 +24,10 @@ import { sceneFromExtras, sceneToExtras, type SceneWorkingState } from './sceneS
  * regras de validação/defaults.
  */
 
-const AUTOSAVE_KEY = 'virtual-mockup:workspace:v1'
+// As chaves e a resolução moram em `shellChoice.ts` (módulo-folha, ver o
+// comentário do primeiro import); reexportadas aqui porque autosave é onde os
+// consumidores as procuram.
+export { POSES_AUTOSAVE_KEY, WORKSPACE_AUTOSAVE_KEY, resolveAutosaveKey } from '../poses/shellChoice'
 
 export interface WorkspaceState {
   figures: Figure[]
@@ -54,6 +63,8 @@ export interface WorkspaceState {
    * fora do bloco de cena que o `.json` compartilha.
    */
   jointLocks: JointLockMap
+  /** Âncoras de junta por boneco (item 62) — mesmo regime de estado de trabalho das travas. */
+  jointPins: JointPinMap
 }
 
 export interface RestoredWorkspace {
@@ -70,6 +81,7 @@ export interface RestoredWorkspace {
   clipLibrary: SavedClip[]
   nextClipSeq: number
   jointLocks: JointLockMap
+  jointPins: JointPinMap
 }
 
 function snapshotDataToExtras(data: SceneSnapshotData): Record<string, unknown> {
@@ -92,14 +104,11 @@ function extrasToSnapshotData(extras: unknown): SceneSnapshotData {
 }
 
 /**
- * Grava o workspace em `localStorage`. Devolve `false` quando a gravação não
- * aconteceu (cota estourada, `localStorage` indisponível) — o autosave
- * continua sendo "melhor esforço" e nunca lança, mas quem chama precisa saber
- * para não exibir "salvo" ao usuário sem ter salvo nada (fase 9, item 2).
+ * Serializa o workspace no JSON do autosave — o MESMO payload que vai para o
+ * `localStorage`, exposto à parte para quem transporta a sessão por outro
+ * canal (a remessa por QR do item 65 usa este formato, sem formato novo).
  */
-export function saveWorkspaceToLocalStorage(state: WorkspaceState): boolean {
-  if (typeof localStorage === 'undefined') return false
-
+export function serializeWorkspacePayload(state: WorkspaceState): string {
   const payload = {
     version: 1,
     workingScene: sceneToExtras({
@@ -132,10 +141,26 @@ export function saveWorkspaceToLocalStorage(state: WorkspaceState): boolean {
     clipLibrary: state.clipLibrary,
     nextClipSeq: state.nextClipSeq,
     jointLocks: state.jointLocks,
+    jointPins: state.jointPins,
   }
 
+  return JSON.stringify(payload)
+}
+
+/**
+ * Grava o workspace em `localStorage`. Devolve `false` quando a gravação não
+ * aconteceu (cota estourada, `localStorage` indisponível) — o autosave
+ * continua sendo "melhor esforço" e nunca lança, mas quem chama precisa saber
+ * para não exibir "salvo" ao usuário sem ter salvo nada (fase 9, item 2).
+ */
+export function saveWorkspaceToLocalStorage(
+  state: WorkspaceState,
+  key: string = resolveAutosaveKey(),
+): boolean {
+  if (typeof localStorage === 'undefined') return false
+
   try {
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload))
+    localStorage.setItem(key, serializeWorkspacePayload(state))
     return true
   } catch {
     // Quota excedida ou localStorage indisponível (ex.: modo privado) —
@@ -144,17 +169,16 @@ export function saveWorkspaceToLocalStorage(state: WorkspaceState): boolean {
   }
 }
 
-export function loadWorkspaceFromLocalStorage(): RestoredWorkspace | null {
-  if (typeof localStorage === 'undefined') return null
-
-  let raw: string | null
-  try {
-    raw = localStorage.getItem(AUTOSAVE_KEY)
-  } catch {
-    return null
-  }
-  if (!raw) return null
-
+/**
+ * Lê o payload do autosave de volta num `RestoredWorkspace`, com a mesma
+ * sanitização de sempre — `localStorage`, QR ou qualquer outro transporte é
+ * entrada não confiável do mesmo jeito. Devolve `null` se o JSON não parseia.
+ *
+ * Efeito colateral consciente: instala os limites articulares customizados
+ * (`setJointLimitOverrides`) ANTES de reconstruir as cenas — é ao reconstruir
+ * as poses que o clamp acontece, mesma ordem de `workspaceFolder.ts`.
+ */
+export function parseWorkspacePayload(raw: string): RestoredWorkspace | null {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -204,5 +228,22 @@ export function loadWorkspaceFromLocalStorage(): RestoredWorkspace | null {
     clipLibrary,
     nextClipSeq: typeof source.nextClipSeq === 'number' ? source.nextClipSeq : clipLibrary.length + 1,
     jointLocks: sanitizeJointLocks(source.jointLocks),
+    jointPins: sanitizeJointPins(source.jointPins),
   }
+}
+
+export function loadWorkspaceFromLocalStorage(
+  key: string = resolveAutosaveKey(),
+): RestoredWorkspace | null {
+  if (typeof localStorage === 'undefined') return null
+
+  let raw: string | null
+  try {
+    raw = localStorage.getItem(key)
+  } catch {
+    return null
+  }
+  if (!raw) return null
+
+  return parseWorkspacePayload(raw)
 }

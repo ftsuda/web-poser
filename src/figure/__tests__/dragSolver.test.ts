@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import type { Figure } from '../../store/figuresStore'
 import { buildJointFrames } from '../jointFrames'
 import { clampJointRotation, type JointRotation } from '../skeleton'
-import { isDraggableJoint, solveJointDrag } from '../dragSolver'
+import { isDraggableJoint, solveJointDrag, type JointDragResult } from '../dragSolver'
 
 /** Pose toda zerada (membros retos para baixo) — o solver não depende do preset "Em pé". */
 const restingFigure: Figure = {
@@ -26,6 +26,15 @@ function worldPosition(figure: Figure, jointName: string): THREE.Vector3 {
 
 function withRotations(figure: Figure, rotations: Record<string, JointRotation>): Figure {
   return { ...figure, pose: { ...figure.pose, ...rotations } }
+}
+
+/** Reproduz o resultado inteiro do arrasto pelo FK normal — juntas E raiz recrutada (item 63). */
+function withDragResult(figure: Figure, result: JointDragResult): Figure {
+  return {
+    ...figure,
+    pose: { ...figure.pose, ...result.rotations },
+    rotation: result.rootRotation ?? figure.rotation,
+  }
 }
 
 describe('isDraggableJoint', () => {
@@ -117,8 +126,9 @@ describe('solveJointDrag', () => {
     expect(result.reached).toBe(false)
     const achieved = new THREE.Vector3(...result.achievedWorldPosition)
     expect(achieved.distanceTo(new THREE.Vector3(10, 10, 10))).toBeGreaterThan(1)
-    // E a aproximação também é reproduzível pelo FK normal.
-    const replayed = worldPosition(withRotations(restingFigure, result.rotations), 'wrist.L')
+    // E a aproximação também é reproduzível pelo FK normal — incluindo a
+    // rotação da raiz que o alvo impossível recruta (item 63).
+    const replayed = worldPosition(withDragResult(restingFigure, result), 'wrist.L')
     expect(replayed.distanceTo(achieved)).toBeLessThan(1e-6)
   })
 
@@ -134,14 +144,83 @@ describe('solveJointDrag', () => {
     expect(others.some((name) => ['clavicle.L', 'upperChest', 'chest', 'spine'].includes(name))).toBe(true)
   })
 
-  it('com TODOS os ancestrais travados a junta não sai do lugar (amplitude zero)', () => {
+  it('com TODOS os ancestrais travados sobra a raiz: o corpo GIRA atrás do alvo (item 63), sem transladar', () => {
     const start = worldPosition(restingFigure, 'wrist.L')
     const locked = ['elbow.L', 'shoulder.L', 'clavicle.L', 'upperChest', 'chest', 'spine']
     const result = solveJointDrag(restingFigure, 'wrist.L', [start.x + 0.3, start.y, start.z], locked)
 
     expect(result.rotations).toEqual({})
+    expect(result.rootRotation).not.toBeNull()
+    // Girar aproxima de verdade — e o replay pelo FK normal coincide.
+    const achieved = new THREE.Vector3(...result.achievedWorldPosition)
+    expect(achieved.distanceTo(new THREE.Vector3(start.x + 0.3, start.y, start.z))).toBeLessThan(
+      start.distanceTo(new THREE.Vector3(start.x + 0.3, start.y, start.z)),
+    )
+    const replayed = worldPosition(withDragResult(restingFigure, result), 'wrist.L')
+    expect(replayed.distanceTo(achieved)).toBeLessThan(1e-6)
+  })
+
+  it('com `root` no conjunto travado (âncora, item 62) a raiz fica fora e nada se move', () => {
+    const start = worldPosition(restingFigure, 'wrist.L')
+    const locked = ['elbow.L', 'shoulder.L', 'clavicle.L', 'upperChest', 'chest', 'spine', 'root']
+    const result = solveJointDrag(restingFigure, 'wrist.L', [start.x + 0.3, start.y, start.z], locked)
+
+    expect(result.rotations).toEqual({})
+    expect(result.rootRotation).toBeNull()
     expect(result.reached).toBe(false)
     expect(new THREE.Vector3(...result.achievedWorldPosition).distanceTo(start)).toBeLessThan(1e-6)
+  })
+
+  it('alvo que a cadeia alcança sozinha NÃO recruta a raiz — ela é o ÚLTIMO elo (item 63)', () => {
+    const shoulder = worldPosition(restingFigure, 'shoulder.L')
+    const wrist = worldPosition(restingFigure, 'wrist.L')
+    const offset = wrist.clone().sub(shoulder).applyAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(8))
+    const target = shoulder.clone().add(offset)
+
+    const result = solveJointDrag(restingFigure, 'wrist.L', [target.x, target.y, target.z])
+
+    expect(result.reached).toBe(true)
+    expect(result.rootRotation).toBeNull()
+  })
+
+  it('com eixos X e Z da raiz travados (item 64), o corpo só gira em Y — e o replay coincide', () => {
+    const start = worldPosition(restingFigure, 'wrist.L')
+    const locked = ['elbow.L', 'shoulder.L', 'clavicle.L', 'upperChest', 'chest', 'spine', 'root.x', 'root.z']
+    const result = solveJointDrag(restingFigure, 'wrist.L', [start.x + 0.3, start.y, start.z + 0.3], locked)
+
+    expect(result.rootRotation).not.toBeNull()
+    expect(result.rootRotation!.x).toBe(0)
+    expect(result.rootRotation!.z).toBe(0)
+    expect(Math.abs(result.rootRotation!.y)).toBeGreaterThan(1)
+    const replayed = worldPosition(withDragResult(restingFigure, result), 'wrist.L')
+    expect(replayed.distanceTo(new THREE.Vector3(...result.achievedWorldPosition))).toBeLessThan(1e-6)
+  })
+
+  it('o eixo travado preserva o valor de PARTIDA da colocação, não zero', () => {
+    const tilted: Figure = { ...restingFigure, rotation: { x: 15, y: 0, z: 0 } }
+    const start = worldPosition(tilted, 'wrist.L')
+    const locked = ['elbow.L', 'shoulder.L', 'clavicle.L', 'upperChest', 'chest', 'spine', 'root.x', 'root.z']
+    const result = solveJointDrag(tilted, 'wrist.L', [start.x + 0.3, start.y, start.z], locked)
+
+    expect(result.rootRotation).not.toBeNull()
+    expect(result.rootRotation!.x).toBe(15)
+    expect(result.rootRotation!.z).toBe(0)
+  })
+
+  it('com os TRÊS eixos travados a raiz fica fora do recrutamento, como a âncora', () => {
+    const start = worldPosition(restingFigure, 'wrist.L')
+    const locked = ['elbow.L', 'shoulder.L', 'clavicle.L', 'upperChest', 'chest', 'spine', 'root.x', 'root.y', 'root.z']
+    const result = solveJointDrag(restingFigure, 'wrist.L', [start.x + 0.3, start.y, start.z], locked)
+
+    expect(result.rotations).toEqual({})
+    expect(result.rootRotation).toBeNull()
+    expect(new THREE.Vector3(...result.achievedWorldPosition).distanceTo(start)).toBeLessThan(1e-6)
+  })
+
+  it('a raiz recrutada NUNCA aparece em `rotations` — colocação não é pose', () => {
+    const result = solveJointDrag(restingFigure, 'wrist.L', [10, 10, 10])
+    expect(result.rotations).not.toHaveProperty('root')
+    expect(result.rootRotation).not.toBeNull()
   })
 
   it('estoura para junta desconhecida, como as demais funções do esqueleto', () => {

@@ -38,6 +38,7 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
   const selectFigure = useFiguresStore((state) => state.selectFigure)
   const selectJoint = useFiguresStore((state) => state.selectJoint)
   const jointLocks = useFiguresStore((state) => state.jointLocks)
+  const jointPins = useFiguresStore((state) => state.jointPins)
   const gizmoMode = useUIStore((state) => state.gizmoMode)
   const figureStyle = useUIStore((state) => state.figureStyle)
   const previewFigures = useAnimationStore((state) => state.preview?.figures ?? null)
@@ -71,6 +72,9 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
               ? getLockedJoints(jointLocks, figure.id)
               : null
           }
+          // Âncora (item 62) sempre visível: diferente da trava, ela congela
+          // colocação e ancestrais — o efeito precisa se explicar sem gizmo.
+          pinnedJointNames={jointPins[figure.id] ?? null}
           style={figureStyle}
           onSelectJoint={(jointName) => handleSelectJoint(figure.id, jointName)}
           onJointRef={(jointName, object) => onJointRef(figure.id, jointName, object)}

@@ -1,15 +1,19 @@
 import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { slugifySceneName } from '../snapshot/snapshotNaming'
+import { POSES_AUTOSAVE_KEY, loadWorkspaceFromLocalStorage } from '../persistence/autosave'
 import { isFileSystemAccessAvailable, pickFile, pickMultipleFiles, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { parseSceneFile, serializeSceneFile } from '../persistence/sceneFile'
 import { loadWorkspaceFromDirectory, loadWorkspaceFromFiles, saveWorkspaceToDirectory } from '../persistence/workspaceFolder'
 import { GROUND_MODES, type GroundMode } from '../scene/depthMap'
+import { useAnimationStore } from '../store/animationStore'
 import { useDepthStore } from '../store/depthStore'
 import { useFiguresStore } from '../store/figuresStore'
 import { importErrorKey } from './fileFeedback'
 import { CollapsiblePanel } from './CollapsiblePanel'
 import { CollapsibleSection } from './CollapsibleSection'
+import { ConfirmDialog } from './ConfirmDialog'
+import { SessionQrSendDialog } from './SessionQrSendDialog'
 
 /**
  * Painel do "workspace": catálogo de snapshots de cena (salvar/carregar/
@@ -49,6 +53,7 @@ export function ScenesPanel() {
   const jointLimits = useFiguresStore((state) => state.jointLimits)
   const resetJointLimits = useFiguresStore((state) => state.resetJointLimits)
   const resetWorkspace = useFiguresStore((state) => state.resetWorkspace)
+  const loadRestoredWorkspace = useFiguresStore((state) => state.loadRestoredWorkspace)
 
   const [isNaming, setIsNaming] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
@@ -57,6 +62,10 @@ export function ScenesPanel() {
   const [errorKey, setErrorKey] = useState<string | null>(null)
   /** Confirmação em dois passos do "novo workspace" (fase 9, item 7) — ação destrutiva que o Ctrl+Z não desfaz. */
   const [isConfirmingReset, setIsConfirmingReset] = useState(false)
+  /** Confirmação em dois passos do "trazer sessão do módulo" (item 54) — substitui o workspace inteiro. */
+  const [isConfirmingBring, setIsConfirmingBring] = useState(false)
+  /** Envio da sessão por QR code (item 65) — o modal com a sequência de quadros. */
+  const [isSendingQr, setIsSendingQr] = useState(false)
   const fileSystemAccessAvailable = isFileSystemAccessAvailable()
 
   // Faixa do mapa de profundidade (fase 13) — ver a seção "Configurações" lá
@@ -100,6 +109,21 @@ export function ScenesPanel() {
     saveSceneSnapshot(name)
     setIsNaming(false)
     setNameDraft('')
+  }
+
+  // Trazer a sessão do módulo de poses (item 54): a leitura passa pela MESMA
+  // sanitização do autosave (`loadWorkspaceFromLocalStorage`), e a linha do
+  // tempo é resetada — o keyframe visitado pertencia à sessão que saiu.
+  const handleBringPosesSession = () => {
+    setIsConfirmingBring(false)
+    const restored = loadWorkspaceFromLocalStorage(POSES_AUTOSAVE_KEY)
+    if (!restored) {
+      setErrorKey('panels.scenes.bringPosesSessionMissing')
+      return
+    }
+    loadRestoredWorkspace(restored)
+    useAnimationStore.getState().resetTimeline()
+    setErrorKey(null)
   }
 
   const handleExport = async () => {
@@ -280,33 +304,56 @@ export function ScenesPanel() {
 
         {/* Novo workspace (fase 9, item 7): limpa TUDO — bonecos, catálogo de
             cenas, bookmarks, ambiente e limites — e zera o histórico de undo.
-            Por isso a confirmação em dois passos, e não um clique só. */}
-        {isConfirmingReset ? (
-          <div className="scenes-panel__confirm">
-            <p className="scenes-panel__hint scenes-panel__hint--warning">
-              {t('panels.scenes.newWorkspaceConfirm')}
-            </p>
-            <div className="panel-actions scenes-panel__save-form-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  resetWorkspace()
-                  setIsConfirmingReset(false)
-                  setErrorKey(null)
-                }}
-              >
-                {t('panels.scenes.newWorkspaceConfirmYes')}
-              </button>
-              <button type="button" onClick={() => setIsConfirmingReset(false)}>
-                {t('panels.scenes.cancelSave')}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button type="button" className="panel-action" onClick={() => setIsConfirmingReset(true)}>
-            {t('panels.scenes.newWorkspace')}
-          </button>
+            Por isso a confirmação em MODAL, a mesma da troca de sessão (#100). */}
+        <button type="button" className="panel-action" onClick={() => setIsConfirmingReset(true)}>
+          {t('panels.scenes.newWorkspace')}
+        </button>
+        {isConfirmingReset && (
+          <ConfirmDialog
+            title={t('panels.scenes.newWorkspace')}
+            message={t('panels.scenes.newWorkspaceConfirm')}
+            confirmLabel={t('panels.scenes.newWorkspaceConfirmYes')}
+            onConfirm={() => {
+              resetWorkspace()
+              setIsConfirmingReset(false)
+              setErrorKey(null)
+            }}
+            onCancel={() => setIsConfirmingReset(false)}
+          />
         )}
+
+        {/* Trazer a sessão do módulo de poses (item 54): as sessões são
+            separadas por chave (#92); este botão completa o desenho para quem
+            começa no celular e continua aqui. Substitui o workspace INTEIRO —
+            por isso a confirmação em MODAL (`ConfirmDialog`, pedido do
+            usuário): o aviso vira a única coisa na tela. */}
+        <button
+          type="button"
+          className="panel-action"
+          onClick={() => {
+            setIsConfirmingBring(true)
+            setErrorKey(null)
+          }}
+        >
+          {t('panels.scenes.bringPosesSession')}
+        </button>
+        {isConfirmingBring && (
+          <ConfirmDialog
+            title={t('panels.scenes.bringPosesSession')}
+            message={t('panels.scenes.bringPosesSessionConfirm')}
+            confirmLabel={t('panels.scenes.bringPosesSessionConfirmYes')}
+            onConfirm={handleBringPosesSession}
+            onCancel={() => setIsConfirmingBring(false)}
+          />
+        )}
+
+        {/* Enviar a sessão por QR code (item 65): a ponte para um APARELHO
+            diferente, onde as chaves de localStorage não alcançam — a sessão
+            vira uma sequência de QRs e o celular coleta com a câmera. */}
+        <button type="button" className="panel-action" onClick={() => setIsSendingQr(true)}>
+          {t('panels.scenes.sendQr')}
+        </button>
+        {isSendingQr && <SessionQrSendDialog onClose={() => setIsSendingQr(false)} />}
 
         {/* Configurações do workspace (fase 13). A faixa do mapa de
             profundidade é COMPARTILHADA pelas três saídas — tela, PNG e MP4 —,

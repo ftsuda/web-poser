@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { JointLockMap } from '../../figure/jointLocks'
+import type { JointPinMap } from '../../figure/jointPins'
 import type { Animation } from '../../animation/animation'
 import type { SavedPose } from '../../figure/poseLibrary'
 import { getJoint, type JointLimitOverrides } from '../../figure/skeleton'
@@ -31,6 +32,7 @@ const baseState = {
   clipLibrary: [],
   nextClipSeq: 1,
   jointLocks: {} as JointLockMap,
+  jointPins: {} as JointPinMap,
 }
 
 describe('autosave — persistência do workspace em localStorage', () => {
@@ -157,12 +159,12 @@ describe('autosave — persistência do workspace em localStorage', () => {
   })
 
   it('retorna null (sem lançar erro) quando o conteúdo salvo está corrompido', () => {
-    localStorage.setItem('virtual-mockup:workspace:v1', '{ isto não é json válido')
+    localStorage.setItem('webposer:workspace:v1', '{ isto não é json válido')
     expect(loadWorkspaceFromLocalStorage()).toBeNull()
   })
 
   it('aplica defaults quando o JSON salvo é válido mas não tem o formato esperado', () => {
-    localStorage.setItem('virtual-mockup:workspace:v1', JSON.stringify({ foo: 'bar' }))
+    localStorage.setItem('webposer:workspace:v1', JSON.stringify({ foo: 'bar' }))
     const restored = loadWorkspaceFromLocalStorage()
     expect(restored?.workingScene.figures).toEqual([])
     expect(restored?.scenes).toEqual([])
@@ -180,7 +182,7 @@ describe('autosave — persistência do workspace em localStorage', () => {
    */
   it('restaura um autosave gravado na codificação antiga, sem perder pose nem biblioteca', () => {
     localStorage.setItem(
-      'virtual-mockup:workspace:v1',
+      'webposer:workspace:v1',
       JSON.stringify({
         version: 1,
         workingScene: {
@@ -257,18 +259,30 @@ describe('autosave — biblioteca de poses e travas de junta', () => {
     expect(restored!.nextPoseSeq).toBe(5)
   })
 
-  it('salva e restaura as travas de junta', () => {
-    saveWorkspaceToLocalStorage({ ...baseState, jointLocks: { 'figure-1': ['elbow.L', 'knee.R'] } })
+  it('salva e restaura as travas de junta — inclusive os cadeados de eixo da raiz (item 64)', () => {
+    saveWorkspaceToLocalStorage({
+      ...baseState,
+      jointLocks: { 'figure-1': ['elbow.L', 'knee.R', 'root.y'] },
+    })
 
-    expect(loadWorkspaceFromLocalStorage()!.jointLocks).toEqual({ 'figure-1': ['elbow.L', 'knee.R'] })
+    expect(loadWorkspaceFromLocalStorage()!.jointLocks).toEqual({
+      'figure-1': ['elbow.L', 'knee.R', 'root.y'],
+    })
+  })
+
+  it('salva e restaura as âncoras de junta (item 62), no mesmo regime das travas', () => {
+    saveWorkspaceToLocalStorage({ ...baseState, jointPins: { 'figure-1': ['elbow.L'] } })
+
+    expect(loadWorkspaceFromLocalStorage()!.jointPins).toEqual({ 'figure-1': ['elbow.L'] })
   })
 
   it('sanitiza o que veio do localStorage, que é entrada não confiável como qualquer outra', () => {
     localStorage.setItem(
-      'virtual-mockup:workspace:v1',
+      'webposer:workspace:v1',
       JSON.stringify({
         poseLibrary: [{ id: 'pose-1', name: 'Inválida', pose: { asaEsquerda: [1, 2, 3] } }, 'nem objeto'],
         jointLocks: { 'figure-1': ['elbow.L', 'root', 'asaEsquerda'], 'figure-2': 'nem lista' },
+        jointPins: { 'figure-1': ['elbow.R', 'root', 'asaDireita'], 'figure-2': 42 },
       }),
     )
 
@@ -276,6 +290,7 @@ describe('autosave — biblioteca de poses e travas de junta', () => {
 
     expect(restored!.poseLibrary).toEqual([])
     expect(restored!.jointLocks).toEqual({ 'figure-1': ['elbow.L'] })
+    expect(restored!.jointPins).toEqual({ 'figure-1': ['elbow.R'] })
   })
 
   it('grampeia as poses da biblioteca pelos limites customizados do próprio workspace', () => {
@@ -290,18 +305,20 @@ describe('autosave — biblioteca de poses e travas de junta', () => {
     expect(restored!.poseLibrary[0].pose['knee.L'].x).toBe(45)
   })
 
-  it('workspaces salvos antes do recurso voltam com biblioteca vazia e sem travas', () => {
+  it('workspaces salvos antes do recurso voltam com biblioteca vazia, sem travas e sem âncoras', () => {
     saveWorkspaceToLocalStorage(baseState)
-    const raw = JSON.parse(localStorage.getItem('virtual-mockup:workspace:v1')!)
+    const raw = JSON.parse(localStorage.getItem('webposer:workspace:v1')!)
     delete raw.poseLibrary
     delete raw.nextPoseSeq
     delete raw.jointLocks
-    localStorage.setItem('virtual-mockup:workspace:v1', JSON.stringify(raw))
+    delete raw.jointPins
+    localStorage.setItem('webposer:workspace:v1', JSON.stringify(raw))
 
     const restored = loadWorkspaceFromLocalStorage()
 
     expect(restored!.poseLibrary).toEqual([])
     expect(restored!.nextPoseSeq).toBe(1)
     expect(restored!.jointLocks).toEqual({})
+    expect(restored!.jointPins).toEqual({})
   })
 })

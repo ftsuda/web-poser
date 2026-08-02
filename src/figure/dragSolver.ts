@@ -8,16 +8,19 @@ import {
   type JointRotation,
 } from './skeleton'
 import { buildJointFrames } from './jointFrames'
+import { rootAxisLockToken } from './jointLocks'
 import type { Figure } from '../store/figuresStore'
 
 /**
  * Solver do gizmo de translação de junta (arrasto de corpo inteiro): puxar
  * uma junta qualquer recruta a cadeia de ANCESTRAIS dela — da mais próxima em
  * direção à raiz — para levá-la até o alvo, respeitando os limites
- * articulares de cada uma. A raiz nunca se move (é a colocação do boneco na
- * cena, não pose), e a subárvore ABAIXO da junta arrastada segue rígida
- * (as rotações locais dela não mudam) — puxar o cotovelo leva antebraço e mão
- * junto, como num manequim físico.
+ * articulares de cada uma. A raiz nunca TRANSLADA (a colocação no chão não é
+ * pose), mas desde o item 63 ela GIRA como último elo recrutável: alvo que a
+ * cadeia não alcança faz o corpo virar/inclinar atrás dele em torno do pivô
+ * do quadril. A subárvore ABAIXO da junta arrastada segue rígida (as rotações
+ * locais dela não mudam) — puxar o cotovelo leva antebraço e mão junto, como
+ * num manequim físico.
  *
  * Algoritmo: CCD (cyclic coordinate descent) com RECRUTAMENTO PROGRESSIVO —
  * primeiro resolve só com a junta mais próxima; se o alvo continuar fora de
@@ -80,8 +83,10 @@ const HAND_JOINTS = new Set<string>(
  * Se a junta pode receber o gizmo de translação. Exclui:
  * - a raiz (o gizmo de translação dela já existe e é outra coisa: colocação);
  * - as juntas da mão (decisão do usuário, ver `HAND_JOINTS`);
- * - juntas cujo único ancestral é a raiz (`spine`, `hip.*`): a posição delas
- *   é determinada só pela raiz, que é fixa — o gizmo nasceria morto.
+ * - juntas cujo único ancestral é a raiz (`spine`, `hip.*`): mantidas fora
+ *   mesmo com a raiz girando (item 63, decisão do usuário) — arrastá-las só
+ *   giraria o boneco em torno de si, e o giro de corpo já sai arrastando
+ *   qualquer outra junta.
  * Nome desconhecido devolve `false` (o chamador vem da seleção da UI, mas não
  * custa não estourar).
  */
@@ -94,6 +99,13 @@ export function isDraggableJoint(jointName: string): boolean {
 export interface JointDragResult {
   /** Rotações locais (graus) resultantes, já grampeadas — só as juntas que participaram (ancestrais móveis não travados). */
   rotations: Record<string, JointRotation>
+  /**
+   * Rotação de COLOCAÇÃO resultante (item 63), quando a raiz foi recrutada
+   * como último elo — `null` quando a cadeia deu conta sozinha. Fica fora de
+   * `rotations` de propósito: colocação não é pose, e o consumidor grava as
+   * duas no mesmo passo via `setJointRotations(id, rotations, rootRotation)`.
+   */
+  rootRotation: JointRotation | null
   /** Onde a junta arrastada efetivamente ficou, no mundo — é para cá que o gizmo volta ("trava" quando o alvo é inalcançável). */
   achievedWorldPosition: [number, number, number]
   /** `true` se a junta chegou a `REACH_TOLERANCE_M` do alvo. */
@@ -121,15 +133,33 @@ export function solveJointDrag(
   }
 
   // Ancestrais móveis, do mais próximo ao mais distante: a cadeia vem
-  // raiz-primeiro, sem interesse na raiz (fixa) nem na própria junta (girá-la
-  // não muda a posição dela).
+  // raiz-primeiro, sem interesse na própria junta (girá-la não muda a posição
+  // dela). A raiz entra como ÚLTIMO elo recrutável (item 63): quando toda a
+  // cadeia satura, o corpo GIRA atrás do alvo em torno do pivô do quadril —
+  // sem limite (colocação não passa por limite articular) — mas nunca
+  // translada. `root` no conjunto travado (a âncora do item 62 congela a
+  // colocação) a exclui; os TOKENS de eixo do item 64 (`root.x`…`root.z`)
+  // restringem o giro aos eixos destravados, e os três juntos equivalem à
+  // exclusão inteira.
+  const lockedRootAxes = (['x', 'y', 'z'] as const).filter((axis) =>
+    lockedJoints.includes(rootAxisLockToken(axis)),
+  )
   const movable = getJointChain(jointName)
     .slice(1, -1)
     .reverse()
     .filter((name) => !lockedJoints.includes(name))
+  if (!lockedJoints.includes(ROOT_JOINT_NAME) && lockedRootAxes.length < 3) {
+    movable.push(ROOT_JOINT_NAME)
+  }
+
+  // O valor de PARTIDA da colocação: é a ele que um eixo travado volta a cada
+  // passo — o mesmo regime do clamp de limites das juntas (o passo seguinte
+  // da varredura compensa o que a trava comeu).
+  const initialRootRotation: JointRotation = { ...figure.rotation }
 
   const target = new THREE.Vector3(...targetWorldPosition)
   const rotations: Record<string, JointRotation> = {}
+  let rootRotation: JointRotation | null = null
 
   const jointPos = new THREE.Vector3()
   const effectorPos = new THREE.Vector3()
@@ -176,13 +206,22 @@ export function solveJointDrag(
         group.parent.getWorldQuaternion(parentQuat)
         const localQuat = parentQuat.invert().multiply(delta).multiply(worldQuat)
         const euler = new THREE.Euler().setFromQuaternion(localQuat, 'XYZ')
+        // Para a raiz o clamp é identidade (limites vazios): o passo é o MESMO
+        // das juntas, e só o destino do resultado muda — colocação, não pose.
         const clamped = clampJointRotation(name, {
           x: THREE.MathUtils.radToDeg(euler.x),
           y: THREE.MathUtils.radToDeg(euler.y),
           z: THREE.MathUtils.radToDeg(euler.z),
         })
 
-        rotations[name] = clamped
+        if (name === ROOT_JOINT_NAME) {
+          // Trava por eixo (item 64): o eixo travado volta ao valor de partida
+          // — a raiz só gira nas direções destravadas.
+          for (const axis of lockedRootAxes) clamped[axis] = initialRootRotation[axis]
+          rootRotation = clamped
+        } else {
+          rotations[name] = clamped
+        }
         group.rotation.set(
           THREE.MathUtils.degToRad(clamped.x),
           THREE.MathUtils.degToRad(clamped.y),
@@ -196,6 +235,7 @@ export function solveJointDrag(
   dragged.getWorldPosition(effectorPos)
   return {
     rotations,
+    rootRotation,
     achievedWorldPosition: [effectorPos.x, effectorPos.y, effectorPos.z],
     reached: effectorPos.distanceTo(target) <= REACH_TOLERANCE_M,
   }

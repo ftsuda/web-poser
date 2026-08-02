@@ -1,4 +1,4 @@
-# Virtual Mockup — guia para o agente
+# WebPoser — guia para o agente
 
 App frontend 3D **totalmente offline** para posar manequins de desenhista (bonecos articulados de 32 juntas), montar cenas, animar entre poses-chave e exportar PNG/MP4 de referência para desenho.
 
@@ -6,9 +6,9 @@ Este arquivo é a porta de entrada. O detalhe mora em três documentos, e **todo
 
 | Arquivo | O que é |
 |---|---|
-| `PLANO.md` | O que o app é, arquitetura, modelo do boneco e **a lista única de propostas de melhoria** (itens numerados 1–44, grupos A–J) |
-| `DECISOES.md` | As **95 decisões** numeradas (de #1 a #91, com subnúmeros), com a narrativa do porquê. É onde se descobre *por que* algo é como é. Tem índice no topo |
-| `HISTORICO.md` | O log de **79 entregas**, em ordem cronológica — uma entrada por sessão de trabalho. Tem índice no topo |
+| `PLANO.md` | O que o app é, arquitetura, modelo do boneco e **a lista única de propostas de melhoria** (itens numerados 1–65, grupos A–J) |
+| `DECISOES.md` | As **106 decisões** numeradas (de #1 a #102, com subnúmeros), com a narrativa do porquê. É onde se descobre *por que* algo é como é. Tem índice no topo |
+| `HISTORICO.md` | O log de **89 entregas**, em ordem cronológica — uma entrada por sessão de trabalho. Tem índice no topo |
 
 Ao citar uma decisão, use o número (`DECISOES.md` #86); os três documentos se referenciam assim.
 
@@ -23,9 +23,10 @@ npm run dev             # servidor de desenvolvimento
 npm run preview         # build servido, para conferência no navegador
 npm run pose:preset     # converte pose salva da biblioteca em bloco de preset
 npm run poses:folha     # folha de contato das poses
+npm run test:e2e        # smoke de Playwright do módulo de poses (item 57) — à parte da suíte
 ```
 
-**Antes de dar qualquer trabalho por concluído:** `npx vitest run`, `npm run build` e `npm run lint`, os três limpos. A suíte está em **~2.309 testes**; toda entrega registra o saldo (de X para Y).
+**Antes de dar qualquer trabalho por concluído:** `npx vitest run`, `npm run build` e `npm run lint`, os três limpos. A suíte está em **~2.491 testes**; toda entrega registra o saldo (de X para Y).
 
 ## Regras que não se negociam
 
@@ -45,6 +46,8 @@ src/animation/    keyframes, amostrador, trechos prontos, remapeamento, MP4
 src/props/        objetos de cena (6 primitivas, tamanho em metros, vértice livre)
 src/scene/        viewport, câmera, gizmos, renderização
 src/layout/       os painéis da UI (é onde mora quase toda a superfície visível)
+src/poses/        módulo de poses: a casca de toque (item 44) — escolha de casca,
+                  vistas ortográficas, painel em abas, sessão própria (#92)
 src/store/        zustand — figuresStore (com zundo/undo), animation, camera, ui…
 src/persistence/  arquivos do workspace, autosave, serialização
 src/i18n/         dicionários pt-BR e en
@@ -59,6 +62,7 @@ Coisas que parecem detalhe e custaram uma decisão inteira. Quebrá-las por desc
 - **Um caminho só para boneco em arquivo** (#87): "Pose em arquivo", no painel de Propriedades. O "Exportar/Importar boneco" do painel de Bonecos foi removido de propósito.
 - **`CollapsibleSection` ≠ `CollapsiblePanel`** (#83). O primeiro recolhe um *assunto dentro* de um painel; o segundo recolhe a *coluna inteira*. Seção nova exige chave em `SECTION_KEYS` (`src/persistence/uiPreferences.ts`), e nasce recolhida — as exceções são `poses` e `cameraFraming`.
 - **Botões seguem duas classes** (#88): `.panel-action` para ação sozinha (largura cheia) e `.panel-actions` para conjunto entre o qual se escolhe (grade de duas colunas). A escolha descreve o conteúdo, não a aparência.
+- **Ação que depende de decisão do usuário confirma em MODAL** (#100): `ConfirmDialog`/`ModalDialog` de `src/layout/` (`<dialog>` nativo — Esc cancela, atalhos globais calados), nunca confirm inline em dois passos nem `window.confirm`. Precedentes: regravar keyframe (#69), novo workspace e trazer sessão da outra casca. O botão que abre fica sempre visível; o modal é renderizado condicionalmente ao lado dele.
 - **Junta travada não muda por NADA automático** (#42): slider, gizmo, teclado, IK, sorteio, espelho e aplicar pose — todos respeitam a trava.
 - **Tamanho de objeto de cena é metro por eixo, nunca `scale` de nó** (#80). A contagem de pontos de controle soldados por forma é **contrato de arquivo**, travada por teste.
 - **Persistência é aditiva.** Campo novo em `SceneExtras` entra sem subir `SCENE_EXTRAS_VERSION` — arquivo antigo tem de continuar abrindo (precedentes: `sceneCamera`, `snapshotCounter`, `props`).

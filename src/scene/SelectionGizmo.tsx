@@ -1,5 +1,6 @@
 import { TransformControls } from '@react-three/drei'
 import * as THREE from 'three'
+import { getLockedRootAxes } from '../figure/jointLocks'
 import { ROOT_JOINT_NAME, getJointAxes } from '../figure/skeleton'
 import { useFiguresStore } from '../store/figuresStore'
 import type { GizmoMode } from '../store/uiStore'
@@ -37,14 +38,20 @@ export function SelectionGizmo({
   const setPosition = useFiguresStore((state) => state.setPosition)
   const setRootRotation = useFiguresStore((state) => state.setRootRotation)
   const setJointRotation = useFiguresStore((state) => state.setJointRotation)
+  const jointLocks = useFiguresStore((state) => state.jointLocks)
 
   const isRoot = jointName === ROOT_JOINT_NAME
   const isRootTranslate = isRoot && rootMode === 'translate'
   // O root aceita translação livre nos 3 eixos — inclusive Y, para levantar o
   // boneco do chão (a sombra acompanha só X/Z e fica presa ao plano, dando
   // noção da altura; ver `FigureShadow` em Figure.tsx) — e, no modo rotate,
-  // rotação livre nos 3 eixos (colocação não passa por limites articulares).
-  const axes = isRoot ? (['x', 'y', 'z'] as const) : getJointAxes(jointName)
+  // rotação nos eixos DESTRAVADOS (colocação não passa por limites
+  // articulares, mas passa pela trava por eixo do item 64: o anel do eixo
+  // travado some, como somem os eixos que não são DOF de uma junta).
+  const lockedRootAxes = isRoot && rootMode === 'rotate' ? getLockedRootAxes(jointLocks, figureId) : []
+  const axes = (isRoot ? (['x', 'y', 'z'] as const) : getJointAxes(jointName)).filter(
+    (axis) => !lockedRootAxes.includes(axis),
+  )
 
   const readRotationDegrees = () => ({
     x: THREE.MathUtils.radToDeg(target.rotation.x),
