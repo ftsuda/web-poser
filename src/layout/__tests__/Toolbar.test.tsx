@@ -185,4 +185,20 @@ describe('Toolbar', () => {
     await user.click(checkbox)
     expect(useDepthStore.getState().previewEnabled).toBe(false)
   })
+
+  /**
+   * Ordem pedida pelo usuário (#117.1): a SILHUETA vem antes da casca do
+   * boneco. As duas são modos de visualização vizinhos, e a silhueta é a
+   * checagem que se liga e desliga o tempo todo — fica primeiro, à esquerda.
+   */
+  it('a silhueta vem ANTES da casca do boneco na barra', async () => {
+    await renderToolbar()
+
+    const silhueta = screen.getByLabelText('Silhueta')
+    const boneco = screen.getByLabelText('Boneco')
+
+    expect(
+      silhueta.compareDocumentPosition(boneco) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
 })

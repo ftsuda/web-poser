@@ -29,6 +29,8 @@ import {
   clampPropSize,
   isPropShape,
   normalizePropColor,
+  propShapeHasFreeVertex,
+  sanitizePropAttachment,
   sanitizeVertexOffsets,
   type PropShape,
   type SceneProp,
@@ -84,6 +86,17 @@ export interface PropExtras {
   size: Vec3Tuple
   /** Vértices arrastados à mão, por índice de ponto de controle. Ausente quando o objeto está intacto. */
   vertices?: Record<string, Vec3Tuple>
+  /**
+   * Amarração a uma junta de boneco (PLANO.md > amarração). Campo ADITIVO,
+   * sem subir `SCENE_EXTRAS_VERSION` — mesmo precedente do próprio `props`.
+   * Ausente quando o objeto é cenário solto, que é o caso comum.
+   */
+  attachment?: {
+    figureId: string
+    jointName: string
+    position: Vec3Tuple
+    rotation: Vec3Tuple
+  }
 }
 
 /** A câmera de cena serializada (fase 11). Mesmo formato do `CameraViewState`. */
@@ -194,6 +207,17 @@ export function propToExtras(prop: SceneProp): PropExtras {
     // Objeto intacto não grava a chave: é o caso comum, e um `{}` por objeto
     // em cada cena do catálogo pesaria no `localStorage` à toa.
     ...(Object.keys(vertices).length > 0 ? { vertices } : {}),
+    // Mesma regra para a amarração: objeto solto não ocupa nada.
+    ...(prop.attachment
+      ? {
+          attachment: {
+            figureId: prop.attachment.figureId,
+            jointName: prop.attachment.jointName,
+            position: [...prop.attachment.position] as Vec3Tuple,
+            rotation: rotationToTuple(prop.attachment.rotation),
+          },
+        }
+      : {}),
   }
 }
 
@@ -203,12 +227,26 @@ export function propToExtras(prop: SceneProp): PropExtras {
  * é resolvida antes de tamanho e vértices. Uma forma desconhecida (arquivo de
  * uma versão futura, ou editado à mão) vira caixa — o objeto continua na cena,
  * no lugar certo, em vez de desaparecer sem aviso.
+ *
+ * `figureIds` são os bonecos da MESMA cena: uma amarração para boneco fora da
+ * lista (ou junta desconhecida) é podada, e o objeto volta à própria
+ * colocação — o mesmo comportamento de remover o boneco com objeto amarrado.
  */
-export function propFromExtras(extras: unknown, fallbackIndex: number): SceneProp {
+export function propFromExtras(
+  extras: unknown,
+  fallbackIndex: number,
+  figureIds: ReadonlySet<string> = new Set(),
+): SceneProp {
   const source = (typeof extras === 'object' && extras !== null ? extras : {}) as Record<string, unknown>
   const shape: PropShape = isPropShape(source.shape) ? source.shape : 'box'
 
-  const offsets: VertexOffsets = sanitizeVertexOffsets(source.vertices, controlPointCount(shape))
+  // Forma composta não tem vértice livre (kit de armas): desvio gravado para
+  // ela — arquivo editado à mão, ou de uma versão que venha a permitir — é
+  // descartado, e o modelo abre íntegro.
+  const offsets: VertexOffsets = sanitizeVertexOffsets(
+    source.vertices,
+    propShapeHasFreeVertex(shape) ? controlPointCount(shape) : 0,
+  )
 
   return {
     id: typeof source.id === 'string' ? source.id : `prop-${fallbackIndex + 1}`,
@@ -224,6 +262,7 @@ export function propFromExtras(extras: unknown, fallbackIndex: number): ScenePro
     rotation: readRotation(source.rotation),
     size: clampPropSize(source.size ?? DEFAULT_PROP_SIZE[shape], shape),
     vertexOffsets: offsets,
+    attachment: sanitizePropAttachment(source.attachment, figureIds),
   }
 }
 
@@ -337,9 +376,11 @@ export function sceneFromExtras(extras: unknown): SceneWorkingState {
   const figures = figuresSource.map((figureExtras, index) => figureFromExtras(figureExtras, index))
 
   // Arquivo gravado antes do item 42 simplesmente não tem o campo: a cena abre
-  // sem objetos, que é o conteúdo que ela sempre teve.
+  // sem objetos, que é o conteúdo que ela sempre teve. As amarrações são
+  // validadas contra os bonecos DESTA cena — por isso os bonecos são lidos antes.
+  const figureIds = new Set(figures.map((figure) => figure.id))
   const propsSource = Array.isArray(source.props) ? source.props : []
-  const props = propsSource.map((propExtras, index) => propFromExtras(propExtras, index))
+  const props = propsSource.map((propExtras, index) => propFromExtras(propExtras, index, figureIds))
 
   const bookmarksSource = Array.isArray(source.cameraBookmarks) ? source.cameraBookmarks : []
   const cameraBookmarks = bookmarksSource.map((bookmarkExtras, index) =>

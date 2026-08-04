@@ -26,6 +26,8 @@ export function Toolbar() {
   const setFrameMaskSource = useUIStore((state) => state.setFrameMaskSource)
   const figureStyle = useUIStore((state) => state.figureStyle)
   const setFigureStyle = useUIStore((state) => state.setFigureStyle)
+  const figureSilhouette = useUIStore((state) => state.figureSilhouette)
+  const toggleFigureSilhouette = useUIStore((state) => state.toggleFigureSilhouette)
   const depthPreview = useDepthStore((state) => state.previewEnabled)
   const togglePreviewDepth = useDepthStore((state) => state.togglePreview)
 
@@ -118,6 +120,17 @@ export function Toolbar() {
         <label className="toolbar__field toolbar__field--checkbox" title={t('toolbar.depthHint')}>
           <input type="checkbox" checked={depthPreview} onChange={togglePreviewDepth} />
           {t('toolbar.depth')}
+        </label>
+
+        {/* Modo silhueta (item 8): bonecos em preto chapado — a primeira
+            checagem de leitura de um ilustrador. Mesmo regime da casca: modo de
+            VISUALIZAÇÃO, fora do undo e fora do arquivo, e vale para o PNG e o
+            MP4 porque é o material que a cena inteira usa. Vem ANTES da casca
+            (pedido do usuário, #117.1): é o que se liga e desliga o tempo todo,
+            enquanto a casca se escolhe uma vez e fica. */}
+        <label className="toolbar__field toolbar__field--checkbox" title={t('toolbar.silhouetteHint')}>
+          <input type="checkbox" checked={figureSilhouette} onChange={toggleFigureSilhouette} />
+          {t('toolbar.silhouette')}
         </label>
 
         {/* Casca visual do boneco (DECISOES.md #81). É modo de VISUALIZAÇÃO: não

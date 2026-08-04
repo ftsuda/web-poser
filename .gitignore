@@ -26,3 +26,6 @@ dist-ssr
 # Artefatos do Playwright (item 57)
 test-results
 playwright-report
+
+# Modelo do MediaPipe (pose:model) — baixado por quem usa a ferramenta, nunca versionado
+tools/models

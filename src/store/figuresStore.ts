@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { temporal } from 'zundo'
 import {
+  JOINT_NAMES,
   MAX_HEIGHT_M,
   MIN_HEIGHT_M,
   REFERENCE_HEIGHT_M,
@@ -41,13 +42,17 @@ import {
   freeKeyframeLabel,
   createWorkingAnimation,
   findWorkingAnimation,
+  moveKeyframeBlock,
   planKeyframeSplit,
+  savedAnimations,
   uniqueKeyframeLabel,
+  applyEasing,
   DEFAULT_ANIMATION_SPEED,
   DEFAULT_KEYFRAME_DURATION_MS,
   WORKING_ANIMATION_ID,
   type Animation,
   type AnimationKeyframe,
+  type KeyframeEasing,
 } from '../animation/animation'
 import { sampleAnimation, splitCameraView } from '../animation/animationSampler'
 import { remapImportedKeyframes, substituteImportedKeyframes } from '../animation/animationRemap'
@@ -59,7 +64,7 @@ import {
   type ResolvedClipFigure,
 } from '../animation/animationClips'
 import { DEFAULT_SCENE_CAMERA, type CameraViewState } from '../scene/cameraMove'
-import { blendPoses, type BlendablePose } from '../figure/poseBlend'
+import { alignRootRotation, blendPoses, type BlendablePose } from '../figure/poseBlend'
 import { captureFigurePose, type SavedPose } from '../figure/poseLibrary'
 import {
   buildKeyframesFromClip,
@@ -89,12 +94,18 @@ import { loadWorkspaceFromLocalStorage, type RestoredWorkspace } from '../persis
 import { normalizeHexColor } from '../scene/hexColor'
 import { controlPointCount, controlPointPosition, propGroundOffset } from '../props/propGeometry'
 import {
+  attachedPropPlacement,
+  placementToAttachmentOffset,
+  type PropPlacement,
+} from '../props/propAttachment'
+import {
   DEFAULT_PROP_COLOR,
   DEFAULT_PROP_SIZE,
   MAX_PROPS,
   clampPropSize,
   clampVertexOffset,
   normalizePropColor,
+  propShapeHasFreeVertex,
   withVertexOffset,
   type PropShape,
   type SceneProp,
@@ -402,6 +413,12 @@ export interface FiguresState {
    */
   renameSceneSnapshot: (id: string, name: string) => void
   removeSceneSnapshot: (id: string) => void
+  /**
+   * Move um snapshot uma posição para cima (-1) ou para baixo (+1) no catálogo
+   * (item 19) — a ordem era fixa pela criação. Entra no undo, como criar,
+   * renomear e remover; nas bordas (e com id desconhecido) não faz nada.
+   */
+  moveSceneSnapshot: (id: string, delta: -1 | 1) => void
   /** Substitui a cena de trabalho por dados lidos de um `.json` importado — não é um snapshot salvo do catálogo. */
   loadSceneWorkingState: (data: SceneSnapshotData & { name: string }) => void
   /**
@@ -426,6 +443,13 @@ export interface FiguresState {
       pose: Record<string, JointRotation>
     },
   ) => void
+  /**
+   * Aplica uma pose INFERIDA da marcação sobre a foto de referência
+   * (PLANO.md > "Pose por marcação manual"): só as juntas — a colocação
+   * (posição/rotação da raiz) é o alinhamento manual do usuário e fica
+   * exatamente onde está. Juntas travadas não mudam (#42).
+   */
+  applyInferredPose: (id: string, pose: Record<string, JointRotation>) => void
   /** Adiciona bookmarks importados aos já existentes (nunca substitui); nomes duplicados recebem um sufixo automático. */
   importCameraBookmarks: (bookmarks: readonly Omit<CameraBookmark, 'id'>[]) => void
   /** Substitui o catálogo de cenas por um workspace lido de uma pasta; carrega a cena ativa na cena de trabalho, se houver. */
@@ -503,6 +527,12 @@ export interface FiguresState {
    */
   createAnimation: (name?: string) => string
   renameAnimation: (id: string, name: string) => void
+  /**
+   * Move uma animação SALVA uma posição para cima/baixo dentro da biblioteca
+   * (item 19, o mesmo gesto do catálogo de cenas). A de trabalho fica onde
+   * está — ela não é da biblioteca, e o combo nem a lista.
+   */
+  moveSavedAnimation: (id: string, delta: -1 | 1) => void
   removeAnimation: (id: string) => void
   /**
    * Guarda uma cópia da animação de trabalho na biblioteca, com nome, para
@@ -583,7 +613,19 @@ export interface FiguresState {
   removeAnimationKeyframe: (animationId: string, keyframeId: string) => void
   /** Move o keyframe `delta` posições na lista; nas pontas, não faz nada. */
   moveAnimationKeyframe: (animationId: string, keyframeId: string, delta: number) => void
+  /**
+   * Move o BLOCO nomeado do keyframe (item 38) uma posição, pulando o vizinho
+   * INTEIRO — bloco vizinho todo, ou um keyframe se ele for solto (#117). A
+   * ordem interna e as durações vão junto; nas pontas, não faz nada.
+   */
+  moveAnimationKeyframeBlock: (animationId: string, keyframeId: string, direction: 1 | -1) => void
   setAnimationKeyframeDuration: (animationId: string, keyframeId: string, durationMs: number) => void
+  /**
+   * Suavização da transição que CHEGA ao keyframe (item 26) — mesma convenção
+   * da duração. Escolher 'linear' (o padrão) REMOVE o campo: arquivo antigo e
+   * arquivo novo sem easing são a mesma coisa, e gravar o padrão seria ruído.
+   */
+  setAnimationKeyframeEasing: (animationId: string, keyframeId: string, easing: KeyframeEasing) => void
   /**
    * Rótulo do grupo do keyframe (item 38). Texto vazio tira o keyframe do
    * grupo; um rótulo que já existe em OUTRO trecho ganha sufixo numérico, para
@@ -829,9 +871,23 @@ export interface FiguresState {
   setPropVertex: (id: string, index: number, localPosition: Vec3) => void
   /** Devolve o objeto à primitiva exata, jogando fora todos os vértices arrastados. */
   clearPropVertices: (id: string) => void
-  /** Baixa/levanta o objeto até a geometria (já girada e deformada) encostar no chão. */
+  /** Baixa/levanta o objeto até a geometria (já girada e deformada) encostar no chão. Amarrado, não faz nada — quem manda é a junta. */
   seatPropOnGround: (id: string) => void
   selectProp: (id: string | null) => void
+  /**
+   * Amarra o objeto a uma junta de um boneco (PLANO.md > amarração). O offset
+   * nasce da colocação ATUAL do objeto — ele não pula ao ganhar a amarração —
+   * e `position`/`rotation` próprios ficam intactos: são a colocação à qual o
+   * objeto volta se o boneco for removido.
+   */
+  attachProp: (id: string, figureId: string, jointName: string) => void
+  /** Solta o objeto GRAVANDO a colocação de mundo atual — ele fica onde está, de volta a cenário. */
+  detachProp: (id: string) => void
+  /** Edita o offset da amarração direto (campos do painel), sem conversão de mundo. */
+  setPropAttachmentOffset: (
+    id: string,
+    offset: { position?: Vec3; rotation?: Partial<JointRotation> },
+  ) => void
 }
 
 const ZERO_ROTATION: JointRotation = { x: 0, y: 0, z: 0 }
@@ -880,6 +936,28 @@ function updateFigure(
   return figures.map((figure) => (figure.id === id ? update(figure) : figure))
 }
 
+/**
+ * A rotação da raiz escrita POR INTEIRO (x, y e z juntos) vem sempre de um
+ * quaternion decomposto em Euler — o gizmo de rotação e o solver de arrasto —,
+ * e essa decomposição só devolve o ramo de `|y| <= 90`: um boneco de costas
+ * que o slider guardou como `(0, 180, 0)` virava `(180, 0, 180)` no primeiro
+ * toque do gizmo. É a MESMA orientação, mas com os números embaralhados: o
+ * painel deixa de bater com o que o usuário digitou, e dois keyframes em ramos
+ * diferentes tombavam o boneco no meio do trecho (DECISOES.md #116.1).
+ *
+ * A escrita por EIXO (slider, teclado, gesto de torção) não tem ramo a
+ * escolher — passa intacta, inclusive fora de (-180, 180], como sempre foi.
+ */
+function alignWrittenRootRotation(
+  figures: readonly Figure[],
+  id: string,
+  rotation: Partial<JointRotation>,
+): Partial<JointRotation> {
+  if (rotation.x === undefined || rotation.y === undefined || rotation.z === undefined) return rotation
+  const figure = figures.find((candidate) => candidate.id === id)
+  return figure ? alignRootRotation(figure.rotation, rotation as JointRotation) : rotation
+}
+
 /** Espaçamento em X entre objetos de cena recém-criados, para não nascerem um dentro do outro. */
 const PROP_SPACING_M = 0.8
 
@@ -889,6 +967,22 @@ const PROP_SPACING_M = 0.8
  * barrada pela trava do objeto não empilhar um passo de histórico que não
  * desfaz coisa alguma (a `equality` do `zundo` compara por referência).
  */
+/**
+ * Colocação de MUNDO atual de um objeto: a derivada da junta quando amarrado
+ * (e o boneco/junta existem), a própria nos demais casos. É o que "amarrar em
+ * outra junta sem pular" e "soltar ficando onde está" têm em comum.
+ */
+function propWorldPlacement(prop: SceneProp, figures: readonly Figure[]): PropPlacement {
+  if (prop.attachment) {
+    const figure = figures.find((candidate) => candidate.id === prop.attachment?.figureId)
+    if (figure) {
+      const placement = attachedPropPlacement(figure, prop.attachment)
+      if (placement) return placement
+    }
+  }
+  return { position: prop.position, rotation: prop.rotation }
+}
+
 function updateProp(
   props: SceneProp[],
   id: string,
@@ -1188,6 +1282,120 @@ function clampScenes(scenes: SceneSnapshot[]): SceneSnapshot[] {
   return next.some((scene, index) => scene !== scenes[index]) ? next : scenes
 }
 
+/**
+ * Move o item de `id` dado `delta` posições dentro da lista (item 19) — o
+ * MESMO código serve ao catálogo de cenas e à biblioteca de animações. `null`
+ * quando não há o que fazer: id desconhecido ou movimento para fora da lista.
+ */
+function moveById<T extends { id: string }>(list: readonly T[], id: string, delta: number): T[] | null {
+  const from = list.findIndex((item) => item.id === id)
+  const to = from + delta
+  if (from < 0 || to < 0 || to >= list.length) return null
+  const next = [...list]
+  const [moved] = next.splice(from, 1)
+  next.splice(to, 0, moved)
+  return next
+}
+
+/**
+ * Profundidade do histórico de undo. Exportado porque o agrupador de gestos
+ * (`undoBatch.ts`) empilha o passo do gesto à mão e tem de respeitar o mesmo
+ * teto — ver DECISOES.md #118.
+ */
+export const UNDO_LIMIT = 100
+
+/**
+ * O recorte do estado que o histórico de undo enxerga.
+ *
+ * Seleção de boneco/junta/eixo ativo, navegação de câmera (fora deste store,
+ * ver `cameraStore.ts`) e `nextSnapshotNumber` ficam de fora — não são edição
+ * de conteúdo (ver PLANO.md > "Interação de pose", item 5). O contador de
+ * instantâneo em particular não pode "voltar" no undo: o arquivo
+ * correspondente já foi (ou seria) salvo em disco com aquele número, e
+ * desfazer o contador arriscaria sobrescrever esse arquivo na próxima captura.
+ *
+ * `cameraBookmarks`, `environment` (fundo/grade) e `sceneName` entram
+ * normalmente: o plano trata criar/remover bookmark e mudar a configuração da
+ * cena como edição de conteúdo igual a qualquer outra, e renomear a cena é
+ * análogo a renomear um boneco. Todos vivem neste store (em vez de stores
+ * próprios com `temporal` individual) porque o `zundo` mantém uma pilha de
+ * undo por store — só um único store consegue dar uma linha do tempo
+ * cronológica combinada (ver DECISOES.md #8). `scenes`/`nextSceneSnapshotSeq`
+ * (catálogo de snapshots do workspace) seguem a mesma regra — salvar/renomear/
+ * remover um snapshot é conteúdo; `activeSceneId` fica de fora, como
+ * `selectedFigureId` (é só um ponteiro de qual snapshot está carregado no
+ * momento, não conteúdo em si — ver DECISOES.md #11). `jointLimits` também
+ * fica de fora: é configuração do modelo que veio de um arquivo do workspace
+ * (não uma edição), e desfazê-la deixaria o espelho do store divergente dos
+ * limites realmente instalados no `skeleton.ts` — as poses que a troca de
+ * limites ajustar, essas sim, entram no histórico normal (ver DECISOES.md
+ * #29).
+ *
+ * `poseLibrary`/`nextPoseSeq` entram: salvar e remover uma pose da biblioteca
+ * é conteúdo do workspace, exatamente como salvar e remover um snapshot de
+ * cena. `jointLocks` fica de fora: travar uma junta não é edição do boneco, é
+ * um modo de trabalho — e desfazer uma edição não pode reabrir a proteção que
+ * o usuário fechou (DECISOES.md #42). `sceneCamera` fica de fora (fase 11):
+ * mover a câmera de cena é ENQUADRAR, como a órbita/pan/zoom do viewport —
+ * persiste com a cena (autosave/snapshots/arquivo de cena), mas um Ctrl+Z de
+ * pose não pode teleportar a câmera (decidido com o usuário).
+ *
+ * Os objetos de cena (item 42) entram no histórico como os bonecos: criar,
+ * mover, redimensionar e puxar um vértice são edições de conteúdo.
+ * `selectedPropId` fica de fora, como `selectedFigureId` — é ponteiro de
+ * seleção, não conteúdo. As opções "ocultar na bancada" e "travar" ficam
+ * DENTRO do objeto e, portanto, no histórico: são propriedades da cena, como a
+ * visibilidade do boneco (que também é desfazível), e não modo de trabalho por
+ * sessão como as travas de junta do #42.
+ */
+export function undoPartialize(state: FiguresState) {
+  return {
+    figures: state.figures,
+    nextFigureSeq: state.nextFigureSeq,
+    props: state.props,
+    nextPropSeq: state.nextPropSeq,
+    cameraBookmarks: state.cameraBookmarks,
+    nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
+    environment: state.environment,
+    sceneName: state.sceneName,
+    scenes: state.scenes,
+    nextSceneSnapshotSeq: state.nextSceneSnapshotSeq,
+    poseLibrary: state.poseLibrary,
+    nextPoseSeq: state.nextPoseSeq,
+    clipLibrary: state.clipLibrary,
+    nextClipSeq: state.nextClipSeq,
+    animations: state.animations,
+    nextAnimationSeq: state.nextAnimationSeq,
+  }
+}
+
+/** O retrato que o histórico guarda — o que `undoPartialize` devolve. */
+export type UndoTrackedState = ReturnType<typeof undoPartialize>
+
+/**
+ * "Nada mudou?" para o histórico. Toda ação do store faz atualização imutável
+ * (sempre cria um novo array/objeto ao mudar algo), então igualdade
+ * referencial basta para detectar "nada mudou" (ex.: só a seleção) e não
+ * empilhar histórico.
+ */
+export function undoEquality(past: UndoTrackedState, current: UndoTrackedState): boolean {
+  return (
+    past.figures === current.figures &&
+    past.nextFigureSeq === current.nextFigureSeq &&
+    past.props === current.props &&
+    past.nextPropSeq === current.nextPropSeq &&
+    past.cameraBookmarks === current.cameraBookmarks &&
+    past.nextCameraBookmarkSeq === current.nextCameraBookmarkSeq &&
+    past.environment === current.environment &&
+    past.sceneName === current.sceneName &&
+    past.scenes === current.scenes &&
+    past.nextSceneSnapshotSeq === current.nextSceneSnapshotSeq &&
+    past.poseLibrary === current.poseLibrary &&
+    past.clipLibrary === current.clipLibrary &&
+    past.animations === current.animations
+  )
+}
+
 export const useFiguresStore = create<FiguresState>()(
   temporal(
     (set, get) => ({
@@ -1249,6 +1457,13 @@ export const useFiguresStore = create<FiguresState>()(
       removeFigure: (id) => {
         set((state) => ({
           figures: state.figures.filter((figure) => figure.id !== id),
+          // Objeto amarrado ao boneco removido volta à PRÓPRIA colocação
+          // (decisão do usuário): a amarração sai, o objeto fica na cena.
+          props: state.props.some((prop) => prop.attachment?.figureId === id)
+            ? state.props.map((prop) =>
+                prop.attachment?.figureId === id ? { ...prop, attachment: null } : prop,
+              )
+            : state.props,
           // Travas e âncoras são por boneco: sem o boneco, ficariam órfãs
           // esperando um id que volta a ser usado.
           jointLocks: clearFigureLocks(state.jointLocks, id),
@@ -1378,7 +1593,7 @@ export const useFiguresStore = create<FiguresState>()(
           // o caminho de TODA edição direta da rotação da raiz: slider, ajuste
           // fino, teclado e o gesto de torção do módulo de poses.
           const lockedAxes = getLockedRootAxes(state.jointLocks, id)
-          const allowed = { ...rotation }
+          const allowed = { ...alignWrittenRootRotation(state.figures, id, rotation) }
           for (const axis of lockedAxes) delete allowed[axis]
           if (Object.keys(allowed).length === 0) return {}
           return {
@@ -1438,7 +1653,11 @@ export const useFiguresStore = create<FiguresState>()(
           // escrita — o solver já o preserva, mas a regra mora no store.
           const applyRoot = rootRotation != null && !isPlacementPinned(state.jointPins, id)
           const lockedRootAxes = getLockedRootAxes(state.jointLocks, id)
-          const allowedRoot = applyRoot ? { ...rootRotation } : null
+          // A raiz vinda do solver de arrasto também nasce de um quaternion
+          // decomposto — mesmo realinhamento do gizmo (#116.1).
+          const allowedRoot = applyRoot
+            ? { ...alignWrittenRootRotation(state.figures, id, rootRotation!) }
+            : null
           if (allowedRoot) for (const axis of lockedRootAxes) delete allowedRoot[axis]
           return {
             figures: updateFigure(state.figures, id, (figure) => {
@@ -1662,6 +1881,13 @@ export const useFiguresStore = create<FiguresState>()(
         }))
       },
 
+      moveSceneSnapshot: (id, delta) => {
+        set((state) => {
+          const scenes = moveById(state.scenes, id, delta)
+          return scenes ? { scenes } : {}
+        })
+      },
+
       removeSceneSnapshot: (id) => {
         set((state) => ({
           scenes: state.scenes.filter((scene) => scene.id !== id),
@@ -1689,6 +1915,18 @@ export const useFiguresStore = create<FiguresState>()(
           selectedJointName: null,
           activeAxis: null,
         }))
+      },
+
+      applyInferredPose: (id, pose) => {
+        set((state) => {
+          const locked = effectiveLockedJoints(state, id)
+          return {
+            figures: updateFigure(state.figures, id, (figure) => ({
+              ...figure,
+              pose: mergeLockedJoints(figure.pose, pose, locked),
+            })),
+          }
+        })
       },
 
       applyImportedFigurePose: (id, imported) => {
@@ -2154,6 +2392,26 @@ export const useFiguresStore = create<FiguresState>()(
         set((state) => ({ animations: state.animations.filter((animation) => animation.id !== id) }))
       },
 
+      moveSavedAnimation: (id, delta) => {
+        set((state) => {
+          // Mover a de trabalho não faz sentido (o combo nem a lista) — e o
+          // movimento acontece SÓ entre as salvas: a lista é remontada com a
+          // de trabalho de volta na posição absoluta em que estava.
+          if (id === WORKING_ANIMATION_ID) return {}
+          const saved = moveById(savedAnimations(state.animations), id, delta)
+          if (!saved) return {}
+
+          const workingIndex = state.animations.findIndex(
+            (animation) => animation.id === WORKING_ANIMATION_ID,
+          )
+          const animations: Animation[] = [...saved]
+          if (workingIndex >= 0) {
+            animations.splice(Math.min(workingIndex, animations.length), 0, state.animations[workingIndex])
+          }
+          return { animations }
+        })
+      },
+
       saveAnimationToLibrary: (name) => {
         const { animations, nextAnimationSeq } = get()
         const working = findWorkingAnimation(animations)
@@ -2258,13 +2516,15 @@ export const useFiguresStore = create<FiguresState>()(
 
         // A câmera vem do `splitCameraView`, e não da amostra: a única
         // diferença é o topo da tela guardado sem reendireitar, que é o que
-        // mantém a inclinação lateral idêntica nas duas metades.
+        // mantém a inclinação lateral idêntica nas duas metades. O `t` do corte
+        // passa pela MESMA curva do trecho (item 26): o retrato guardado tem de
+        // ser o que a animação mostrava naquele instante.
         const from = animation.keyframes[split.index - 1]
         const to = animation.keyframes[split.index]
         const camera = splitCameraView(
           from.camera,
           to.camera,
-          split.durationMs / (split.durationMs + split.nextDurationMs),
+          applyEasing(split.durationMs / (split.durationMs + split.nextDurationMs), to.easing),
         )
 
         const keyframeId = nextKeyframeIdFor(animation)
@@ -2280,17 +2540,25 @@ export const useFiguresStore = create<FiguresState>()(
         }
 
         set((state) => ({
-          animations: updateAnimation(state.animations, animationId, (current) => ({
-            ...current,
-            keyframes: [
-              ...current.keyframes.slice(0, split.index),
-              inserted,
-              // O resto do trecho cortado fica com o keyframe seguinte: o total
-              // da animação e o instante de todos os outros não se mexem.
-              { ...current.keyframes[split.index], durationMs: split.nextDurationMs },
-              ...current.keyframes.slice(split.index + 1),
-            ],
-          })),
+          animations: updateAnimation(state.animations, animationId, (current) => {
+            // O resto do trecho cortado fica com o keyframe seguinte: o total
+            // da animação e o instante de todos os outros não se mexem. Num
+            // trecho SUAVIZADO, as duas metades assumem linear (decisão do
+            // item 26): duas metades reinterpoladas não reproduzem a curva
+            // original, e fingir que sim seria pior que avisar — o painel
+            // avisa antes de inserir.
+            const next = { ...current.keyframes[split.index], durationMs: split.nextDurationMs }
+            delete next.easing
+            return {
+              ...current,
+              keyframes: [
+                ...current.keyframes.slice(0, split.index),
+                inserted,
+                next,
+                ...current.keyframes.slice(split.index + 1),
+              ],
+            }
+          }),
         }))
         return keyframeId
       },
@@ -2460,6 +2728,27 @@ export const useFiguresStore = create<FiguresState>()(
         }))
       },
 
+      moveAnimationKeyframeBlock: (animationId, keyframeId, direction) => {
+        set((state) => {
+          const animation = state.animations.find((candidate) => candidate.id === animationId)
+          if (!animation) return {}
+          const index = animation.keyframes.findIndex((keyframe) => keyframe.id === keyframeId)
+          if (index < 0) return {}
+          const keyframes = moveKeyframeBlock(animation.keyframes, index, direction)
+          // Mesma lista = nada se moveu (bloco na ponta). Sair ANTES do
+          // `updateAnimation` é o que evita o passo de undo que não desfaz nada:
+          // o `map` devolveria um array novo mesmo com todos os itens iguais, e
+          // a `equality` do zundo compara `animations` por referência.
+          if (keyframes === animation.keyframes) return {}
+          return {
+            animations: updateAnimation(state.animations, animationId, (current) => ({
+              ...current,
+              keyframes: [...keyframes],
+            })),
+          }
+        })
+      },
+
       setAnimationKeyframeDuration: (animationId, keyframeId, durationMs) => {
         set((state) => ({
           animations: updateAnimation(state.animations, animationId, (animation) => ({
@@ -2469,6 +2758,23 @@ export const useFiguresStore = create<FiguresState>()(
                 ? { ...keyframe, durationMs: clampKeyframeDuration(durationMs) }
                 : keyframe,
             ),
+          })),
+        }))
+      },
+
+      setAnimationKeyframeEasing: (animationId, keyframeId, easing) => {
+        set((state) => ({
+          animations: updateAnimation(state.animations, animationId, (animation) => ({
+            ...animation,
+            keyframes: animation.keyframes.map((keyframe) => {
+              if (keyframe.id !== keyframeId) return keyframe
+              if (easing === 'linear') {
+                const linear = { ...keyframe }
+                delete linear.easing
+                return linear
+              }
+              return { ...keyframe, easing }
+            }),
           })),
         }))
       },
@@ -2827,6 +3133,7 @@ export const useFiguresStore = create<FiguresState>()(
           rotation: { ...ZERO_ROTATION },
           size: DEFAULT_PROP_SIZE[shape],
           vertexOffsets: {},
+          attachment: null,
         }
 
         // Nasce APOIADO no chão e deslocado em X: um objeto novo enterrado
@@ -2871,6 +3178,10 @@ export const useFiguresStore = create<FiguresState>()(
           // Os vértices arrastados vêm junto: a cópia existe justamente para
           // reaproveitar a forma que deu trabalho.
           vertexOffsets: { ...original.vertexOffsets },
+          // A cópia nasce SOLTA: duas espadas amarradas no mesmo offset se
+          // sobreporiam perfeitamente — invisível e inútil. Quem quer a cópia
+          // na outra mão amarra depois, e ela nasce ao lado, visível.
+          attachment: null,
           position: [
             original.position[0] + Math.max(original.size[0], PROP_SPACING_M),
             original.position[1],
@@ -2908,17 +3219,45 @@ export const useFiguresStore = create<FiguresState>()(
         }))
       },
 
+      // As duas ações abaixo recebem a intenção em MUNDO (é o que o gizmo
+      // produz). Num objeto amarrado, o arrasto vira OFFSET relativo à junta
+      // (decisão do usuário: o gizmo normal edita o offset), e a colocação
+      // própria — aquela à qual o objeto volta sem o boneco — fica intacta.
       setPropPosition: (id, position) => {
         set((state) => ({
-          props: updateProp(state.props, id, (prop) => (prop.locked ? prop : { ...prop, position })),
+          props: updateProp(state.props, id, (prop) => {
+            if (prop.locked) return prop
+            if (!prop.attachment) return { ...prop, position }
+
+            const figure = state.figures.find((candidate) => candidate.id === prop.attachment?.figureId)
+            if (!figure) return { ...prop, position }
+            const offset = placementToAttachmentOffset(figure, prop.attachment.jointName, {
+              position,
+              rotation: ZERO_ROTATION,
+            })
+            if (!offset) return prop
+            return { ...prop, attachment: { ...prop.attachment, position: offset.position } }
+          }),
         }))
       },
 
       setPropRotation: (id, rotation) => {
         set((state) => ({
-          props: updateProp(state.props, id, (prop) =>
-            prop.locked ? prop : { ...prop, rotation: { ...prop.rotation, ...rotation } },
-          ),
+          props: updateProp(state.props, id, (prop) => {
+            if (prop.locked) return prop
+            if (!prop.attachment) return { ...prop, rotation: { ...prop.rotation, ...rotation } }
+
+            const figure = state.figures.find((candidate) => candidate.id === prop.attachment?.figureId)
+            if (!figure) return { ...prop, rotation: { ...prop.rotation, ...rotation } }
+            const current = attachedPropPlacement(figure, prop.attachment)
+            if (!current) return prop
+            const offset = placementToAttachmentOffset(figure, prop.attachment.jointName, {
+              position: [0, 0, 0],
+              rotation: { ...current.rotation, ...rotation },
+            })
+            if (!offset) return prop
+            return { ...prop, attachment: { ...prop.attachment, rotation: offset.rotation } }
+          }),
         }))
       },
 
@@ -2964,6 +3303,8 @@ export const useFiguresStore = create<FiguresState>()(
         set((state) => {
           const target = state.props.find((prop) => prop.id === id)
           if (!target || target.locked) return {}
+          // Forma composta (kit de armas) é modelo íntegro: sem vértice livre.
+          if (!propShapeHasFreeVertex(target.shape)) return {}
           if (!Number.isInteger(index) || index < 0 || index >= controlPointCount(target.shape)) return {}
 
           // O store guarda o DESVIO, não a posição: assim o objeto continua
@@ -2998,7 +3339,8 @@ export const useFiguresStore = create<FiguresState>()(
       seatPropOnGround: (id) => {
         set((state) => ({
           props: updateProp(state.props, id, (prop) =>
-            prop.locked
+            // Amarrado, quem manda na colocação é a junta — apoiar não faz nada.
+            prop.locked || prop.attachment
               ? prop
               : { ...prop, position: [prop.position[0], propGroundOffset(prop), prop.position[2]] },
           ),
@@ -3009,6 +3351,58 @@ export const useFiguresStore = create<FiguresState>()(
         // Objeto travado não é selecionável — é justamente o que a trava promete.
         if (id !== null && get().props.find((prop) => prop.id === id)?.locked) return
         set({ selectedPropId: id, selectedFigureId: null, selectedJointName: null, activeAxis: null })
+      },
+
+      attachProp: (id, figureId, jointName) => {
+        set((state) => {
+          const figure = state.figures.find((candidate) => candidate.id === figureId)
+          if (!figure || !JOINT_NAMES.includes(jointName)) return {}
+
+          return {
+            props: updateProp(state.props, id, (prop) => {
+              if (prop.locked) return prop
+              // O offset nasce da colocação de mundo ATUAL (própria ou da
+              // amarração anterior): amarrar — ou trocar de junta — não pula.
+              const world = propWorldPlacement(prop, state.figures)
+              const offset = placementToAttachmentOffset(figure, jointName, world)
+              if (!offset) return prop
+              return {
+                ...prop,
+                attachment: { figureId, jointName, position: offset.position, rotation: offset.rotation },
+              }
+            }),
+          }
+        })
+      },
+
+      detachProp: (id) => {
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) => {
+            if (prop.locked || !prop.attachment) return prop
+            // Soltar grava a colocação de mundo: o objeto fica onde está.
+            // (Remover o BONECO é o caso oposto: lá a amarração é podada e o
+            // objeto volta à própria colocação — ver `removeFigure`.)
+            const world = propWorldPlacement(prop, state.figures)
+            return { ...prop, attachment: null, position: world.position, rotation: world.rotation }
+          }),
+        }))
+      },
+
+      setPropAttachmentOffset: (id, offset) => {
+        set((state) => ({
+          props: updateProp(state.props, id, (prop) =>
+            prop.locked || !prop.attachment
+              ? prop
+              : {
+                  ...prop,
+                  attachment: {
+                    ...prop.attachment,
+                    position: offset.position ?? prop.attachment.position,
+                    rotation: { ...prop.attachment.rotation, ...offset.rotation },
+                  },
+                },
+          ),
+        }))
       },
 
       toggleJointLock: (figureId, jointName) => {
@@ -3028,82 +3422,12 @@ export const useFiguresStore = create<FiguresState>()(
       },
     }),
     {
-      // Seleção de boneco/junta/eixo ativo, navegação de câmera (fora deste
-      // store, ver `cameraStore.ts`) e `nextSnapshotNumber` ficam fora do
-      // histórico de undo — não são edição de conteúdo (ver PLANO.md >
-      // "Interação de pose", item 5). O contador de instantâneo em particular
-      // não pode "voltar" no undo: o arquivo correspondente já foi (ou seria)
-      // salvo em disco com aquele número, e desfazer o contador arriscaria
-      // sobrescrever esse arquivo na próxima captura.
-      // `cameraBookmarks`, `environment` (fundo/grade) e `sceneName` entram
-      // normalmente: o plano trata criar/remover bookmark e mudar a
-      // configuração da cena como edição de conteúdo igual a qualquer outra,
-      // e renomear a cena é análogo a renomear um boneco. Todos vivem neste
-      // store (em vez de stores próprios com `temporal` individual) porque o
-      // `zundo` mantém uma pilha de undo por store — só um único store
-      // consegue dar uma linha do tempo cronológica combinada (ver
-      // DECISOES.md #8). `scenes`/`nextSceneSnapshotSeq` (catálogo de
-      // snapshots do workspace) seguem a mesma regra — salvar/renomear/
-      // remover um snapshot é conteúdo; `activeSceneId` fica de fora, como
-      // `selectedFigureId` (é só um ponteiro de qual snapshot está carregado
-      // no momento, não conteúdo em si — ver DECISOES.md #11). `jointLimits`
-      // também fica de fora: é configuração do modelo que veio de um arquivo do
-      // workspace (não uma edição), e desfazê-la deixaria o espelho do store
-      // divergente dos limites realmente instalados no `skeleton.ts` — as poses
-      // que a troca de limites ajustar, essas sim, entram no histórico normal
-      // (ver DECISOES.md #29).
-      // `poseLibrary`/`nextPoseSeq` entram: salvar e remover uma pose da
-      // biblioteca é conteúdo do workspace, exatamente como salvar e remover
-      // um snapshot de cena. `jointLocks` fica de fora: travar uma junta não é
-      // edição do boneco, é um modo de trabalho — e desfazer uma edição não
-      // pode reabrir a proteção que o usuário fechou (DECISOES.md #42).
-      // `sceneCamera` fica de fora (fase 11): mover a câmera de cena é
-      // ENQUADRAR, como a órbita/pan/zoom do viewport — persiste com a cena
-      // (autosave/snapshots/arquivo de cena), mas um Ctrl+Z de pose não pode teleportar a
-      // câmera (decidido com o usuário).
-      // Os objetos de cena (item 42) entram no histórico como os bonecos:
-      // criar, mover, redimensionar e puxar um vértice são edições de conteúdo.
-      // `selectedPropId` fica de fora, como `selectedFigureId` — é ponteiro de
-      // seleção, não conteúdo. As opções "ocultar na bancada" e "travar" ficam
-      // DENTRO do objeto e, portanto, no histórico: são propriedades da cena,
-      // como a visibilidade do boneco (que também é desfazível), e não modo de
-      // trabalho por sessão como as travas de junta do #42.
-      partialize: (state) => ({
-        figures: state.figures,
-        nextFigureSeq: state.nextFigureSeq,
-        props: state.props,
-        nextPropSeq: state.nextPropSeq,
-        cameraBookmarks: state.cameraBookmarks,
-        nextCameraBookmarkSeq: state.nextCameraBookmarkSeq,
-        environment: state.environment,
-        sceneName: state.sceneName,
-        scenes: state.scenes,
-        nextSceneSnapshotSeq: state.nextSceneSnapshotSeq,
-        poseLibrary: state.poseLibrary,
-        nextPoseSeq: state.nextPoseSeq,
-        clipLibrary: state.clipLibrary,
-        nextClipSeq: state.nextClipSeq,
-        animations: state.animations,
-        nextAnimationSeq: state.nextAnimationSeq,
-      }),
-      // Toda ação do store faz atualização imutável (sempre cria um novo
-      // array/objeto ao mudar algo), então igualdade referencial basta para
-      // detectar "nada mudou" (ex.: só a seleção) e não empilhar histórico.
-      equality: (past, current) =>
-        past.figures === current.figures &&
-        past.nextFigureSeq === current.nextFigureSeq &&
-        past.props === current.props &&
-        past.nextPropSeq === current.nextPropSeq &&
-        past.cameraBookmarks === current.cameraBookmarks &&
-        past.nextCameraBookmarkSeq === current.nextCameraBookmarkSeq &&
-        past.environment === current.environment &&
-        past.sceneName === current.sceneName &&
-        past.scenes === current.scenes &&
-        past.nextSceneSnapshotSeq === current.nextSceneSnapshotSeq &&
-        past.poseLibrary === current.poseLibrary &&
-        past.clipLibrary === current.clipLibrary &&
-        past.animations === current.animations,
-      limit: 100,
+      // O recorte e a comparação moram acima, em `undoPartialize` e
+      // `undoEquality` — o agrupador de gestos (`undoBatch.ts`, DECISOES.md
+      // #118) empilha o passo do arrasto à mão e precisa dos MESMOS dois.
+      partialize: undoPartialize,
+      equality: undoEquality,
+      limit: UNDO_LIMIT,
     },
   ),
 )

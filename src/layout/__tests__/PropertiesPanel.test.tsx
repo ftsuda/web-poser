@@ -75,6 +75,30 @@ describe('PropertiesPanel', () => {
       expect(useFiguresStore.getState().figures[0].rotation.y).toBeCloseTo(45, 2)
     })
 
+    it('arrastar o slider é UM passo de undo, e ele volta ao valor de antes do arrasto (DECISOES.md #118)', async () => {
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+      useFiguresStore.temporal.getState().clear()
+
+      const rotationGroup = screen.getByRole('group', { name: 'Rotação (°)' })
+      const rotationY = within(rotationGroup).getByRole('slider', { name: 'Y' })
+
+      fireEvent.pointerDown(rotationY)
+      for (const value of ['10', '20', '30', '40', '50']) {
+        fireEvent.change(rotationY, { target: { value } })
+      }
+      // Enquanto o botão está pressionado, o histórico não registra nada.
+      expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
+      fireEvent.pointerUp(rotationY)
+
+      expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(1)
+      expect(useFiguresStore.getState().figures[0].rotation.y).toBeCloseTo(50, 2)
+
+      act(() => useFiguresStore.temporal.getState().undo())
+      expect(useFiguresStore.getState().figures[0].rotation.y).toBeCloseTo(0, 2)
+    })
+
     it('gives the root rotation sliders a full turn of range and the gizmo axis colors (fase 9, itens 9 e 13)', async () => {
       const id = useFiguresStore.getState().addFigure('Herói') as string
       useFiguresStore.getState().selectFigure(id)
@@ -135,6 +159,27 @@ describe('PropertiesPanel', () => {
       const figure = useFiguresStore.getState().figures[0]
       expect(figure.pose['hip.L'].x).toBeLessThan(0)
       expect(figure.pose['knee.L'].x).toBeGreaterThan(0)
+    })
+
+    it('filtra a lista de poses pelo nome, sem acento, mantendo a escolhida visível (item 35)', async () => {
+      const user = userEvent.setup()
+      const id = useFiguresStore.getState().addFigure('Herói') as string
+      useFiguresStore.getState().selectFigure(id)
+      await renderPropertiesPanel()
+
+      const combo = screen.getByRole('combobox', { name: 'Poses predefinidas' })
+      expect(within(combo).getByRole('option', { name: 'Correndo' })).toBeInTheDocument()
+
+      await user.type(screen.getByLabelText('Filtrar poses'), 'sentado')
+
+      expect(within(combo).queryByRole('option', { name: 'Correndo' })).not.toBeInTheDocument()
+      expect(within(combo).getByRole('option', { name: 'Sentado' })).toBeInTheDocument()
+      // "Sentado, pernas esticadas" (grupo Chão) também casa — o filtro vale
+      // para todos os grupos, não só para o primeiro.
+      expect(within(combo).getByRole('option', { name: 'Sentado, pernas esticadas' })).toBeInTheDocument()
+      // A escolhida ("Em pé", o default) nunca some do combo, senão ele
+      // ficaria em branco no meio da digitação.
+      expect(within(combo).getByRole('option', { name: 'Em pé' })).toBeInTheDocument()
     })
 
     it('applies the T-pose (palms down) through the store when the T-pose button is clicked', async () => {

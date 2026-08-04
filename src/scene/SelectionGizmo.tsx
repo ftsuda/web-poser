@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { getLockedRootAxes } from '../figure/jointLocks'
 import { ROOT_JOINT_NAME, getJointAxes } from '../figure/skeleton'
 import { useFiguresStore } from '../store/figuresStore'
+import { beginUndoBatch, endUndoBatch } from '../store/undoBatch'
 import type { GizmoMode } from '../store/uiStore'
 
 export interface SelectionGizmoProps {
@@ -82,8 +83,15 @@ export function SelectionGizmo({
       showY={axes.includes('y')}
       showZ={axes.includes('z')}
       onObjectChange={handleObjectChange}
-      onMouseDown={() => onDraggingChange?.(true)}
-      onMouseUp={() => onDraggingChange?.(false)}
+      // Mover ou girar é um gesto só, e um passo de undo só (DECISOES.md #118).
+      onMouseDown={() => {
+        beginUndoBatch()
+        onDraggingChange?.(true)
+      }}
+      onMouseUp={() => {
+        endUndoBatch()
+        onDraggingChange?.(false)
+      }}
     />
   )
 }

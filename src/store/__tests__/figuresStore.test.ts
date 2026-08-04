@@ -13,6 +13,7 @@ import { figureBlendState, resolveBlendTarget } from '../../figure/poseBlend'
 import { mirrorRotation } from '../../figure/poseMirror'
 import { resolvePosePreset, resolvePosePresetPlacement } from '../../figure/posePresets'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
+import { findWorkingAnimation, savedAnimations } from '../../animation/animation'
 import { COLOR_PALETTE, MAX_FIGURES, useFiguresStore } from '../figuresStore'
 
 describe('figuresStore', () => {
@@ -287,6 +288,50 @@ describe('figuresStore', () => {
     const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
     expect(figure?.position).toEqual([1, 0, -2])
     expect(figure?.rotation.y).toBe(999)
+  })
+
+  /**
+   * O gizmo escreve QUATERNION e o three decompõe em Euler XYZ, que só devolve
+   * `|y| <= 90`: um boneco de costas que o slider guardou como `(0, 180, 0)`
+   * virava `(180, 0, 180)` assim que o gizmo encostava. Mesma pose, outros
+   * números — e keyframes com ramos diferentes tombavam na animação (#116.1).
+   */
+  it('a rotação da raiz escrita POR INTEIRO volta ao ramo do Euler que o boneco já usava', () => {
+    const { addFigure, setRootRotation } = useFiguresStore.getState()
+    const id = addFigure() as string
+    setRootRotation(id, { x: 0, y: 180, z: 0 })
+
+    // O que o gizmo entrega para uma virada de -135°.
+    setRootRotation(id, { x: -180, y: -45, z: -180 })
+
+    const rotation = useFiguresStore.getState().figures.find((f) => f.id === id)!.rotation
+    expect(rotation).toEqual({ x: 0, y: -135, z: 0 })
+  })
+
+  it('a escrita por EIXO (slider, teclado) não é realinhada — não há ramo a escolher', () => {
+    const { addFigure, setRootRotation } = useFiguresStore.getState()
+    const id = addFigure() as string
+    setRootRotation(id, { x: 0, y: 180, z: 0 })
+    setRootRotation(id, { y: -135 })
+
+    expect(useFiguresStore.getState().figures.find((f) => f.id === id)!.rotation).toEqual({
+      x: 0,
+      y: -135,
+      z: 0,
+    })
+  })
+
+  it('escrita por inteiro já no mesmo ramo passa intacta', () => {
+    const { addFigure, setRootRotation } = useFiguresStore.getState()
+    const id = addFigure() as string
+    setRootRotation(id, { x: 10, y: 20, z: 30 })
+    setRootRotation(id, { x: 12, y: 25, z: 28 })
+
+    expect(useFiguresStore.getState().figures.find((f) => f.id === id)!.rotation).toEqual({
+      x: 12,
+      y: 25,
+      z: 28,
+    })
   })
 })
 
@@ -681,6 +726,52 @@ describe('figuresStore — workspace: catálogo de snapshots de cena', () => {
     const second = saveSceneSnapshot('B')
     expect(first).not.toBe(second)
     expect(useFiguresStore.getState().scenes).toHaveLength(2)
+  })
+
+  it('moveSceneSnapshot reordena o catálogo, ignora as bordas e entra no undo (item 19)', () => {
+    const { saveSceneSnapshot } = useFiguresStore.getState()
+    const a = saveSceneSnapshot('A')
+    const b = saveSceneSnapshot('B')
+    const c = saveSceneSnapshot('C')
+    useFiguresStore.temporal.getState().clear()
+
+    useFiguresStore.getState().moveSceneSnapshot(c, -1)
+    expect(useFiguresStore.getState().scenes.map((scene) => scene.id)).toEqual([a, c, b])
+
+    // Nas bordas (e com id desconhecido) nada muda — nem entra passo de undo.
+    useFiguresStore.getState().moveSceneSnapshot(a, -1)
+    useFiguresStore.getState().moveSceneSnapshot(b, 1)
+    useFiguresStore.getState().moveSceneSnapshot('scene-inexistente', 1)
+    expect(useFiguresStore.getState().scenes.map((scene) => scene.id)).toEqual([a, c, b])
+
+    // Reordenar é conteúdo do workspace: Ctrl+Z devolve a ordem anterior.
+    useFiguresStore.temporal.getState().undo()
+    expect(useFiguresStore.getState().scenes.map((scene) => scene.id)).toEqual([a, b, c])
+  })
+
+  it('moveSavedAnimation reordena só a biblioteca, sem tocar na animação de trabalho (item 19)', () => {
+    const { createAnimation } = useFiguresStore.getState()
+    // A de trabalho existe junto: mover uma salva não pode deslocá-la.
+    useFiguresStore.getState().addFigure()
+    useFiguresStore.getState().addAnimationKeyframe(null, {
+      position: [0, 0, 5],
+      target: [0, 0, 0],
+      up: [0, 1, 0],
+      focalMm: 50,
+    })
+    const a = createAnimation('A')
+    const b = createAnimation('B')
+
+    useFiguresStore.getState().moveSavedAnimation(b, -1)
+
+    const state = useFiguresStore.getState()
+    expect(savedAnimations(state.animations).map((animation) => animation.id)).toEqual([b, a])
+    expect(findWorkingAnimation(state.animations)).not.toBeNull()
+
+    // Bordas e id desconhecido: sem efeito.
+    useFiguresStore.getState().moveSavedAnimation(b, -1)
+    useFiguresStore.getState().moveSavedAnimation(a, 1)
+    expect(savedAnimations(useFiguresStore.getState().animations).map((animation) => animation.id)).toEqual([b, a])
   })
 
   it('loadSceneSnapshot replaces the working figures/environment/bookmarks and clears selection', () => {
@@ -2267,5 +2358,35 @@ describe('figuresStore — copiar pose entre bonecos', () => {
     useFiguresStore.getState().copyFigurePose('nao-existe', origem)
 
     expect(figureById(origem)).toBe(antes)
+  })
+
+  describe('pose inferida da marcação sobre a foto (PLANO.md > pose por marcação manual)', () => {
+    it('aplica só a pose: a colocação (alinhamento manual do root) fica intacta', () => {
+      const id = useFiguresStore.getState().addFigure() as string
+      useFiguresStore.getState().setPosition(id, [0.7, 0.1, -0.4])
+      useFiguresStore.getState().setRootRotation(id, { y: 45 })
+      const antes = figureById(id)
+
+      useFiguresStore.getState().applyInferredPose(id, { 'elbow.L': { x: -60, y: 90, z: 0 } })
+
+      const depois = figureById(id)
+      expect(depois.position).toEqual(antes.position)
+      expect(depois.rotation).toEqual(antes.rotation)
+      expect(depois.pose['elbow.L']).toEqual({ x: -60, y: 90, z: 0 })
+    })
+
+    it('junta travada não muda por nada automático (#42) — nem pela inferência', () => {
+      const id = useFiguresStore.getState().addFigure() as string
+      useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: 45 })
+      useFiguresStore.getState().toggleJointLock(id, 'knee.L')
+
+      useFiguresStore.getState().applyInferredPose(id, {
+        'knee.L': { x: 120, y: 0, z: 0 },
+        'knee.R': { x: 120, y: 0, z: 0 },
+      })
+
+      expect(figureById(id).pose['knee.L'].x).toBe(45)
+      expect(figureById(id).pose['knee.R'].x).toBe(120)
+    })
   })
 })

@@ -425,6 +425,61 @@ describe('figuresStore — inserir keyframe intermediário', () => {
   })
 })
 
+describe('figuresStore — easing por trecho (item 26)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  function animacaoDeDoisKeyframes() {
+    const { addFigure, createAnimation } = useFiguresStore.getState()
+    const figureId = addFigure()!
+    const id = createAnimation('Suave')
+    useFiguresStore.getState().addAnimationKeyframe(id, camera)
+    useFiguresStore.getState().setPosition(figureId, [4, 0, 0])
+    useFiguresStore.getState().addAnimationKeyframe(id, camera)
+    return id
+  }
+
+  it('setAnimationKeyframeEasing grava a curva; escolher "linear" remove o campo', () => {
+    const id = animacaoDeDoisKeyframes()
+    const alvo = animacao(id).keyframes[1].id
+
+    useFiguresStore.getState().setAnimationKeyframeEasing(id, alvo, 'easeInOut')
+    expect(animacao(id).keyframes[1].easing).toBe('easeInOut')
+
+    useFiguresStore.getState().setAnimationKeyframeEasing(id, alvo, 'linear')
+    expect('easing' in animacao(id).keyframes[1]).toBe(false)
+  })
+
+  it('a reprodução respeita a curva: a um quarto do trecho suavizado o boneco andou menos', () => {
+    const id = animacaoDeDoisKeyframes()
+    useFiguresStore.getState().setAnimationKeyframeEasing(id, animacao(id).keyframes[1].id, 'easeInOut')
+
+    expect(sampleAnimation(animacao(id), 250)!.figures[0].position[0]).toBeCloseTo(4 * 0.15625, 9)
+  })
+
+  it('inserir num trecho suavizado: o retrato é o do instante SUAVIZADO, e as duas metades viram lineares (decisão do item 26)', () => {
+    const id = animacaoDeDoisKeyframes()
+    const seguinte = animacao(id).keyframes[1].id
+    useFiguresStore.getState().setAnimationKeyframeEasing(id, seguinte, 'easeInOut')
+
+    // O que a animação MOSTRAVA aos 250 ms, com a curva em vigor.
+    const amostra = sampleAnimation(animacao(id), 250)!
+
+    const novo = useFiguresStore.getState().insertAnimationKeyframeAt(id, 250)!
+
+    const { keyframes } = animacao(id)
+    const inserido = keyframes.find((k) => k.id === novo)!
+    expect(inserido.figures).toEqual(amostra.figures)
+    // As duas metades assumem linear — reinterpolar as metades de uma curva
+    // suave em linha reta é a saída honesta e barata registrada no plano; o
+    // painel avisa antes de inserir.
+    expect('easing' in inserido).toBe(false)
+    expect('easing' in keyframes.find((k) => k.id === seguinte)!).toBe(false)
+  })
+})
+
 /**
  * Copiar a câmera de um keyframe vizinho: é o gesto de "segura o
  * enquadramento" — deixar a câmera parada num trecho enquanto só os bonecos se
@@ -989,6 +1044,37 @@ describe('figuresStore — grupos rotulados de keyframes', () => {
     const { keyframes } = animacao(id)
     expect(keyframes[2]).not.toHaveProperty('label')
     expect(keyframes[2].figures).toBe(keyframes[0].figures)
+  })
+
+  /** Item novo (#117): o cabeçalho do grupo move o BLOCO, não o keyframe. */
+  it('move o bloco nomeado inteiro, pulando o vizinho inteiro', () => {
+    const id = comKeyframes(5)
+    for (const key of ['k1', 'k2', 'k3']) {
+      useFiguresStore.getState().setAnimationKeyframeLabel(id, key, 'Andando')
+    }
+    for (const key of ['k4', 'k5']) {
+      useFiguresStore.getState().setAnimationKeyframeLabel(id, key, 'Correndo')
+    }
+
+    // Pega qualquer keyframe do bloco: quem anda é o bloco.
+    useFiguresStore.getState().moveAnimationKeyframeBlock(id, 'k5', -1)
+    expect(animacao(id).keyframes.map((k) => k.id)).toEqual(['k4', 'k5', 'k1', 'k2', 'k3'])
+
+    // E volta ao lugar descendo.
+    useFiguresStore.getState().moveAnimationKeyframeBlock(id, 'k4', 1)
+    expect(animacao(id).keyframes.map((k) => k.id)).toEqual(['k1', 'k2', 'k3', 'k4', 'k5'])
+  })
+
+  it('bloco na ponta não se move, e não empilha passo de undo', () => {
+    const id = comKeyframes(2)
+    useFiguresStore.getState().setAnimationKeyframeLabel(id, 'k1', 'Andando')
+    const antes = animacao(id).keyframes
+    const passos = useFiguresStore.temporal.getState().pastStates.length
+
+    useFiguresStore.getState().moveAnimationKeyframeBlock(id, 'k1', -1)
+
+    expect(animacao(id).keyframes).toBe(antes)
+    expect(useFiguresStore.temporal.getState().pastStates.length).toBe(passos)
   })
 
   it('ignora keyframe e animação inexistentes, sem lançar', () => {

@@ -80,3 +80,28 @@ describe('uiStore — casca visual do boneco (DECISOES.md #81)', () => {
     expect(gravado.rulerVisible).toBe(true)
   })
 })
+
+describe('uiStore — modo silhueta (item 8)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  it('nasce desligado e alterna, gravando a preferência (modo de tela, como a casca)', () => {
+    expect(useUIStore.getState().figureSilhouette).toBe(false)
+
+    useUIStore.getState().toggleFigureSilhouette()
+
+    expect(useUIStore.getState().figureSilhouette).toBe(true)
+    expect(JSON.parse(localStorage.getItem('webposer:ui:v1') ?? '{}').figureSilhouette).toBe(true)
+  })
+
+  it('gravar a silhueta não apaga as outras preferências do mesmo bloco', () => {
+    useUIStore.getState().setFigureStyle('stick')
+    useUIStore.getState().toggleFigureSilhouette()
+
+    const gravado = JSON.parse(localStorage.getItem('webposer:ui:v1') ?? '{}')
+    expect(gravado.figureSilhouette).toBe(true)
+    expect(gravado.figureStyle).toBe('stick')
+  })
+})

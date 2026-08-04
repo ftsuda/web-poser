@@ -1,7 +1,13 @@
 import { blendPoses } from '../figure/poseBlend'
 import { interpolateCameraView, type CameraViewState } from '../scene/cameraMove'
 import type { Figure } from '../store/figuresStore'
-import { clampAnimationSpeed, keyframeStartTimesMs, type Animation, type AnimationKeyframe } from './animation'
+import {
+  applyEasing,
+  clampAnimationSpeed,
+  keyframeStartTimesMs,
+  type Animation,
+  type AnimationKeyframe,
+} from './animation'
 
 /**
  * O estado da cena num instante qualquer da animação (PLANO.md > "Mini
@@ -130,7 +136,11 @@ export function sampleAnimation(animation: Animation, timeMs: number): Animation
   const span = starts[index + 1] - starts[index]
   // A duração é grampeada a >= 1 ms na entrada, mas o amostrador não pode
   // depender disso para não dividir por zero.
-  const t = span > 0 ? (timeMs - starts[index]) / span : 1
+  const rawT = span > 0 ? (timeMs - starts[index]) / span : 1
+  // Easing do trecho (item 26): a curva é a do keyframe de CHEGADA, como a
+  // duração, e remapeia o t ANTES da interpolação — bonecos e câmera andam
+  // pelo mesmo relógio remapeado, senão a cena e o enquadramento dessincronizam.
+  const t = applyEasing(rawT, to.easing)
 
   return {
     // O conjunto de bonecos do trecho é o do keyframe de PARTIDA; quem não

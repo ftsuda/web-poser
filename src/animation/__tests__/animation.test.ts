@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   ANIMATION_SPEED_STEP,
+  KEYFRAME_EASINGS,
   advancePlayheadMs,
+  applyEasing,
   DEFAULT_ANIMATION_SPEED,
   DEFAULT_KEYFRAME_DURATION_MS,
   MAX_ANIMATION_SPEED,
@@ -19,6 +21,7 @@ import {
   keyframeGroups,
   keyframeIndexAtTimeMs,
   keyframeStartTimesMs,
+  moveKeyframeBlock,
   neighbourKeyframeTimeMs,
   stepFrameMs,
   planKeyframeSplit,
@@ -64,6 +67,54 @@ function animation(durations: readonly number[], speed = DEFAULT_ANIMATION_SPEED
     keyframes: durations.map((durationMs, index) => keyframe({ id: `k${index + 1}`, durationMs })),
   }
 }
+
+describe('applyEasing (item 26)', () => {
+  it('linear (e ausência de easing) devolve t intacto', () => {
+    expect(applyEasing(0.25)).toBe(0.25)
+    expect(applyEasing(0.25, 'linear')).toBe(0.25)
+  })
+
+  it('todas as curvas fixam as pontas: t=0 dá 0 e t=1 dá 1, exatos', () => {
+    for (const easing of KEYFRAME_EASINGS) {
+      expect(applyEasing(0, easing)).toBe(0)
+      expect(applyEasing(1, easing)).toBe(1)
+    }
+  })
+
+  it('easeInOut é o smoothstep: devagar nas duas pontas, simétrico no meio', () => {
+    expect(applyEasing(0.25, 'easeInOut')).toBeCloseTo(0.15625, 10)
+    expect(applyEasing(0.5, 'easeInOut')).toBeCloseTo(0.5, 10)
+    expect(applyEasing(0.75, 'easeInOut')).toBeCloseTo(0.84375, 10)
+  })
+
+  it('easeIn parte devagar; easeOut chega devagar', () => {
+    expect(applyEasing(0.25, 'easeIn')).toBeCloseTo(0.0625, 10)
+    expect(applyEasing(0.25, 'easeOut')).toBeCloseTo(0.4375, 10)
+  })
+})
+
+describe('sanitizeAnimations — easing (item 26)', () => {
+  it('preserva um easing conhecido, descarta o desconhecido e omite o linear', () => {
+    const lidas = sanitizeAnimations([
+      {
+        id: 'a1',
+        keyframes: [
+          { figures: [], camera: keyframe().camera },
+          { figures: [], camera: keyframe().camera, easing: 'easeInOut' },
+          { figures: [], camera: keyframe().camera, easing: 'zigzag' },
+          { figures: [], camera: keyframe().camera, easing: 'linear' },
+        ],
+      },
+    ])
+
+    const [semEasing, valido, invalido, linear] = lidas[0].keyframes
+    expect(semEasing.easing).toBeUndefined()
+    expect(valido.easing).toBe('easeInOut')
+    expect(invalido.easing).toBeUndefined()
+    // 'linear' é o padrão — gravar o campo seria ruído no arquivo.
+    expect('easing' in linear).toBe(false)
+  })
+})
 
 describe('clampKeyframeDuration', () => {
   it('grampeia nos limites em vez de aceitar duração zero ou negativa', () => {
@@ -489,6 +540,57 @@ describe('keyframeGroups', () => {
     const [lida] = sanitizeAnimations([bruto])
 
     expect(lida.keyframes.map((k) => k.label)).toEqual(['Andando', undefined, undefined])
+  })
+})
+
+describe('moveKeyframeBlock (#117)', () => {
+  const comRotulos = (labels: readonly (string | undefined)[]): AnimationKeyframe[] =>
+    labels.map((label, index) => ({
+      ...keyframe({ id: `k${index + 1}`, durationMs: 1000 }),
+      ...(label === undefined ? {} : { label }),
+    }))
+
+  const ids = (keyframes: readonly AnimationKeyframe[]) => keyframes.map((k) => k.id)
+
+  it('o bloco inteiro pula o bloco VIZINHO inteiro, com a ordem interna intacta', () => {
+    const keyframes = comRotulos(['Andando', 'Andando', 'Andando', 'Correndo', 'Correndo'])
+
+    // "Correndo" (índices 3-4) sobe: passa por cima dos TRÊS de "Andando".
+    expect(ids(moveKeyframeBlock(keyframes, 3, -1))).toEqual(['k4', 'k5', 'k1', 'k2', 'k3'])
+    // E desce de volta ao lugar — a operação é reversível.
+    expect(ids(moveKeyframeBlock(moveKeyframeBlock(keyframes, 3, -1), 0, 1))).toEqual(ids(keyframes))
+  })
+
+  /** Meio bloco dentro do outro PARTIRIA o vizinho em dois grupos (#38). */
+  it('qualquer keyframe do bloco serve de pega: o bloco anda inteiro', () => {
+    const keyframes = comRotulos(['Andando', 'Andando', 'Correndo', 'Correndo'])
+    expect(ids(moveKeyframeBlock(keyframes, 3, -1))).toEqual(['k3', 'k4', 'k1', 'k2'])
+  })
+
+  it('vizinho SOLTO (sem rótulo) é pulado um a um', () => {
+    const keyframes = comRotulos([undefined, undefined, 'Fim', 'Fim'])
+    expect(ids(moveKeyframeBlock(keyframes, 2, -1))).toEqual(['k1', 'k3', 'k4', 'k2'])
+  })
+
+  it('keyframe sem rótulo é um bloco de um só', () => {
+    const keyframes = comRotulos(['Andando', 'Andando', undefined])
+    expect(ids(moveKeyframeBlock(keyframes, 2, -1))).toEqual(['k3', 'k1', 'k2'])
+  })
+
+  it('nas pontas não faz nada — e devolve a MESMA lista, para não empilhar undo', () => {
+    const keyframes = comRotulos(['Andando', 'Andando', 'Correndo'])
+    expect(moveKeyframeBlock(keyframes, 0, -1)).toBe(keyframes)
+    expect(moveKeyframeBlock(keyframes, 2, 1)).toBe(keyframes)
+    expect(moveKeyframeBlock(keyframes, 9, -1)).toBe(keyframes)
+  })
+
+  it('as durações viajam com os keyframes: a linha do tempo se refaz na ordem nova', () => {
+    const keyframes = [
+      { ...keyframe({ id: 'k1', durationMs: 500 }), label: 'Andando' },
+      { ...keyframe({ id: 'k2', durationMs: 700 }), label: 'Andando' },
+      { ...keyframe({ id: 'k3', durationMs: 900 }), label: 'Correndo' },
+    ]
+    expect(moveKeyframeBlock(keyframes, 2, -1).map((k) => k.durationMs)).toEqual([900, 500, 700])
   })
 })
 

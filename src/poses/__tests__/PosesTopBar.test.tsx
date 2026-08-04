@@ -4,6 +4,7 @@ import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useFiguresStore } from '../../store/figuresStore'
 import { usePosesShellStore } from '../../store/posesShellStore'
+import { useUIStore } from '../../store/uiStore'
 import { PosesCaptureButton } from '../PosesCaptureButton'
 import { PosesTopBar } from '../PosesTopBar'
 import { findWorkingAnimation } from '../../animation/animation'
@@ -12,6 +13,7 @@ beforeEach(() => {
   useFiguresStore.setState(useFiguresStore.getInitialState())
   useFiguresStore.temporal.getState().clear()
   usePosesShellStore.setState(usePosesShellStore.getInitialState())
+  useUIStore.setState(useUIStore.getInitialState())
 })
 
 describe('PosesTopBar', () => {
@@ -64,6 +66,29 @@ describe('PosesTopBar', () => {
 
     await user.click(screen.getByRole('button', { name: 'Travar a edição na vista livre' }))
     expect(usePosesShellStore.getState().freeEditEnabled).toBe(false)
+  })
+
+  it('mostra o estado do autosave da sessão do módulo (item 53), com as mesmas mensagens da Toolbar', () => {
+    render(<PosesTopBar />)
+
+    // O módulo grava na chave própria (#92), mas o ESTADO da gravação é o
+    // mesmo `uiStore` do desktop — o hook de autosave é compartilhado.
+    expect(screen.getByRole('status')).toHaveAccessibleName('Ainda não salvo')
+
+    act(() => {
+      useUIStore.getState().markAutosavePending()
+    })
+    expect(screen.getByRole('status')).toHaveAccessibleName('Salvando…')
+
+    act(() => {
+      useUIStore.getState().markAutosaveSaved(Date.UTC(2026, 0, 1, 12, 0))
+    })
+    expect(screen.getByRole('status')).toHaveAccessibleName(/^Salvo às /)
+
+    act(() => {
+      useUIStore.getState().markAutosaveFailed()
+    })
+    expect(screen.getByRole('status')).toHaveAccessibleName('Falha ao salvar')
   })
 
   it('desfazer/refazer são botões (decisão do usuário), habilitados pelo histórico do zundo', async () => {

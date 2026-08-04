@@ -208,6 +208,26 @@ describe('TimelineBar — inserir keyframe', () => {
     expect(useAnimationStore.getState().pendingCommand).toEqual({ type: 'seek' })
   })
 
+  it('avisa quando o trecho sob o playhead tem suavização — inserir devolve as metades ao linear (item 26)', async () => {
+    comAnimacao(2)
+    const id = useFiguresStore.getState().animations[0].keyframes[1].id
+    useFiguresStore.getState().setAnimationKeyframeEasing(WORKING_ANIMATION_ID, id, 'easeInOut')
+    useAnimationStore.setState({ timeMs: 600 })
+    await renderTimelineBar()
+
+    expect(
+      screen.getByText('Este trecho tem suavização: ao inserir, as duas metades voltam a ser lineares.'),
+    ).toBeInTheDocument()
+
+    // Sem suavização no trecho, nada de aviso.
+    act(() => {
+      useFiguresStore.getState().setAnimationKeyframeEasing(WORKING_ANIMATION_ID, id, 'linear')
+    })
+    expect(
+      screen.queryByText('Este trecho tem suavização: ao inserir, as duas metades voltam a ser lineares.'),
+    ).not.toBeInTheDocument()
+  })
+
   it('fica indisponível em cima de um keyframe e nas pontas', async () => {
     comAnimacao(3)
     await renderTimelineBar()

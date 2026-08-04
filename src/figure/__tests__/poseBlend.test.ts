@@ -147,6 +147,33 @@ describe('blendPoses', () => {
     expect(blendPoses(partida, chegada, 0.5).rotation.y).toBe(180)
     expect(blendPoses(partida, chegada, 0.25).rotation.y).toBeCloseTo(175, 6)
   })
+
+  /**
+   * A MESMA orientação tem dois Euler XYZ — (x, y, z) e (x+180, 180−y, z+180).
+   * O slider guarda o primeiro; o gizmo (que escreve quaternion e deixa o three
+   * decompor) guarda o segundo. Misturar um com o outro eixo a eixo derruba o
+   * boneco no meio do caminho: o conserto é reescrever a CHEGADA no ramo da
+   * PARTIDA antes de interpolar (#116).
+   */
+  it('a mistura da raiz não depende de qual dos dois Euler equivalentes veio guardado', () => {
+    const partida = figureBlendState(figure({ rotation: { x: 0, y: 180, z: 0 } }))
+    // Boneco virado para -135°, do jeito que o GIZMO grava.
+    const porGizmo = { ...partida, rotation: { x: -180, y: -45, z: -180 } }
+    const porSlider = { ...partida, rotation: { x: 0, y: -135, z: 0 } }
+
+    const meio = blendPoses(partida, porGizmo, 0.5)
+    expect(meio.rotation).toEqual(blendPoses(partida, porSlider, 0.5).rotation)
+    // 45° para frente, atravessando o limite — sem tombo em X e Z.
+    expect(meio.rotation).toEqual({ x: 0, y: -157.5, z: 0 })
+  })
+
+  it('mistura em 0% e 100% continua devolvendo as pontas intactas', () => {
+    const partida = figureBlendState(figure({ rotation: { x: 0, y: 180, z: 0 } }))
+    const chegada = { ...partida, rotation: { x: -180, y: -45, z: -180 } }
+
+    expect(blendPoses(partida, chegada, 0)).toBe(partida)
+    expect(blendPoses(partida, chegada, 1)).toBe(chegada)
+  })
 })
 
 /**

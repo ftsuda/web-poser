@@ -1,4 +1,5 @@
-import type { JointRotation } from '../figure/skeleton'
+import { JOINT_NAMES, type JointRotation } from '../figure/skeleton'
+import { readRotation, toVec3 } from '../figure/figureFormat'
 import { normalizeHexColor } from '../scene/hexColor'
 
 /**
@@ -25,10 +26,44 @@ import { normalizeHexColor } from '../scene/hexColor'
  *    uma malha solta — ver `vertexOffsets`.
  */
 
-export type PropShape = 'box' | 'cylinder' | 'sphere' | 'cone' | 'plane' | 'ramp'
+export type PropShape =
+  | 'box'
+  | 'cylinder'
+  | 'sphere'
+  | 'cone'
+  | 'plane'
+  | 'ramp'
+  | 'sword'
+  | 'shield'
+  | 'scabbard'
 
-/** Ordem em que as formas aparecem na UI. */
-export const PROP_SHAPES: readonly PropShape[] = ['box', 'cylinder', 'sphere', 'cone', 'plane', 'ramp']
+/** Ordem em que as formas aparecem na UI — as primitivas primeiro, o kit de armas depois. */
+export const PROP_SHAPES: readonly PropShape[] = [
+  'box',
+  'cylinder',
+  'sphere',
+  'cone',
+  'plane',
+  'ramp',
+  'sword',
+  'shield',
+  'scabbard',
+]
+
+/**
+ * As formas COMPOSTAS (kit de armas, PLANO.md > "Objetos pré-modelados"):
+ * composições de primitivas geradas em código, no mesmo mecanismo do boneco —
+ * a regra "sem assets externos para geometria" segue intacta. Diferença
+ * decidida com o usuário: composta tem tamanho por eixo em metros como as
+ * demais (esticar a lâmina é feature), mas NÃO tem vértice livre — o modelo
+ * fica íntegro, e desvio gravado para elas é descartado na leitura.
+ */
+const COMPOSITE_SHAPES: ReadonlySet<PropShape> = new Set(['sword', 'shield', 'scabbard'])
+
+/** `false` nas formas compostas: sem alças de vértice, sem desvio aceito de arquivo. */
+export function propShapeHasFreeVertex(shape: PropShape): boolean {
+  return !COMPOSITE_SHAPES.has(shape)
+}
 
 export type Vec3 = readonly [number, number, number]
 
@@ -45,6 +80,27 @@ export type Vec3 = readonly [number, number, number]
  * canto puxado 10 cm continua puxado 10 cm quando a caixa cresce.
  */
 export type VertexOffsets = Record<number, Vec3>
+
+/**
+ * Amarração de um objeto a uma junta de um boneco (espada na mão, escudo no
+ * antebraço). A colocação em mundo do objeto amarrado é DERIVADA do frame da
+ * junta a cada quadro (`propAttachment.attachedPropPlacement`) — o objeto
+ * continua fora do retrato dos keyframes (decisão nº 2 acima, intacta), e o
+ * movimento é emprestado: quem anda é a junta.
+ *
+ * `position`/`rotation` do próprio objeto NÃO mudam ao amarrar: são a
+ * "colocação própria", à qual ele volta se o boneco for removido (decisão do
+ * usuário). O offset aqui é relativo ao frame da junta — em metros na escala
+ * do boneco (um boneco mais alto leva a espada junto da mão maior) e graus.
+ */
+export interface PropAttachment {
+  figureId: string
+  jointName: string
+  /** Offset de posição no espaço local da junta, em metros. */
+  position: Vec3
+  /** Offset de rotação no espaço local da junta, em graus. */
+  rotation: JointRotation
+}
 
 export interface SceneProp {
   id: string
@@ -71,6 +127,8 @@ export interface SceneProp {
   size: Vec3
   /** Vértices movidos à mão; objeto sem deformação nenhuma tem `{}`. */
   vertexOffsets: VertexOffsets
+  /** Amarração a uma junta de boneco; `null` é o caso comum (objeto de cenário). */
+  attachment: PropAttachment | null
 }
 
 /**
@@ -106,6 +164,10 @@ export const DEFAULT_PROP_SIZE: Record<PropShape, Vec3> = {
   // três eixos, e a geometria o ignora.
   plane: [2, 2, MIN_PROP_SIZE_M],
   ramp: [1, 0.5, 1],
+  // Kit de armas: medidas de adereço real na mão de um boneco de 1,70 m.
+  sword: [0.15, 1.1, 0.03],
+  shield: [0.6, 0.6, 0.12],
+  scabbard: [0.09, 0.85, 0.05],
 }
 
 export const normalizePropColor = normalizeHexColor
@@ -194,4 +256,39 @@ export function vertexOffsetCount(offsets: VertexOffsets): number {
 
 export function isPropShape(value: unknown): value is PropShape {
   return typeof value === 'string' && (PROP_SHAPES as readonly string[]).includes(value)
+}
+
+function clampAttachmentAxis(value: number): number {
+  return Math.min(MAX_PROP_SIZE_M, Math.max(-MAX_PROP_SIZE_M, value))
+}
+
+/**
+ * Lê uma amarração de uma fonte não confiável (arquivo de cena, autosave).
+ * Junta desconhecida ou boneco que não está em `figureIds` PODAM a amarração
+ * inteira (o objeto volta à própria colocação, que é o comportamento de
+ * "boneco removido") — grampear para outra junta amarraria a espada num lugar
+ * que ninguém pediu. O offset segue as mesmas tolerâncias do resto do formato:
+ * posição ilegível vira zero, rotação é completada eixo a eixo.
+ */
+export function sanitizePropAttachment(
+  value: unknown,
+  figureIds: ReadonlySet<string>,
+): PropAttachment | null {
+  if (typeof value !== 'object' || value === null) return null
+  const source = value as Record<string, unknown>
+
+  if (typeof source.figureId !== 'string' || !figureIds.has(source.figureId)) return null
+  if (typeof source.jointName !== 'string' || !JOINT_NAMES.includes(source.jointName)) return null
+
+  const position = toVec3(source.position, [0, 0, 0])
+  return {
+    figureId: source.figureId,
+    jointName: source.jointName,
+    position: [
+      clampAttachmentAxis(position[0]),
+      clampAttachmentAxis(position[1]),
+      clampAttachmentAxis(position[2]),
+    ],
+    rotation: readRotation(source.rotation),
+  }
 }

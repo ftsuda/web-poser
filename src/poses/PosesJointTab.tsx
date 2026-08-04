@@ -12,6 +12,7 @@ import { resolvePosePreset } from '../figure/posePresets'
 import { JOINT_GROUP_LABEL_KEYS } from '../layout/jointGroupLabels'
 import { effectiveLockedJoints, useFiguresStore } from '../store/figuresStore'
 import { usePosesShellStore } from '../store/posesShellStore'
+import { UNDO_BATCH_POINTER_PROPS } from '../store/undoBatch'
 import { AXIS_COLORS } from './gizmoStyle'
 import { isNudgeableJoint, nudgeJoint } from './posesEdit'
 import { POSES_VIEWS } from './posesViews'
@@ -251,6 +252,8 @@ export function PosesJointTab() {
                     disabled={disabled}
                     style={{ accentColor: AXIS_COLORS[axis] }}
                     onChange={(event) => setAxis(Number(event.target.value))}
+                    // Um passo de undo por arrasto do slider (DECISOES.md #118).
+                    {...UNDO_BATCH_POINTER_PROPS}
                   />
                 </label>
                 {/* [−5°, −1°, ⟲, +1°, +5°] — o ⟲ no meio devolve SÓ este eixo

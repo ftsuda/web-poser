@@ -1,5 +1,5 @@
 import '../../i18n'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
@@ -8,6 +8,13 @@ import { WORKSPACE_AUTOSAVE_KEY, saveWorkspaceToLocalStorage } from '../../persi
 import { useAnimationStore } from '../../store/animationStore'
 import { useFiguresStore } from '../../store/figuresStore'
 import { usePosesShellStore } from '../../store/posesShellStore'
+
+vi.mock('../../persistence/fileIO', () => ({
+  writeFileToDirectoryOrDownload: vi.fn().mockResolvedValue(undefined),
+  pickFile: vi.fn(),
+}))
+
+import { pickFile } from '../../persistence/fileIO'
 import { PosesPanel } from '../PosesPanel'
 
 async function renderPanel() {
@@ -66,6 +73,28 @@ describe('aba Bonecos', () => {
 
     fireEvent.change(screen.getByRole('slider'), { target: { value: '1.85' } })
     expect(useFiguresStore.getState().figures[0].height).toBeCloseTo(1.85, 6)
+  })
+
+  it('aplica uma pose de partida ao boneco em edição (item 52)', async () => {
+    const user = userEvent.setup()
+    const id = addFigureAndSelect()
+    usePosesShellStore.getState().setActiveTab('figures')
+    await renderPanel()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Pose de partida' }), 'Sentado')
+    await user.click(screen.getByRole('button', { name: 'Aplicar pose' }))
+
+    const figure = useFiguresStore.getState().figures.find((candidate) => candidate.id === id)!
+    expect(figure.pose['hip.L'].x).toBeLessThan(0)
+    expect(figure.pose['knee.L'].x).toBeGreaterThan(0)
+  })
+
+  it('sem boneco em edição, o bloco de pose de partida não aparece (item 52)', async () => {
+    useFiguresStore.getState().addFigure()
+    usePosesShellStore.getState().setActiveTab('figures')
+    await renderPanel()
+
+    expect(screen.queryByRole('combobox', { name: 'Pose de partida' })).not.toBeInTheDocument()
   })
 
   it('alterna "mostrar só o boneco em edição" (filtro de tela, não o visible do boneco)', async () => {
@@ -510,6 +539,65 @@ describe('aba Arquivo', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Não há sessão salva da aplicação completa neste aparelho.',
+    )
+  })
+
+  it('aplica um JSON de pose avulsa ao boneco em edição (item 55)', async () => {
+    const id = addFigureAndSelect()
+    usePosesShellStore.getState().setActiveTab('file')
+
+    // O leitor é o MESMO do "Pose em arquivo" do desktop (#81/#87): aceita a
+    // família inteira de formatos — aqui, o arquivo de pose canônico.
+    const poseJson = JSON.stringify({
+      version: 1,
+      figures: [
+        {
+          height: 1.8,
+          position: [0, 0.3, 0],
+          rotation: { x: 0, y: 45, z: 0 },
+          pose: { 'elbow.L': { x: -30, y: 90, z: 0 } },
+        },
+      ],
+    })
+    vi.mocked(pickFile).mockResolvedValueOnce({
+      file: new File([poseJson], 'pose.json'),
+      data: new TextEncoder().encode(poseJson).buffer as ArrayBuffer,
+    })
+
+    const user = userEvent.setup()
+    await renderPanel()
+    await user.click(screen.getByRole('button', { name: 'Aplicar pose do arquivo' }))
+
+    const figure = useFiguresStore.getState().figures.find((candidate) => candidate.id === id)!
+    expect(figure.height).toBeCloseTo(1.8, 6)
+    expect(figure.position[1]).toBeCloseTo(0.3, 6)
+    expect(figure.rotation.y).toBeCloseTo(45, 6)
+    expect(figure.pose['elbow.L']).toEqual({ x: -30, y: 90, z: 0 })
+  })
+
+  it('sem boneco em edição, o "Aplicar pose do arquivo" fica desabilitado (item 55)', async () => {
+    usePosesShellStore.getState().setActiveTab('file')
+    await renderPanel()
+
+    expect(screen.getByRole('button', { name: 'Aplicar pose do arquivo' })).toBeDisabled()
+  })
+
+  it('avisa quando o JSON não tem pose aproveitável (item 55)', async () => {
+    addFigureAndSelect()
+    usePosesShellStore.getState().setActiveTab('file')
+
+    const semPose = JSON.stringify({ qualquer: 'coisa' })
+    vi.mocked(pickFile).mockResolvedValueOnce({
+      file: new File([semPose], 'nada.json'),
+      data: new TextEncoder().encode(semPose).buffer as ArrayBuffer,
+    })
+
+    const user = userEvent.setup()
+    await renderPanel()
+    await user.click(screen.getByRole('button', { name: 'Aplicar pose do arquivo' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'O arquivo foi lido, mas não tem nenhuma pose aproveitável',
     )
   })
 

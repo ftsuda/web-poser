@@ -14,15 +14,16 @@ import { stepViewKey, type PosesViewKey } from '../poses/posesViews'
  * casca vive por carregamento e as ações que respeitam seleção já leem de lá.
  */
 
-export type PosesTabKey = 'joint' | 'symmetry' | 'figures' | 'keyframes' | 'file'
+export type PosesTabKey = 'joint' | 'symmetry' | 'figures' | 'keyframes' | 'file' | 'photo'
 
-/** Ordem das abas (pedido do usuário, 2026-07-31): Boneco, Junta, Simetria, Keyframes, Arquivos. */
+/** Ordem das abas (pedido do usuário, 2026-07-31): Boneco, Junta, Simetria, Keyframes, Arquivos — e a Foto (pose por marcação manual) no fim. */
 export const POSES_TAB_KEYS: readonly PosesTabKey[] = [
   'figures',
   'joint',
   'symmetry',
   'keyframes',
   'file',
+  'photo',
 ]
 
 export interface PosesShellState {

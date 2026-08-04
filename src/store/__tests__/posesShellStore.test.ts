@@ -13,8 +13,8 @@ describe('posesShellStore', () => {
     expect(state.showOnlyEditing).toBe(false)
   })
 
-  it('as abas são as cinco do plano, na ordem pedida pelo usuário', () => {
-    expect(POSES_TAB_KEYS).toEqual(['figures', 'joint', 'symmetry', 'keyframes', 'file'])
+  it('as abas seguem a ordem pedida pelo usuário, com a Foto (marcação manual) no fim', () => {
+    expect(POSES_TAB_KEYS).toEqual(['figures', 'joint', 'symmetry', 'keyframes', 'file', 'photo'])
   })
 
   it('troca de vista direto e pelas setas, em ciclo', () => {

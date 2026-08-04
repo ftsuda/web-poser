@@ -79,6 +79,46 @@ describe('sampleAnimation — pontas', () => {
   })
 })
 
+describe('sampleAnimation — easing por trecho (item 26)', () => {
+  const linear = animation([
+    keyframe('k1', 1000, [figure({ position: [0, 0, 0] })], cameraA),
+    keyframe('k2', 1000, [figure({ position: [4, 0, 0] })], cameraA),
+  ])
+  const suave = animation([
+    keyframe('k1', 1000, [figure({ position: [0, 0, 0] })], cameraA),
+    { ...keyframe('k2', 1000, [figure({ position: [4, 0, 0] })], cameraA), easing: 'easeInOut' },
+  ])
+
+  it('o easing do keyframe de CHEGADA remapeia o t do trecho inteiro (bonecos e câmera)', () => {
+    // A um quarto do caminho, smoothstep dá 0.15625 — a posição sai de lá.
+    expect(sampleAnimation(suave, 250)!.figures[0].position[0]).toBeCloseTo(4 * 0.15625, 10)
+    expect(sampleAnimation(linear, 250)!.figures[0].position[0]).toBeCloseTo(1, 10)
+  })
+
+  it('no meio do trecho o easeInOut coincide com o linear (curva simétrica)', () => {
+    expect(sampleAnimation(suave, 500)!.figures[0].position[0]).toBeCloseTo(
+      sampleAnimation(linear, 500)!.figures[0].position[0],
+      10,
+    )
+  })
+
+  it('as pontas continuam devolvendo os keyframes idênticos, easing ou não', () => {
+    expect(sampleAnimation(suave, 0)!.figures).toBe(suave.keyframes[0].figures)
+    expect(sampleAnimation(suave, 1000)!.figures).toBe(suave.keyframes[1].figures)
+  })
+
+  it('a câmera anda pelo MESMO t remapeado que os bonecos', () => {
+    const comCameras = animation([
+      keyframe('k1', 1000, [figure()], cameraA),
+      { ...keyframe('k2', 1000, [figure()], cameraB), easing: 'easeIn' },
+    ])
+    const amostra = sampleAnimation(comCameras, 500)!
+    const esperado = interpolateCameraView(cameraA, cameraB, 0.25)
+    expect(amostra.camera.position[0]).toBeCloseTo(esperado.position[0], 10)
+    expect(amostra.camera.focalMm).toBeCloseTo(esperado.focalMm, 10)
+  })
+})
+
 describe('sampleAnimation — posição e câmera', () => {
   const anim = animation([
     keyframe('k1', 1000, [figure({ position: [0, 0, 0] })], cameraA),
@@ -106,6 +146,35 @@ describe('sampleAnimation — posição e câmera', () => {
     const x = (ms: number) => sampleAnimation(anim, ms)!.figures[0].position[0]
     expect(x(250)).toBeGreaterThan(x(0))
     expect(x(250)).toBeLessThan(x(500))
+  })
+})
+
+/**
+ * O giro da raiz atravessando o limite dos ±180° (#116). O menor arco já valia
+ * (`lerpAngle`), mas a MESMA orientação tem dois Euler XYZ — e o gizmo grava o
+ * outro: um keyframe feito no gizmo com outro feito no slider derrubava o
+ * boneco no meio do trecho.
+ */
+describe('sampleAnimation — giro da raiz atravessando ±180°', () => {
+  const girado = (rotation: { x: number; y: number; z: number }) =>
+    animation([
+      keyframe('k1', 1000, [figure({ rotation: { x: 0, y: 180, z: 0 } })], cameraA),
+      keyframe('k2', 1000, [figure({ rotation })], cameraB),
+    ])
+
+  it('de 180° para -135° segue para frente, como se saísse de -180°', () => {
+    const y = (ms: number) => sampleAnimation(girado({ x: 0, y: -135, z: 0 }), ms)!.figures[0].rotation.y
+    expect(y(250)).toBeCloseTo(-168.75, 6)
+    expect(y(500)).toBeCloseTo(-157.5, 6)
+    expect(y(750)).toBeCloseTo(-146.25, 6)
+  })
+
+  it('o mesmo giro gravado pelo GIZMO dá exatamente o mesmo caminho', () => {
+    // -135° como o three decompõe um quaternion: (x+180, 180-y, z+180).
+    const meio = sampleAnimation(girado({ x: -180, y: -45, z: -180 }), 500)!.figures[0].rotation
+    expect(meio).toEqual(sampleAnimation(girado({ x: 0, y: -135, z: 0 }), 500)!.figures[0].rotation)
+    // Sem o alinhamento, X e Z saíam de 0 para ±180 e o boneco tombava no meio.
+    expect(meio).toEqual({ x: 0, y: -157.5, z: 0 })
   })
 })
 

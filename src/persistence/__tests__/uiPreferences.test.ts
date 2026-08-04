@@ -18,6 +18,7 @@ function prefs(overrides: Partial<UIPreferences> = {}): UIPreferences {
     frameMaskSource: 'off',
     pairPoseEnabled: true,
     figureStyle: 'wooden',
+    figureSilhouette: false,
     ...overrides,
   }
 }

@@ -127,8 +127,31 @@
 .poses-topbar__actions {
   display: flex;
   flex: none;
+  align-items: center;
   gap: 0.2rem;
   margin-left: auto;
+}
+
+/* Badge de autosave (item 53): um ponto colorido — a frase inteira da Toolbar
+   não cabe numa barra de celular e vira o título/nome acessível. */
+.poses-topbar__autosave {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.poses-topbar__autosave--pending {
+  background: #d97706;
+}
+
+.poses-topbar__autosave--saved {
+  background: #16a34a;
+}
+
+.poses-topbar__autosave--error {
+  background: #dc2626;
 }
 
 /* ------------------------------------------------------------------ */

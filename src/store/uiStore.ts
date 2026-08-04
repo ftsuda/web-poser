@@ -119,6 +119,14 @@ export interface UIState {
    */
   figureStyle: FigureStyle
   setFigureStyle: (style: FigureStyle) => void
+
+  /**
+   * Modo silhueta (item 8): bonecos em preto chapado, para checar a leitura da
+   * pose. Mesmo regime da casca — modo de visualização, fora do undo e fora
+   * dos arquivos, persistido como preferência de tela.
+   */
+  figureSilhouette: boolean
+  toggleFigureSilhouette: () => void
 }
 
 /**
@@ -187,6 +195,10 @@ export const useUIStore = create<UIState>()((set) => ({
 
   figureStyle: INITIAL_UI_PREFERENCES.figureStyle,
   setFigureStyle: (style) => set((state) => persist(state, { figureStyle: style })),
+
+  figureSilhouette: INITIAL_UI_PREFERENCES.figureSilhouette,
+  toggleFigureSilhouette: () =>
+    set((state) => persist(state, { figureSilhouette: !state.figureSilhouette })),
 }))
 
 /**
@@ -202,6 +214,7 @@ function persist<T extends Partial<UIPreferences>>(state: UIState, change: T): T
     frameMaskSource: state.frameMaskSource,
     pairPoseEnabled: state.pairPoseEnabled,
     figureStyle: state.figureStyle,
+    figureSilhouette: state.figureSilhouette,
     ...change,
   })
   return change

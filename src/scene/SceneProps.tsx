@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { TransformControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { buildPropGeometry, controlPointPositions } from '../props/propGeometry'
-import type { SceneProp } from '../props/sceneProp'
+import { attachedPropPlacement, type PropPlacement } from '../props/propAttachment'
+import { propShapeHasFreeVertex, type SceneProp } from '../props/sceneProp'
+import { useAnimationStore } from '../store/animationStore'
 import { useCameraStore } from '../store/cameraStore'
-import { useFiguresStore } from '../store/figuresStore'
+import { useFiguresStore, type Figure } from '../store/figuresStore'
 import { useUIStore } from '../store/uiStore'
+import { beginUndoBatch, endUndoBatch } from '../store/undoBatch'
 import { EDITOR_HIDDEN_FLAG } from './constants'
 
 /**
@@ -20,9 +23,13 @@ import { EDITOR_HIDDEN_FLAG } from './constants'
  * posição já no espaço local, sem conversão à mão), e separar a malha das
  * alças em dois arquivos só espalharia a mesma transformação por dois lugares.
  *
- * Nada aqui olha para a pré-visualização da animação: objeto de cena é
- * CENÁRIO ESTÁTICO (decisão do usuário) — não entra no retrato dos keyframes,
- * e por isso não muda enquanto a animação toca.
+ * Objeto de cena é CENÁRIO ESTÁTICO (decisão do usuário) — não entra no
+ * retrato dos keyframes, e não muda enquanto a animação toca. A exceção que
+ * confirma a regra é o objeto AMARRADO a uma junta (PLANO.md > amarração): a
+ * colocação dele é DERIVADA do frame da junta a cada commit, e por isso este
+ * componente olha para `preview?.figures ?? figures` — o MESMO boneco que o
+ * `SceneFigures` está desenhando. É o que faz a espada acompanhar a mão na
+ * reprodução e no MP4 de graça: o keyframe continua sem saber do objeto.
  */
 export interface ScenePropsProps {
   /** Avisa o `Viewport` para suspender a órbita enquanto um gizmo é arrastado — mesmo contrato dos demais gizmos. */
@@ -32,6 +39,9 @@ export interface ScenePropsProps {
 export function SceneProps({ onDraggingChange }: ScenePropsProps) {
   const props = useFiguresStore((state) => state.props)
   const selectedPropId = useFiguresStore((state) => state.selectedPropId)
+  const figures = useFiguresStore((state) => state.figures)
+  const previewFigures = useAnimationStore((state) => state.preview?.figures ?? null)
+  const renderedFigures = previewFigures ?? figures
 
   return (
     <>
@@ -39,6 +49,7 @@ export function SceneProps({ onDraggingChange }: ScenePropsProps) {
         <PropObject
           key={prop.id}
           prop={prop}
+          figures={renderedFigures}
           selected={prop.id === selectedPropId}
           onDraggingChange={onDraggingChange}
         />
@@ -49,6 +60,8 @@ export function SceneProps({ onDraggingChange }: ScenePropsProps) {
 
 interface PropObjectProps {
   prop: SceneProp
+  /** Os bonecos que estão sendo DESENHADOS (preview da animação, ou os do store) — de onde sai o frame da junta amarrada. */
+  figures: readonly Figure[]
   selected: boolean
   onDraggingChange?: (dragging: boolean) => void
 }
@@ -56,7 +69,7 @@ interface PropObjectProps {
 /** Amarelo do destaque de seleção — o mesmo do `Figure.tsx`, e apagado na captura por `muteJointHighlight`. */
 const HIGHLIGHT_COLOR = '#ffd54a'
 
-function PropObject({ prop, selected, onDraggingChange }: PropObjectProps) {
+function PropObject({ prop, figures, selected, onDraggingChange }: PropObjectProps) {
   const selectProp = useFiguresStore((state) => state.selectProp)
   const mode = useUIStore((state) => state.propGizmoMode)
   const viewMode = useCameraStore((state) => state.viewMode)
@@ -69,6 +82,19 @@ function PropObject({ prop, selected, onDraggingChange }: PropObjectProps) {
     () => buildPropGeometry(prop),
     [prop.shape, prop.size, prop.vertexOffsets], // eslint-disable-line react-hooks/exhaustive-deps
   )
+
+  // Colocação derivada (objeto amarrado) ou própria. `figures` é imutável no
+  // store: a referência do boneco muda a cada pose nova, e o memo recalcula —
+  // é o que faz o objeto seguir a mão no arrasto de junta e na reprodução.
+  const attachedFigure = prop.attachment
+    ? (figures.find((figure) => figure.id === prop.attachment?.figureId) ?? null)
+    : null
+  const placement: PropPlacement | null = useMemo(
+    () => (attachedFigure && prop.attachment ? attachedPropPlacement(attachedFigure, prop.attachment) : null),
+    [attachedFigure, prop.attachment],
+  )
+  const position = placement?.position ?? prop.position
+  const rotation = placement?.rotation ?? prop.rotation
 
   // Geometria é recurso de GPU: sem isto, cada arrasto de vértice deixaria a
   // anterior para trás (um arrasto emite dezenas de geometrias por segundo).
@@ -88,11 +114,11 @@ function PropObject({ prop, selected, onDraggingChange }: PropObjectProps) {
         geometry={geometry}
         visible={prop.visible && !hiddenHere}
         userData={{ [EDITOR_HIDDEN_FLAG]: prop.visible && hiddenHere }}
-        position={[...prop.position]}
+        position={[...position]}
         rotation={[
-          THREE.MathUtils.degToRad(prop.rotation.x),
-          THREE.MathUtils.degToRad(prop.rotation.y),
-          THREE.MathUtils.degToRad(prop.rotation.z),
+          THREE.MathUtils.degToRad(rotation.x),
+          THREE.MathUtils.degToRad(rotation.y),
+          THREE.MathUtils.degToRad(rotation.z),
         ]}
         castShadow
         receiveShadow
@@ -118,8 +144,8 @@ function PropObject({ prop, selected, onDraggingChange }: PropObjectProps) {
         />
       </mesh>
 
-      {gizmoVisible && mode === 'vertex' && (
-        <PropVertexHandles prop={prop} onDraggingChange={onDraggingChange} />
+      {gizmoVisible && mode === 'vertex' && propShapeHasFreeVertex(prop.shape) && (
+        <PropVertexHandles prop={prop} placement={{ position, rotation }} onDraggingChange={onDraggingChange} />
       )}
       {gizmoVisible && mode !== 'vertex' && object && (
         <PropTransformGizmo prop={prop} object={object} mode={mode} onDraggingChange={onDraggingChange} />
@@ -184,12 +210,16 @@ function PropTransformGizmo({ prop, object, mode, onDraggingChange }: PropTransf
       mode={mode}
       space="local"
       onObjectChange={handleObjectChange}
+      // Mover, girar ou medir é um gesto só — e um passo de undo só
+      // (DECISOES.md #118), como o arrasto de junta.
       onMouseDown={() => {
         setSizeAtDragStart(prop.size)
+        beginUndoBatch()
         onDraggingChange?.(true)
       }}
       onMouseUp={() => {
         object.scale.set(1, 1, 1)
+        endUndoBatch()
         onDraggingChange?.(false)
       }}
     />
@@ -244,9 +274,12 @@ const HANDLE_SELECTED_COLOR = '#ffd54a'
  */
 function PropVertexHandles({
   prop,
+  placement,
   onDraggingChange,
 }: {
   prop: SceneProp
+  /** Colocação que a MESH está usando — derivada da junta quando amarrado, própria nos demais casos. */
+  placement: PropPlacement
   onDraggingChange?: (dragging: boolean) => void
 }) {
   const setPropVertex = useFiguresStore((state) => state.setPropVertex)
@@ -270,11 +303,11 @@ function PropVertexHandles({
   return (
     <>
       <group
-        position={[...prop.position]}
+        position={[...placement.position]}
         rotation={[
-          THREE.MathUtils.degToRad(prop.rotation.x),
-          THREE.MathUtils.degToRad(prop.rotation.y),
-          THREE.MathUtils.degToRad(prop.rotation.z),
+          THREE.MathUtils.degToRad(placement.rotation.x),
+          THREE.MathUtils.degToRad(placement.rotation.y),
+          THREE.MathUtils.degToRad(placement.rotation.z),
         ]}
       >
         {positions.map((position, index) => (
@@ -311,8 +344,14 @@ function PropVertexHandles({
           onObjectChange={() =>
             setPropVertex(prop.id, activeIndex, [handle.position.x, handle.position.y, handle.position.z])
           }
-          onMouseDown={() => onDraggingChange?.(true)}
-          onMouseUp={() => onDraggingChange?.(false)}
+          onMouseDown={() => {
+            beginUndoBatch()
+            onDraggingChange?.(true)
+          }}
+          onMouseUp={() => {
+            endUndoBatch()
+            onDraggingChange?.(false)
+          }}
         />
       )}
     </>

@@ -126,15 +126,19 @@ export function blendPoses(
     })
   }
 
+  // A chegada, reescrita no MESMO ramo do Euler da partida quando isso a
+  // aproxima (#116) — senão o giro se espalha por X e Z e o boneco tomba.
+  const targetRotation = alignRootRotation(base.rotation, target.rotation)
+
   const mixed: BlendablePose = {
     pose,
     rotation: {
       // A rotação do root NÃO tem limites (é a colocação do boneco na cena, e
       // dá a volta completa): aqui o caminho mais curto importa — de 170° para
       // -170° são 20°, não 340°.
-      x: lerpAngle(base.rotation.x, target.rotation.x, t),
-      y: lerpAngle(base.rotation.y, target.rotation.y, t),
-      z: lerpAngle(base.rotation.z, target.rotation.z, t),
+      x: lerpAngle(base.rotation.x, targetRotation.x, t),
+      y: lerpAngle(base.rotation.y, targetRotation.y, t),
+      z: lerpAngle(base.rotation.z, targetRotation.z, t),
     },
     positionY: lerp(base.positionY, target.positionY, t),
   }
@@ -191,4 +195,46 @@ function lerpAngle(from: number, to: number, t: number): number {
   const value = from + delta * t
   const wrapped = ((value + 180) % 360 + 360) % 360 - 180
   return wrapped === -180 ? 180 : wrapped === 0 ? 0 : wrapped
+}
+
+/** O ângulo dentro de (-180, 180] — mesma convenção do `lerpAngle`. */
+function wrapAngle(value: number): number {
+  const wrapped = ((value + 180) % 360 + 360) % 360 - 180
+  return wrapped === -180 ? 180 : wrapped === 0 ? 0 : wrapped
+}
+
+/** Distância angular pelo menor arco (sempre >= 0). */
+function angleDistance(from: number, to: number): number {
+  return Math.abs(((to - from + 540) % 360) - 180)
+}
+
+/**
+ * A rotação de CHEGADA reescrita no mesmo "jeito de guardar" da PARTIDA
+ * (DECISOES.md #116).
+ *
+ * Toda orientação tem DOIS Euler XYZ que a descrevem: `(x, y, z)` e
+ * `(x+180, 180−y, z+180)`. Os sliders do painel escrevem eixo a eixo e ficam no
+ * primeiro; o gizmo escreve QUATERNION e deixa o three decompor, o que devolve
+ * sempre o ramo de `|y| <= 90` — um boneco de costas vira `(180, 0, 180)` em vez
+ * de `(0, 180, 0)`. São a mesma pose e o app desenha igual, mas a interpolação
+ * é EIXO A EIXO: misturar um keyframe feito no gizmo com outro feito no slider
+ * fazia X e Z correrem 180° no meio do trecho — o boneco deitava e voltava.
+ *
+ * Escolher o ramo mais próximo da partida resolve sem tocar na interpolação:
+ * quando as duas pontas já falam a mesma língua (o caso comum, tudo por
+ * slider), a alternativa está mais longe e nada muda.
+ */
+export function alignRootRotation(from: JointRotation, to: JointRotation): JointRotation {
+  const alternate: JointRotation = {
+    x: wrapAngle(to.x + 180),
+    y: wrapAngle(180 - to.y),
+    z: wrapAngle(to.z + 180),
+  }
+  const direct =
+    angleDistance(from.x, to.x) + angleDistance(from.y, to.y) + angleDistance(from.z, to.z)
+  const other =
+    angleDistance(from.x, alternate.x) +
+    angleDistance(from.y, alternate.y) +
+    angleDistance(from.z, alternate.z)
+  return other < direct ? alternate : to
 }

@@ -4,6 +4,7 @@ import { PosesFiguresTab } from './PosesFiguresTab'
 import { PosesFileTab } from './PosesFileTab'
 import { PosesJointTab } from './PosesJointTab'
 import { PosesKeyframesTab } from './PosesKeyframesTab'
+import { PosesPhotoTab } from './PosesPhotoTab'
 import { PosesSymmetryTab } from './PosesSymmetryTab'
 
 /**
@@ -25,6 +26,7 @@ export function PosesPanel() {
         {activeTab === 'figures' && <PosesFiguresTab />}
         {activeTab === 'keyframes' && <PosesKeyframesTab />}
         {activeTab === 'file' && <PosesFileTab />}
+        {activeTab === 'photo' && <PosesPhotoTab />}
       </div>
       <nav className="poses-panel__tabs" aria-label={t('poses.title')}>
         {POSES_TAB_KEYS.map((key) => (

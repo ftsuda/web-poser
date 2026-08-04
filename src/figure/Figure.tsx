@@ -70,6 +70,15 @@ export interface FigureProps {
    */
   style?: FigureStyle
   /**
+   * Modo SILHUETA (item 8): todas as peças em preto chapado (`MeshBasicMaterial`,
+   * sem luz), inclusive olhos e pino da mão — a silhueta é a primeira checagem
+   * de leitura que um ilustrador faz numa pose. É só material: clique, seleção
+   * e gizmo continuam funcionando, mas os DESTAQUES emissivos somem (uma mancha
+   * amarela dentro do preto chapado desfaria justamente a leitura chapada). O
+   * fantasma do papel-cebola vence a silhueta — ele é referência translúcida.
+   */
+  silhouette?: boolean
+  /**
    * Raio (m, no espaço local da junta) de uma esfera INVISÍVEL de toque por
    * junta — o alvo que o dedo acerta no módulo de poses (item 44). Invisível
    * não escapa do Raycaster (mesma razão do comentário em `JointNode`), então
@@ -120,6 +129,9 @@ const PINNED_EMISSIVE_INTENSITY = 0.5
 
 /** Cor fixa dos olhos — sempre preta, independente da cor do boneco. */
 const EYE_COLOR = '#0a0a0a'
+
+/** Preto da silhueta (item 8) — o mesmo quase-preto dos olhos, chapado. */
+const SILHOUETTE_COLOR = '#0a0a0a'
 
 /** Cor fixa do pino que marca as costas da mão — sempre latão, independente da cor do boneco. */
 const MARKER_COLOR = '#b08d3e'
@@ -216,11 +228,13 @@ interface PartMeshProps {
   /** Junta ancorada (item 62) — destaque azulado (seleção e trava vencem). */
   pinned?: boolean
   ghost?: GhostStyle | null
+  /** Modo silhueta (item 8) — preto chapado; o fantasma vence. */
+  silhouette?: boolean
   onClick?: (event: ThreeEvent<MouseEvent>) => void
 }
 
 /** Uma peça visual de junta (`SegmentPart` do `skeleton.ts`), no espaço local da junta. */
-function PartMesh({ part, name, color, selected, locked, pinned, ghost, onClick }: PartMeshProps) {
+function PartMesh({ part, name, color, selected, locked, pinned, ghost, silhouette, onClick }: PartMeshProps) {
   const isEye = part.tint === 'eye'
   const isMarker = part.tint === 'marker'
   const fixedColor = isEye ? EYE_COLOR : isMarker ? MARKER_COLOR : null
@@ -249,6 +263,9 @@ function PartMesh({ part, name, color, selected, locked, pinned, ghost, onClick 
       position={part.offset}
       rotation={part.rotation ? degTripleFromVec(part.rotation) : undefined}
       scale={scale}
+      // Sombra projetada real (item 17): o corpo projeta no chão, como os
+      // objetos de cena já faziam. O fantasma não — referência não faz sombra.
+      castShadow={!ghost}
       onClick={isEye ? undefined : onClick}
     >
       {part.kind === 'lathe' && latheProfile && (
@@ -262,30 +279,36 @@ function PartMesh({ part, name, color, selected, locked, pinned, ghost, onClick 
 
           `depthWrite` desligado é o que permite dois fantasmas se atravessarem
           sem um recortar o outro em pedaços — o mesmo truque da sombra. */}
-      <meshStandardMaterial
-        color={ghost ? ghost.color : (fixedColor ?? color)}
-        emissive={
-          highlight === 'selected'
-            ? SELECTED_EMISSIVE
-            : highlight === 'locked'
-              ? LOCKED_EMISSIVE
-              : highlight === 'pinned'
-                ? PINNED_EMISSIVE
-                : '#000000'
-        }
-        emissiveIntensity={
-          highlight === 'selected'
-            ? SELECTED_EMISSIVE_INTENSITY
-            : highlight === 'locked'
-              ? LOCKED_EMISSIVE_INTENSITY
-              : highlight === 'pinned'
-                ? PINNED_EMISSIVE_INTENSITY
-                : 0
-        }
-        transparent={Boolean(ghost)}
-        opacity={ghost ? ghost.opacity : 1}
-        depthWrite={!ghost}
-      />
+      {!ghost && silhouette ? (
+        // Silhueta (item 8): preto chapado, sem luz e sem destaques — material
+        // alternativo, geometria e interação intactas.
+        <meshBasicMaterial color={SILHOUETTE_COLOR} />
+      ) : (
+        <meshStandardMaterial
+          color={ghost ? ghost.color : (fixedColor ?? color)}
+          emissive={
+            highlight === 'selected'
+              ? SELECTED_EMISSIVE
+              : highlight === 'locked'
+                ? LOCKED_EMISSIVE
+                : highlight === 'pinned'
+                  ? PINNED_EMISSIVE
+                  : '#000000'
+          }
+          emissiveIntensity={
+            highlight === 'selected'
+              ? SELECTED_EMISSIVE_INTENSITY
+              : highlight === 'locked'
+                ? LOCKED_EMISSIVE_INTENSITY
+                : highlight === 'pinned'
+                  ? PINNED_EMISSIVE_INTENSITY
+                  : 0
+          }
+          transparent={Boolean(ghost)}
+          opacity={ghost ? ghost.opacity : 1}
+          depthWrite={!ghost}
+        />
+      )}
     </mesh>
   )
 }
@@ -295,10 +318,12 @@ interface BoneProps {
   style: Exclude<BoneStyle, { kind: 'hidden' }>
   color: string
   ghost?: GhostStyle | null
+  /** Modo silhueta (item 8) — preto chapado; o fantasma vence. */
+  silhouette?: boolean
 }
 
 /** Osso ligando a origem da junta (0,0,0) ao offset local da junta filha, com o perfil da camada visual do `skeleton.ts`. */
-function Bone({ to, style, color, ghost }: BoneProps) {
+function Bone({ to, style, color, ghost, silhouette }: BoneProps) {
   const { length, quaternion, midpoint, profile, bladeGeometry } = useMemo(() => {
     const target = new THREE.Vector3(...to)
     const boneLength = target.length()
@@ -349,14 +374,19 @@ function Bone({ to, style, color, ghost }: BoneProps) {
       quaternion={quaternion}
       scale={[1, 1, depthRatio]}
       geometry={bladeGeometry ?? undefined}
+      castShadow={!ghost}
     >
       {profile && <latheGeometry args={[profile, BONE_LATHE_SEGMENTS]} />}
-      <meshStandardMaterial
-        color={ghost ? ghost.color : color}
-        transparent={Boolean(ghost)}
-        opacity={ghost ? ghost.opacity : 1}
-        depthWrite={!ghost}
-      />
+      {!ghost && silhouette ? (
+        <meshBasicMaterial color={SILHOUETTE_COLOR} />
+      ) : (
+        <meshStandardMaterial
+          color={ghost ? ghost.color : color}
+          transparent={Boolean(ghost)}
+          opacity={ghost ? ghost.opacity : 1}
+          depthWrite={!ghost}
+        />
+      )}
     </mesh>
   )
 }
@@ -368,6 +398,7 @@ interface JointBodyProps {
   locked?: boolean
   pinned?: boolean
   ghost?: GhostStyle | null
+  silhouette?: boolean
   style: FigureStyle
   onSelect?: () => void
   touchTargetRadius?: number
@@ -382,6 +413,7 @@ function JointBody({
   locked,
   pinned,
   ghost,
+  silhouette,
   style,
   onSelect,
   touchTargetRadius,
@@ -402,6 +434,7 @@ function JointBody({
           locked={locked}
           pinned={pinned}
           ghost={ghost}
+          silhouette={silhouette}
           onClick={handleClick}
         />
       ))}
@@ -423,6 +456,7 @@ interface JointNodeProps {
   lockedJointNames?: readonly string[] | null
   pinnedJointNames?: readonly string[] | null
   ghost?: GhostStyle | null
+  silhouette?: boolean
   style: FigureStyle
   onSelectJoint?: (jointName: string) => void
   onJointRef?: (jointName: string, object: THREE.Group | null) => void
@@ -437,6 +471,7 @@ function JointNode({
   lockedJointNames,
   pinnedJointNames,
   ghost,
+  silhouette,
   style,
   onSelectJoint,
   onJointRef,
@@ -478,6 +513,7 @@ function JointNode({
         locked={lockedJointNames?.includes(name) ?? false}
         pinned={pinnedJointNames?.includes(name) ?? false}
         ghost={ghost}
+        silhouette={silhouette}
         style={style}
         onSelect={onSelectJoint && interactive ? () => onSelectJoint(name) : undefined}
         touchTargetRadius={touchTargetRadius}
@@ -497,6 +533,7 @@ function JointNode({
             style={boneStyle}
             color={figure.color}
             ghost={ghost}
+            silhouette={silhouette}
           />
         )
       })}
@@ -509,6 +546,7 @@ function JointNode({
           lockedJointNames={lockedJointNames}
           pinnedJointNames={pinnedJointNames}
           ghost={ghost}
+          silhouette={silhouette}
           style={style}
           onSelectJoint={onSelectJoint}
           onJointRef={onJointRef}
@@ -552,6 +590,7 @@ export function Figure({
   onJointRef,
   ghost,
   style = DEFAULT_FIGURE_STYLE,
+  silhouette,
   touchTargetRadius,
   onJointPointerDown,
 }: FigureProps) {
@@ -591,6 +630,7 @@ export function Figure({
           lockedJointNames={locked}
           pinnedJointNames={pinned}
           ghost={ghost}
+          silhouette={silhouette}
           style={style}
           onSelectJoint={handleSelectJoint}
           onJointRef={handleJointRef}

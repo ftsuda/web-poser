@@ -18,6 +18,7 @@ function makeProp(overrides: Partial<SceneProp> = {}): SceneProp {
     rotation: { x: 0, y: 30, z: 0 },
     size: [0.5, 0.5, 0.5],
     vertexOffsets: {},
+    attachment: null,
     ...overrides,
   }
 }
@@ -89,6 +90,12 @@ describe('serialização de objetos de cena', () => {
       expect(controlPointCount('box')).toBe(8)
     })
 
+    it('desvio de vértice gravado para forma composta é descartado — modelo íntegro', () => {
+      const restored = propFromExtras({ shape: 'sword', vertices: { 0: [0.3, 0, 0] } }, 0)
+      expect(restored.shape).toBe('sword')
+      expect(restored.vertexOffsets).toEqual({})
+    })
+
     it('tamanho absurdo é grampeado, não propagado para a geometria', () => {
       expect(propFromExtras({ shape: 'box', size: [0, 1e9, NaN] }, 0).size).toEqual([0.01, 20, 0.5])
     })
@@ -98,6 +105,43 @@ describe('serialização de objetos de cena', () => {
       expect(restored.locked).toBe(false)
       expect(restored.hiddenInEditor).toBe(false)
       expect(restored.visible).toBe(true)
+    })
+  })
+
+  describe('amarração a junta (campo aditivo, PLANO.md > amarração)', () => {
+    const attachment = {
+      figureId: 'figure-1',
+      jointName: 'wrist.R',
+      position: [0, -0.04, 0] as const,
+      rotation: { x: 0, y: 0, z: 90 },
+    }
+
+    it('objeto sem amarração não grava a chave', () => {
+      expect(propToExtras(makeProp())).not.toHaveProperty('attachment')
+    })
+
+    it('a amarração faz a ida e volta quando o boneco existe', () => {
+      const prop = makeProp({ attachment })
+      const restored = propFromExtras(propToExtras(prop), 0, new Set(['figure-1']))
+      expect(restored).toEqual(prop)
+    })
+
+    it('amarração para boneco que não está na cena é podada: o objeto volta à própria colocação', () => {
+      const prop = makeProp({ attachment })
+      const restored = propFromExtras(propToExtras(prop), 0, new Set(['figure-2']))
+      expect(restored.attachment).toBeNull()
+      expect(restored.position).toEqual([1, 0.25, -2])
+    })
+
+    it('amarração para junta desconhecida é podada', () => {
+      const extras = { ...propToExtras(makeProp({ attachment })), attachment: { ...attachment, jointName: 'tail' } }
+      expect(propFromExtras(extras, 0, new Set(['figure-1'])).attachment).toBeNull()
+    })
+
+    it('arquivo gravado antes da amarração abre com o objeto solto', () => {
+      const extras = propToExtras(makeProp()) as unknown as Record<string, unknown>
+      delete extras.attachment
+      expect(propFromExtras(extras, 0).attachment).toBeNull()
     })
   })
 

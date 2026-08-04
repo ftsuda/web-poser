@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   ANIMATION_SPEED_STEP,
   DEFAULT_ANIMATION_SPEED,
+  KEYFRAME_EASINGS,
   MAX_ANIMATION_SPEED,
   MIN_ANIMATION_SPEED,
   animationDurationMs,
@@ -12,6 +13,7 @@ import {
   keyframeIndexAtTimeMs,
   keyframeStartTimesMs,
   savedAnimations,
+  type KeyframeEasing,
 } from '../animation/animation'
 import { ANIMATION_CLIPS, ANIMATION_CLIP_KEYS, type AnimationClipKey } from '../animation/animationClips'
 import { clipRoleCount } from '../animation/clipLibrary'
@@ -43,6 +45,14 @@ import { ApplyCameraDialog } from './ApplyCameraDialog'
 import { CollapsiblePanel } from './CollapsiblePanel'
 import { CollapsibleSection } from './CollapsibleSection'
 import { ConfirmDialog } from './ConfirmDialog'
+
+/** Rótulo de cada curva de suavização (item 26) — mapa explícito, para o typecheck acusar curva nova sem tradução. */
+const EASING_LABEL_KEYS: Record<KeyframeEasing, string> = {
+  linear: 'panels.animation.easingLinear',
+  easeInOut: 'panels.animation.easingInOut',
+  easeIn: 'panels.animation.easingIn',
+  easeOut: 'panels.animation.easingOut',
+}
 
 /** Rótulo de cada modo do papel-cebola — mapa explícito, para o typecheck acusar modo novo sem tradução. */
 const ONION_SKIN_MODE_LABEL_KEYS: Record<OnionSkinMode, string> = {
@@ -274,10 +284,13 @@ export function AnimationPanel() {
   const saveAnimationToLibrary = useFiguresStore((state) => state.saveAnimationToLibrary)
   const openAnimationFromLibrary = useFiguresStore((state) => state.openAnimationFromLibrary)
   const overwriteSavedAnimation = useFiguresStore((state) => state.overwriteSavedAnimation)
+  const moveSavedAnimation = useFiguresStore((state) => state.moveSavedAnimation)
   const importAnimation = useFiguresStore((state) => state.importAnimation)
   const removeAnimationKeyframe = useFiguresStore((state) => state.removeAnimationKeyframe)
   const moveAnimationKeyframe = useFiguresStore((state) => state.moveAnimationKeyframe)
+  const moveAnimationKeyframeBlock = useFiguresStore((state) => state.moveAnimationKeyframeBlock)
   const setAnimationKeyframeDuration = useFiguresStore((state) => state.setAnimationKeyframeDuration)
+  const setAnimationKeyframeEasing = useFiguresStore((state) => state.setAnimationKeyframeEasing)
   const setAnimationKeyframeLabel = useFiguresStore((state) => state.setAnimationKeyframeLabel)
   const copyAnimationKeyframeCamera = useFiguresStore((state) => state.copyAnimationKeyframeCamera)
   const copyAnimationKeyframeFigures = useFiguresStore((state) => state.copyAnimationKeyframeFigures)
@@ -617,20 +630,49 @@ export function AnimationPanel() {
               <Fragment key={keyframe.id}>
                 {startsGroup && group && (
                   <li className="animation-panel__group">
-                    <button
-                      type="button"
-                      className="animation-panel__group-toggle"
-                      aria-expanded={!groupCollapsed}
-                      onClick={() =>
-                        setCollapsedGroups((current) => ({ ...current, [label]: !groupCollapsed }))
-                      }
-                    >
-                      {groupCollapsed ? '▸' : '▾'} {label}
-                    </button>
-                    <span className="animation-panel__group-count">
-                      {t('panels.animation.groupCount', {
-                        count: group.endIndex - group.startIndex + 1,
-                      })}
+                    {/* Nome e contagem numa linha; as setas do bloco na
+                        seguinte (pedido do usuário, #117.1) — o título de um
+                        grupo pode ser comprido, e disputar a linha com os
+                        botões espremia os dois. */}
+                    <span className="animation-panel__group-title">
+                      <button
+                        type="button"
+                        className="animation-panel__group-toggle"
+                        aria-expanded={!groupCollapsed}
+                        onClick={() =>
+                          setCollapsedGroups((current) => ({ ...current, [label]: !groupCollapsed }))
+                        }
+                      >
+                        {groupCollapsed ? '▸' : '▾'} {label}
+                      </button>
+                      <span className="animation-panel__group-count">
+                        {t('panels.animation.groupCount', {
+                          count: group.endIndex - group.startIndex + 1,
+                        })}
+                      </span>
+                    </span>
+                    {/* O bloco anda INTEIRO e pula o vizinho inteiro (#117):
+                        meio bloco dentro do outro partiria o vizinho em dois
+                        grupos de mesmo nome, que é o que o item 38 evita. */}
+                    <span className="animation-panel__group-actions">
+                      <button
+                        type="button"
+                        onClick={() => moveAnimationKeyframeBlock(active.id, keyframe.id, -1)}
+                        disabled={group.startIndex === 0}
+                        aria-label={t('panels.animation.moveGroupUp')}
+                        title={t('panels.animation.moveGroupUpHint')}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveAnimationKeyframeBlock(active.id, keyframe.id, 1)}
+                        disabled={group.endIndex === active.keyframes.length - 1}
+                        aria-label={t('panels.animation.moveGroupDown')}
+                        title={t('panels.animation.moveGroupDownHint')}
+                      >
+                        ↓
+                      </button>
                     </span>
                   </li>
                 )}
@@ -685,6 +727,25 @@ export function AnimationPanel() {
                 disabled={index === 0}
                 onCommit={(durationMs) => setAnimationKeyframeDuration(active.id, keyframe.id, durationMs)}
               />
+
+              {/* Suavização do trecho de chegada (item 26) — mesma convenção
+                  da duração, inclusive o primeiro keyframe desabilitado. */}
+              <label className="animation-panel__duration">
+                {t('panels.animation.easing')}
+                <select
+                  value={keyframe.easing ?? 'linear'}
+                  disabled={index === 0}
+                  onChange={(event) =>
+                    setAnimationKeyframeEasing(active.id, keyframe.id, event.target.value as KeyframeEasing)
+                  }
+                >
+                  {KEYFRAME_EASINGS.map((easing) => (
+                    <option key={easing} value={easing}>
+                      {t(EASING_LABEL_KEYS[easing])}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
               {/* Quatro linhas fixas (pedido do usuário), cada uma declarada
                   aqui e não deduzida por `nth-child`: elas têm contagens
@@ -1327,6 +1388,25 @@ export function AnimationPanel() {
                 </button>
                 <button type="button" onClick={() => removeAnimation(selectedSaved)}>
                   {t('panels.animation.remove')}
+                </button>
+                {/* Reordenar a biblioteca (item 19), como no catálogo de
+                    cenas: a ordem era fixa pela criação. */}
+                <button
+                  type="button"
+                  disabled={library.findIndex((animation) => animation.id === selectedSaved) <= 0}
+                  onClick={() => moveSavedAnimation(selectedSaved, -1)}
+                >
+                  {t('panels.animation.moveSavedUp')}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    library.findIndex((animation) => animation.id === selectedSaved) ===
+                    library.length - 1
+                  }
+                  onClick={() => moveSavedAnimation(selectedSaved, 1)}
+                >
+                  {t('panels.animation.moveSavedDown')}
                 </button>
               </div>
 

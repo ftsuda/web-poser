@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import { TransformControls } from '@react-three/drei'
 import * as THREE from 'three'
 import { applyJointDrag } from '../figure/dragActions'
+import { beginUndoBatch, endUndoBatch } from '../store/undoBatch'
 
 export interface JointDragGizmoProps {
   figureId: string
@@ -59,10 +60,15 @@ export function JointDragGizmo({ figureId, jointName, jointObject, onDraggingCha
           onObjectChange={handleObjectChange}
           onMouseDown={() => {
             draggingRef.current = true
+            // O arrasto inteiro é UM passo de undo (DECISOES.md #118): o
+            // solver escreve a cadeia a cada evento, e só o estado de quando o
+            // botão for solto interessa ao histórico.
+            beginUndoBatch()
             onDraggingChange?.(true)
           }}
           onMouseUp={() => {
             draggingRef.current = false
+            endUndoBatch()
             onDraggingChange?.(false)
           }}
         />

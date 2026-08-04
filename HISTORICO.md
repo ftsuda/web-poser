@@ -1,6 +1,6 @@
 # WebPoser — histórico de entregas
 
-As **91 entregas** do projeto, uma por sessão de trabalho, em ordem cronológica de conclusão — de 2026-07-22 a 2026-08-02.
+As **106 entregas** do projeto, uma por sessão de trabalho, em ordem cronológica de conclusão — de 2026-07-22 a 2026-08-03.
 
 Saiu do `PLANO.md` em 2026-07-31, onde crescia em quatro blocos separados, dois deles no meio da lista de propostas. **O conteúdo das entradas não foi alterado**: só a ordem (a data de conclusão do título) e o arquivo em que moram. O que o app é e o que falta fazer continua no `PLANO.md`; o porquê de cada escolha, no `DECISOES.md`.
 
@@ -99,6 +99,21 @@ Entrada nova entra no fim, no padrão `### Título ✅ (concluído em AAAA-MM-DD
 - `2026-08-02` — [Rename: Virtual Mockup vira WebPoser](#rename-virtual-mockup-vira-webposer--concluído-em-2026-08-02)
 - `2026-08-02` — [Publicação automática no GitHub Pages](#publicação-automática-no-github-pages--concluído-em-2026-08-02)
 - `2026-08-02` — [Licença MIT](#licença-mit--concluído-em-2026-08-02)
+- `2026-08-02` — [Blocos 1–3 das pendências: dez itens — baratos de uso diário, easing e a dívida do viewport](#blocos-13-das-pendências-dez-itens--baratos-de-uso-diário-easing-e-a-dívida-do-viewport--concluído-em-2026-08-02)
+- `2026-08-03` — [Amarração de objeto a junta, kit de armas e pose por imagem (etapas 1–2)](#amarração-de-objeto-a-junta-kit-de-armas-e-pose-por-imagem-etapas-12--concluído-em-2026-08-03)
+- `2026-08-03` — [Setas do gizmo do módulo de poses em tamanho de dedo](#setas-do-gizmo-do-módulo-de-poses-em-tamanho-de-dedo--concluído-em-2026-08-03)
+- `2026-08-03` — [Pose por marcação manual: foto de referência (item 7), marcação guiada e profundidade opt-in](#pose-por-marcação-manual-foto-de-referência-item-7-marcação-guiada-e-profundidade-opt-in--concluído-em-2026-08-03)
+- `2026-08-03` — [Zoom e deslocamento da foto de referência](#zoom-e-deslocamento-da-foto-de-referência--concluído-em-2026-08-03)
+- `2026-08-03` — [Sequência de marcação agrupada por membro](#sequência-de-marcação-agrupada-por-membro--concluído-em-2026-08-03)
+- `2026-08-03` — [Marca da base do pescoço — prumo do tronco como eixo primário](#marca-da-base-do-pescoço--prumo-do-tronco-como-eixo-primário--concluído-em-2026-08-03)
+- `2026-08-03` — [Vídeo como referência — frame a frame sobre o papel vegetal](#vídeo-como-referência--frame-a-frame-sobre-o-papel-vegetal--concluído-em-2026-08-03)
+- `2026-08-03` — [Profundidade dos ombros e quadris, e o cursor da marcação](#profundidade-dos-ombros-e-quadris-e-o-cursor-da-marcação--concluído-em-2026-08-03)
+- `2026-08-03` — [Giro da raiz atravessando os ±180° na animação](#giro-da-raiz-atravessando-os-180-na-animação--concluído-em-2026-08-03)
+- `2026-08-03` — [Mover o bloco nomeado de keyframes](#mover-o-bloco-nomeado-de-keyframes--concluído-em-2026-08-03)
+- `2026-08-03` — [Arrumação: setas do bloco em linha própria e silhueta antes da casca](#arruma%C3%A7%C3%A3o-setas-do-bloco-em-linha-pr%C3%B3pria-e-silhueta-antes-da-casca--concluído-em-2026-08-03)
+- `2026-08-03` — [Um gesto, um passo de undo](#um-gesto-um-passo-de-undo--concluído-em-2026-08-03)
+- `2026-08-03` — [Profundidade da marcação: a opção em vigor fica acesa](#profundidade-da-marcação-a-opção-em-vigor-fica-acesa--concluído-em-2026-08-03)
+- `2026-08-03` — [Base do tórax e a raiz conferida pelos quadris](#base-do-tórax-e-a-raiz-conferida-pelos-quadris--concluído-em-2026-08-03)
 
 ---
 
@@ -1210,7 +1225,7 @@ Pedido do usuário na esteira do levantamento de publicação e do rename (#102)
 **Duas correções depois das primeiras rodadas** (ver `DECISOES.md` #103.1 e #103.2):
 
 - **`package-lock.json` regenerado no Linux.** O `npm ci` do runner recusou o lock (`Missing: @emnapi/core@1.11.3`, `@emnapi/runtime@1.11.3`) — peers de `@napi-rs/wasm-runtime`, que entra pelo fallback wasm do rolldown e que o npm no Windows nunca hoista. Regerar no Windows reproduzia o mesmo defeito; os flags `--os/--cpu/--libc` não resolvem (trocam binário, não peer). Lock gerado em container `node:24`, validado dos dois lados (`npm ci` no Linux: 598 pacotes, exit 0; `npm ci --dry-run` no Windows: up to date). Diff de 112 linhas restritas ao canto `emnapi`/`fsevents`, mais `@napi-rs/wasm-runtime` 1.1.6 → 1.2.2; **nenhuma dependência da aplicação mudou**.
-- **`enablement: true` no `configure-pages`.** A rodada seguinte parou em "Get Pages site failed / Not Found" — o Pages não estava habilitado no repositório. A ação passa a ligá-lo pela API na primeira execução, em vez de exigir uma visita a `Settings > Pages`.
+- **Pages habilitado no repositório.** A rodada seguinte parou em "Get Pages site failed / Not Found": o site nunca tinha sido criado. Destravado ligando `Settings > Pages` com a origem em **GitHub Actions**; o `configure-pages` ganhou `enablement: true` como rede de segurança para um clone novo, não como substituto. Uma rota alternativa por branch `gh-pages` chegou a ser escrita e foi descartada — o Pages serve de uma fonte só, e dois publicadores no mesmo workflow se atropelam (ver #103.2).
 
 **Saldo: 2.491 testes, estável** (entrega de infraestrutura e documentação, sem código de aplicação); `tsc -b`, `eslint .` e `npm run build` limpos — e confirmados **no runner**, que atravessou instalação, suíte, lint e build antes de parar no passo do Pages. Falta a decisão de licença (o repositório ainda não tem `LICENSE`), apontada no levantamento como pré-requisito de qualquer publicação.
 
@@ -1225,3 +1240,182 @@ Decisão do usuário, fechando a última pendência que o levantamento de public
 - Registrado no #104 o custo honesto da escolha (a MIT autoriza fork comercial sem contrapartida) e por que ela não briga com a monetização levantada: cinco dos seis modelos não vendem acesso ao software, e os packs de conteúdo são JSON, fora do alcance da licença do código.
 
 **Saldo: 2.491 testes, estável** (entrega de licenciamento e documentação, sem código de aplicação).
+
+### Blocos 1–3 das pendências: dez itens — baratos de uso diário, easing e a dívida do viewport ✅ (concluído em 2026-08-02)
+
+O usuário pediu a ordem sugerida para as pendências do `PLANO.md` e mandou implementar os três primeiros blocos — os baratos de uso diário (53, 55, 35, 19, 8, 17, 52), o easing (26) e a dívida técnica que barateia o resto (58, 21; o 23 ficou de fora como combinado, é "quando doer"). Narrativas em `DECISOES.md` #105 (bloco 1), #106 (easing) e #107 (viewport).
+
+- **Item 53** — badge de autosave no `PosesTopBar`: ponto colorido lendo o `uiStore` (o hook de autosave é compartilhado com o desktop), frase das chaves `toolbar.autosave*` como nome acessível/título. CSS em `poses.css`.
+- **Item 55** — "Aplicar pose do arquivo" na aba Arquivo do módulo: `parseFigurePoseFile` (aceita a família inteira de formatos) → `applyImportedFigurePose` no boneco em edição; desabilitado sem boneco; erros do desktop reaproveitados. 2 chaves de i18n.
+- **Item 35** — campo "Filtrar poses" acima do combo do painel de Propriedades: busca por trecho sem caixa/acento (`layout/poseFilter.ts`, novo e puro); a escolhida nunca some do combo; grupo vazio some inteiro; vale para presets e biblioteca.
+- **Item 19** — reordenar: setas ↑/↓ por cena no painel de Cenas e "Subir/Descer na lista" na biblioteca de animações; `moveSceneSnapshot`/`moveSavedAnimation` no store com um helper comum (`moveById`), no undo; a animação de trabalho fica onde está.
+- **Item 8** — modo silhueta: checkbox na Toolbar (`figureSilhouette` no `uiStore`/`uiPreferences`, regime da casca); `Figure.tsx` troca todas as peças por `meshBasicMaterial` preto chapado, sem destaques; fantasma vence; clique/seleção intactos; sai no PNG/MP4.
+- **Item 17** — a revisão achou que o boneco NUNCA projetou sombra real (`castShadow` ausente — só objetos de cena projetavam); peças e ossos ganharam `castShadow` (fantasma não), cumprindo a promessa da tabela de arquitetura do plano; elipse de contato mantida como indicador distinto.
+- **Item 52** — poses de partida na aba Boneco do módulo: combo com o catálogo inteiro + "Aplicar pose" via `applyPosePreset` (sem pareamento de dupla); os mapas de rótulo dos presets saíram do `PropertiesPanel` para `layout/posePresetLabels.ts` (fonte única). 2 chaves de i18n.
+- **Item 26** — easing por trecho: `easing?: 'linear'|'easeInOut'|'easeIn'|'easeOut'` no keyframe (chegada, como a duração; 'linear' nunca gravado; sanitização aditiva), `applyEasing` puro no `animation.ts`, `sampleAnimation` remapeia o `t` do trecho (bonecos + câmera juntos); combo "Suavização" por card; inserir num trecho suavizado guarda o retrato do instante suavizado e devolve as DUAS metades ao linear, com aviso visível na barra da linha do tempo; o campo viaja nos trechos salvos (`SavedClipStep.easing`, captura → `clips.json` → inserção). 6 chaves de i18n.
+- **Item 58** — `poses/posesDrag.ts` (novo, puro): `dragTargetForPointer` (seta do gizmo / plano da tela / plano da vista), `draggedRootPosition`, `wrapAngleDeltaDeg` e a máquina de estados do gesto de torção (`TwistTracker`, limiar de 10°); `PosesViewport` ficou só com a cola, comportamento preservado.
+- **Item 21** — `frameloop="demand"` no `Canvas` do desktop, com a auditoria dos pontos animados registrada em comentário e no #107 (controles do drei invalidam no change; reprodução escreve estado por tick; captura/vídeo renderizam por conta própria); o viewport do módulo de poses ficou de fora de propósito.
+
+**Saldo: de 2.491 para 2.536 testes** (+45: topbar/aba Arquivo/aba Boneco do módulo, filtro de poses, reordenação, silhueta e sombra no `Figure`, easing no modelo/amostrador/store/painéis, `posesDrag`); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual no navegador**: sombra projetada do boneco (intensidade/leitura com a elipse), silhueta, easing na reprodução/MP4, e o desktop inteiro sob `frameloop="demand"` (órbita, gizmos, reprodução, captura, vídeo).
+
+### Amarração de objeto a junta, kit de armas e pose por imagem (etapas 1–2) ✅ (concluído em 2026-08-03)
+
+Os itens 1 e 3 do bloco dos "grandes": as duas metades viáveis da proposta "Objetos pré-modelados e amarração a juntas" e o primeiro corte da proposta "MCP de análise de pose" — as dúvidas registradas no plano foram respondidas pelo usuário antes de codificar (tudo na recomendação, exceto **multi-pessoa já** no `pose:from-image`). Narrativas em `DECISOES.md` #108 (amarração + kit) e #109 (pose por imagem).
+
+- **Amarração** — `SceneProp.attachment: {figureId, jointName, position, rotation} | null`; colocação em mundo DERIVADA do frame da junta (`props/propAttachment.ts`, novo e puro: `attachedPropPlacement` + `placementToAttachmentOffset`, ida-e-volta travada por teste, offset na escala de altura do boneco). Keyframes intactos: a espada acompanha reprodução e MP4 porque quem anda é a mão.
+- **Store** — `attachProp` (offset nasce da colocação atual: amarrar não pula), `detachProp` (grava a colocação de mundo: soltar fica onde está), `setPropAttachmentOffset`; `setPropPosition`/`setPropRotation` convertem a intenção de mundo do gizmo em offset no amarrado; remover o boneco poda a amarração e o objeto volta à PRÓPRIA colocação; cópia nasce solta; "Apoiar no chão" no-op; tudo no undo.
+- **Render** — `SceneProps` passou a ler `preview?.figures ?? figures` (a exceção ao "cenário estático": só para derivar a colocação dos amarrados) — sem isso a espada parava no play; travado por teste de render novo (`scene/__tests__/SceneProps.test.tsx`). Alças de vértice seguem a colocação derivada.
+- **Persistência** — `PropExtras.attachment` aditivo, sem bump de versão; sanitização poda junta desconhecida e boneco fora da cena (bonecos lidos antes dos objetos no `sceneFromExtras`); autosave e catálogo de cenas herdam de graça.
+- **UI** — fieldset "Amarração" no bloco do objeto (combos de boneco + junta com os grupos do esqueleto, "Amarrar à junta", "Soltar (fica onde está)"); amarrado, os campos de posição/rotação editam o offset e a legenda diz isso. 9 chaves de i18n.
+- **Kit de armas** — formas compostas `sword`/`shield`/`scabbard` em `propGeometry` (peças de primitivas fundidas por `mergeGeometries` — geometria de código, sem asset); tamanho por eixo em metros como as demais, **sem vértice livre** (`propShapeHasFreeVertex`: sanitização descarta desvio, store recusa, UI desabilita a ferramenta e esconde o contador); contagens soldadas no teste de contrato (181/119/34); 3 chaves de i18n por dicionário.
+- **Pose por imagem, núcleo** — `src/pose-import/` novo: `blazepose.ts` (os 33 índices) e `retarget.ts` (landmarks → rotações nas convenções do `buildJointFrames`, clamp por `clampJointRotation`, frames ortonormais para raiz/tronco, menor arco + plano do membro para braços/pernas, `atan2` nas dobradiças, punho pelo meio da mão; o que a imagem não conta fica neutro e vira AVISO). Testado por **ida-e-volta com a cinemática do app**: T-pose, cotovelo dobrado, agachamento e raiz girada recuperados com exatidão.
+- **Pose por imagem, CLI** — `tools/pose-from-image.mjs` (`npm run pose:from-image`): MediaPipe Pose Landmarker em Chromium headless (Playwright, rota interceptada — nenhuma requisição sai), multi-pessoa (um arquivo "Pose em arquivo" por pessoa), avisos impressos; `tools/baixar-modelo-pose.mjs` (`npm run pose:model`) baixa o modelo uma vez para `tools/models/` (gitignored). Validada de ponta a ponta com duas fotos reais (uma boa, uma adversarial — ver #109). devDependency nova `@mediapipe/tasks-vision`; `package-lock.json` regenerado no docker `node:24` com `binding-win32` conferido (#103.1).
+
+**Saldo: de 2.536 para 2.589 testes** (+53: amarração pura, store, serialização, render, UI, compostas, retargeting); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual no navegador**: amarrar/soltar a espada pelo painel, o gizmo escrevendo offset, a espada seguindo a mão na reprodução/MP4, as três formas novas (proporções e leitura), e uma pose importada de foto real aplicada num boneco.
+
+### Setas do gizmo do módulo de poses em tamanho de dedo ✅ (concluído em 2026-08-03)
+
+Pedido direto do usuário, da prática no touch: as setas do gizmo de translação da vista Livre estavam difíceis de acertar com o dedo. Narrativa em `DECISOES.md` #110.
+
+- Haste, ponta e o cilindro invisível de TOQUE do `FreeViewGizmo` dobraram (alvo de toque: raio 0,045 → 0,09 m, comprimento 0,3 → 0,6 m, antes da reescala por distância do item 48, que segue valendo); medidas nomeadas num objeto `ARROW` no lugar dos literais.
+- O componente passou a ser exportado só para teste, e `posesGizmo.test.tsx` (novo) trava os MÍNIMOS — pelo menos o dobro do original — para um refactor não encolher o alvo de volta sem ninguém notar.
+- Os anéis gimbal (só leitura) não mudaram; ficaram proporcionalmente menores ao lado das setas novas — engordam em ajuste próprio se a conferência pedir.
+
+**Saldo: de 2.589 para 2.592 testes** (+3, geometria do gizmo); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no aparelho**: acertar as setas com o dedo na vista Livre destravada (e ver se o novo tamanho não engole o boneco em zoom próximo).
+
+### Pose por marcação manual: foto de referência (item 7), marcação guiada e profundidade opt-in ✅ (concluído em 2026-08-03)
+
+As quatro etapas da proposta "Pose por marcação manual" (PLANO.md), com as dúvidas respondidas pelo usuário antes de codificar — inclusive o desenho do root-âncora, sugestão dele. Narrativa em `DECISOES.md` #111.
+
+- **Etapa 1 = item 7** — foto de referência POR CIMA do viewport (papel vegetal): `referenceImageStore` (sessão pura: fora do undo, do arquivo e do `localStorage`; object URL revogado; compartilhado pelas duas cascas) + `ReferencePhotoOverlay` (DOM, regime do `FrameMaskOverlay`: nunca sai no PNG/MP4; opacidade e mostrar/ocultar; `pointer-events: none` fora da marcação).
+- **Núcleo compartilhado** — o solver junta a junta saiu do `retarget.ts` para `pose-import/poseSolver.ts` (uma correção real no caminho: entre as duas orientações do plano do membro, fica a mais próxima do menor arco — dados contraditórios não viram membro do avesso); `pose-import/markedPose.ts` (novo, puro): 13 marcas obrigatórias + 3 opcionais → pose, com o ROOT DADO (alinhamento manual, nunca inferido nem alterado), plano da vista pela câmera viva (`viewportViewBasis` + `ViewportCameraBridge` nos dois Canvas), e profundidade OPT-IN por marcador (dz = √(L²−proj²) do encurtamento do osso; mediana como escala; pai→filho na cadeia; encurtamento <5% vira aviso).
+- **Marcação** — sequência guiada com pular/recomeçar, marcadores numerados arrastáveis (coordenadas normalizadas DA FOTO — redimensionar a janela não desalinha), seleção + três estados de profundidade; no modo de marcação o overlay engole os toques (câmera e boneco congelam sem tocar em controle nenhum).
+- **Aplicação** — `applyInferredPose` no `figuresStore`: só pose, colocação intacta, juntas travadas respeitadas (#42); avisos como chaves de i18n listados na tela.
+- **UI nas duas cascas** — seção "Foto de referência" no painel de Propriedades (chave `referencePhoto` em `SECTION_KEYS`, nasce recolhida; presente também no painel vazio) e aba "Foto" no módulo de poses, ambas sobre o MESMO `ReferencePhotoControls`. ~50 chaves de i18n nos dois dicionários.
+
+**Saldo: de 2.592 para 2.617 testes** (+25: inferência por marcas com fixtures projetadas, store da foto, aplicação com travas, controles e overlay); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência visual no navegador/aparelho**: carregar foto nas duas cascas, alinhar o root sobre ela, o fluxo guiado de toques (colocar, arrastar, profundidade), inferir e conferir a pose — e o papel vegetal fora das capturas.
+
+### Zoom e deslocamento da foto de referência ✅ (concluído em 2026-08-03)
+
+Pedido do usuário, da prática com a marcação no touch: dar zoom e mover a foto de referência. As duas dúvidas de interação foram perguntadas antes de codificar (gestos + slider; gestos valem também durante a marcação). Narrativa em `DECISOES.md` #112.
+
+- **`scene/referencePhotoView.ts` (novo, puro)** — a vista da foto: retângulo "contain" como base, zoom em torno do centro, deslocamento em FRAÇÕES do base (a janela redimensionada não desloca a foto relativa); `zoomPhotoViewAround` fixa o pixel sob o ponteiro; grampos (zoom 0,25×–8×; deslocamento ±(0,5 + zoom/2), a foto nunca se perde sem volta).
+- **Store** — `photoZoom`/`photoOffsetX`/`photoOffsetY` + modo `adjusting` no `referenceImageStore` (sessão pura, como o resto; foto nova zera a vista); "ajustar" e "marcar" são exclusivos — cada modo dá um sentido próprio aos toques.
+- **Overlay** — a `<img>` e os marcadores passaram a ser posicionados pelo retângulo transformado; no modo de ajuste, arrasto de um dedo move; nos DOIS modos, pinça (incremental, em torno do ponto médio) e roda do mouse (ouvinte nativo `passive: false`) ampliam; `touch-action: none` para o navegador não ficar com a pinça. **A marca deixou de nascer no `pointerdown`**: confirma na SOLTURA de um dedo parado (< 8 px) — senão toda pinça deixaria uma marca órfã do primeiro dedo.
+- **Controles** — slider de zoom em escala log2 com o percentual no rótulo, botões "Ajustar foto"/"Concluir ajuste" e "Recentrar foto" (desabilitado na vista neutra), no mesmo `ReferencePhotoControls` das duas cascas. 5 chaves de i18n por dicionário.
+
+**Saldo: de 2.617 para 2.631 testes** (+14: módulo puro da vista, store, gestos no overlay, controles); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no aparelho**: pinça e arrasto de dois dedos durante a marcação de verdade (jsdom simula ponteiros, não dedos), a roda no desktop, e o modo de ajuste não brigando com o arrasto de marcadores.
+
+### Sequência de marcação agrupada por membro ✅ (concluído em 2026-08-03)
+
+Pedido do usuário, da prática com a marcação (#111): alternar esquerda/direita a cada ponto confundia, e o pé "aparentava duplicado". As duas dúvidas foram perguntadas antes de codificar (sem ponto novo de pescoço; ponta do pé mantida, agrupada na perna). Narrativa em `DECISOES.md` #113.
+
+- **`POSE_MARK_SEQUENCE` reordenada**: cabeça, nariz (opcional, junto da cabeça), braço direito inteiro (ombro → cotovelo → punho), braço esquerdo inteiro, perna direita inteira (quadril → joelho → tornozelo → ponta do pé opcional), perna esquerda inteira. Só a ordem mudou — a inferência recebe o mapa de marcas e não olha sequência.
+- **Pescoço não ganhou ponto**: a direção já sai do centro dos ombros → cabeça; um toque a menos no touch valeu mais que a precisão marginal.
+- **O "pé duplicado" era a ponta do pé** amontoada no fim da fila com os tornozelos: agrupada logo após o próprio tornozelo, a impressão some e a inclinação do pé fica.
+- **O teste da sequência passou a travar a ordem INTEIRA** (antes conferia só tamanho e primeiro item) — ordem guiada é UX decidida pelo usuário, não detalhe de implementação. Numeração dos marcadores e fila guiada acompanham sozinhas.
+
+**Saldo: 2.631 testes (inalterado — testes reescritos, não acrescidos)**; `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no aparelho**: o fluxo guiado na ordem nova, com uma foto de verdade.
+
+### Marca da base do pescoço — prumo do tronco como eixo primário ✅ (concluído em 2026-08-03)
+
+Pedido do usuário: mais um ponto de marcação, na junta do pescoço, "para possibilitar a rotação mais correta do tronco" — revendo a escolha do #113 com um motivo novo. A dúvida (obrigatória × pulável) foi perguntada antes: **obrigatória**. Narrativa em `DECISOES.md` #113.1.
+
+- **`PoseMarkKey` ganhou `neck`** ("Base do pescoço"), na fila entre o grupo da cabeça e o braço direito — 17 pontos, 14 obrigatórios; numeração, fila guiada e rótulos (pt-BR/en) acompanham.
+- **O prumo do tronco virou o eixo primário quando o pescoço está marcado**: quadris→pescoço no lugar de quadris→centro dos ombros, e a linha dos ombros PROJETADA no plano perpendicular — só informa a torção. Ombro marcado alto (trapézio/deltoide, o jeito natural de marcar numa foto) deixa de rolar a coluna inteira; teste de cenário real trava o antes/depois (< 0,5° com a marca; > 3° sem).
+- **A direção pescoço→cabeça** também passou a sair da marca (`head − neck`), não mais do centro dos ombros.
+- **Fallback intacto**: sem a marca no mapa, a inferência se comporta como antes (ombros como prumo e eixo primário). O `solveTorso` do `poseSolver` não mudou — o retarget (MediaPipe) continua ombros-primário; a projeção é decisão do chamador da marcação manual.
+
+**Saldo: de 2.631 para 2.632 testes** (+1, o cenário do ombro alto); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no aparelho**: marcar uma foto com a base do pescoço e conferir o tronco (em pé reto, inclinado e em 3/4).
+
+### Vídeo como referência — frame a frame sobre o papel vegetal ✅ (concluído em 2026-08-03)
+
+A proposta avaliada e aprovada no mesmo dia (PLANO.md > "Vídeo como referência", dúvidas nas recomendações): vídeo local como referência com TUDO da foto — transparência, zoom, deslocamento, marcação — mais frame a frame, play/pause, linha do tempo e passo de frame configurável. A foto não mudou: vídeo é um `kind` a mais da mesma referência. Narrativa em `DECISOES.md` #114.
+
+- **`scene/referenceVideo.ts` (novo)** — a parte pura: `stepFrameTime` (± 1/fps, grampeado a 0–duração), `fpsFromFrameDeltas` (mediana dos intervalos entre frames apresentados, filtro de seeks/pausas, encaixe na taxa comum mais próxima), `FPS_CHOICES` e o ref de módulo `referenceVideoElement` (regime do `activeViewportCamera`).
+- **Store** — `kind: 'image' | 'video'` no `referenceImageStore` (o MIME do arquivo decide, num carregador só: "Carregar foto/vídeo…"); `videoFps` com a regra medição-nunca-sobrescreve-escolha-manual; espelho `videoTime`/`videoDuration`/`videoPlaying` (o overlay escreve pelos eventos do elemento; os controles leem). Referência nova zera tudo, como sempre.
+- **Overlay** — `<video muted playsInline>` no MESMO retângulo transformado da foto (opacidade/zoom/pan de graça; nunca nas capturas — é DOM); eventos espelham o estado; medição oportunista de fps por `requestVideoFrameCallback` durante a reprodução, onde a API existir.
+- **Controles** — bloco de vídeo no `ReferencePhotoControls` (as duas cascas de graça): ◀ Frame / Reproduzir–Pausar / Frame ▶ (o passo PAUSA antes de andar), linha do tempo com tempo/duração, seletor de fps. Visível também durante a marcação — avançar frames com as marcas mantidas é o fluxo de keyframes (marcar → inferir → gravar → avançar → ajustar → inferir). 9 chaves de i18n por dicionário.
+
+**Saldo: de 2.632 para 2.641 testes** (+9: módulo puro do vídeo, store, overlay, controles); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no navegador**: carregar um MP4 (inclusive um exportado pelo próprio app), frame a frame com precisão, a medição de fps após um play, zoom/pan/marcação sobre o vídeo pausado, e o vídeo fora das capturas PNG/MP4.
+
+### Profundidade dos ombros e quadris, e o cursor da marcação ✅ (concluído em 2026-08-03)
+
+Dois pedidos do usuário na mesma sessão, da prática com a marcação: (1) poder indicar a profundidade dos ombros e dos quadris, "assim como é feito com os braços, de maneira a facilitar a torção do tronco"; (2) usabilidade do painel da referência — linha do tempo do vídeo em linha única abaixo do rótulo, e avançar/retroceder junta a junta com a profundidade correspondente ("atualmente, eu marco a junta e a profundidade refere-se a junta anterior"). As três dúvidas foram perguntadas antes de codificar (distribuição simétrica no par; cursor fica na junta marcada; quadris mexem só nas pernas, root intocado). Narrativa em `DECISOES.md` #115, #115.1 e #115.2.
+
+- **`DEPTH_PAIRS` ao lado de `DEPTH_CHAINS`** (`pose-import/markedPose.ts`): ombro↔ombro e quadril↔quadril têm distância RÍGIDA no esqueleto (0,39 m e 0,18 m na altura de referência, somadas da cadeia de repouso), então a linha encurtada na foto mede a separação em profundidade — a torção que a vista frontal escondia. `poseMarkDepthKind` diz de onde cada marca tira profundidade (`'bone'`, `'pair'`, `'none'`).
+- **Distribuição simétrica**: o lado marcado vem meia separação à frente e o outro recua a outra metade — o centro do par (e com ele o prumo do tronco) fica onde estava, e sai torção pura. Marcar um lado "à frente" equivale a marcar o outro "atrás"; os dois com a MESMA profundidade não dizem nada de relativo e ganham aviso próprio (`warnDepthPairSame`). Par não encurtado cai no `warnDepthImpossible` de sempre. O passe dos pares roda ANTES das cadeias de osso — o cotovelo mede contra o ombro já erguido.
+- **O cursor da marcação** (`referenceImageStore`): `selectedMarkKey` virou a junta CORRENTE — o toque marca ela e o cursor FICA; `moveMarkCursor(±1)` anda pela sequência inteira, parando nas pontas; `placeMark` preserva a profundidade ao corrigir a posição e tira o ponto dos pulados; `skipNextMark` virou `skipMarkAtCursor` (pula o corrente, se opcional, e avança). O `nextMarkStep` sobrevive como a fila do que falta (cursor inicial e "todos marcados"), não como alvo do toque.
+- **Painel** (`ReferencePhotoControls`): cabeçalho "Junta {{index}}/{{total}} — {{nome}}", linha de estado (marcado × a marcar), botões ◀ Anterior / Próxima junta, e o quadro de profundidade ligado ao CURSOR — com a explicação do par quando a junta é ombro ou quadril. A linha do tempo do vídeo ficou empilhada (`.photo-ref__row--stack`: rótulo em cima, barra inteira embaixo). 8 chaves de i18n por dicionário (a `nextMark` saiu).
+
+**Saldo: de 2.641 para 2.650 testes** (par de profundidade e seus avisos na inferência, cursor no store, painel); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no aparelho**: marcar uma foto em 3/4 e conferir a torção do tronco pelo ombro "à frente", o vaivém junta a junta no touch, e a linha do tempo na largura estreita do painel.
+
+### Giro da raiz atravessando os ±180° na animação ✅ (concluído em 2026-08-03)
+
+Pedido do usuário: o giro do root em Y/Z deveria continuar no mesmo sentido ao passar do limite (de 180° para −135° são 45° para frente, não 315° para trás). A medição do exemplo EXATO mostrou que o menor arco já valia — e revelou o defeito de verdade, confirmado com ele antes de codificar: a mesma orientação tem dois Euler XYZ, o gizmo grava o outro, e misturar keyframes de ramos diferentes deitava o boneco no meio do trecho. Narrativa em `DECISOES.md` #116 e #116.1.
+
+- **`alignRootRotation` (`figure/poseBlend.ts`)** — a rotação de CHEGADA reescrita no ramo `(x+180, 180−y, z+180)` quando ele está mais perto da PARTIDA (soma das distâncias angulares por eixo). Duas pontas no mesmo ramo (animação feita só com sliders): nada muda.
+- **`blendPoses` alinha antes de interpolar**, depois dos retornos de 0% e 100% — as pontas continuam devolvidas intactas, e a mistura de poses do painel herda a mesma imunidade. Medido no teste: o meio do trecho ia para `(−90, −112,5, −90)` (boneco deitado) e passou a dar `(0, −157,5, 0)`.
+- **O store deixou de embaralhar os números** (#116.1): rotação de raiz escrita POR INTEIRO (gizmo de rotação, solver de arrasto — as duas vêm de quaternion decomposto) é realinhada ao ramo que o boneco já usava, em `setRootRotation` e `setJointRotations`; escrita por EIXO (slider, teclado, gesto de torção) passa intacta, inclusive fora de (−180, 180].
+- **Testes**: o caminho do exemplo do usuário instante a instante, o mesmo giro gravado "pelo gizmo" dando o MESMO caminho, as pontas intactas, e as três regras de escrita no store.
+
+**Saldo: de 2.650 para 2.657 testes** (+7); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no navegador**: girar a raiz pelo gizmo e ver o painel acompanhando sem saltos, e rodar uma animação com keyframes feitos ora no gizmo, ora no slider.
+
+### Mover o bloco nomeado de keyframes ✅ (concluído em 2026-08-03)
+
+Pedido do usuário: no painel de keyframes, mover o bloco de keyframes nomeados INTEIRO, mantendo a ordem interna. As duas dúvidas foram perguntadas antes de codificar (só mover, sem duplicar/remover por ora; e o passo pula o vizinho INTEIRO). Narrativa em `DECISOES.md` #117.
+
+- **`moveKeyframeBlock` (`animation/animation.ts`)** — o bloco do keyframe (trecho contíguo de mesmo rótulo, mesma definição do `keyframeGroups`; sem rótulo, ele sozinho) troca de lugar com o vizinho INTEIRO: bloco vizinho todo, ou um keyframe se ele for solto. Ordem interna e durações viajam junto; nas pontas devolve a MESMA lista.
+- **`moveAnimationKeyframeBlock` no store** — pega qualquer keyframe do bloco (é o bloco que anda) e sai antes do `updateAnimation` quando nada se move: o `map` devolveria array novo e a `equality` do zundo empilharia um passo de undo que não desfaz nada.
+- **Painel** — ↑ ↓ no cabeçalho do grupo, encostados à direita (longe do ↑ ↓ de cada card, que é a mesma seta para outro alvo), desabilitados quando o bloco já é o primeiro ou o último. 4 chaves de i18n por dicionário.
+- **Testes**: o bloco pulando outro bloco e pulando keyframe solto, qualquer card do bloco servindo de pega, reversibilidade (subir e descer devolve a ordem), durações viajando junto, pontas sem efeito e sem passo de undo, e o cabeçalho do painel com os botões desabilitados nas pontas.
+
+**Saldo: de 2.657 para 2.666 testes** (+9); `tsc -b`, `eslint .` e `npm run build` limpos. Só o painel de desktop ganhou os botões — a aba de keyframes do módulo de poses é lista plana, sem cabeçalho de grupo.
+
+### Arrumação: setas do bloco em linha própria e silhueta antes da casca ✅ (concluído em 2026-08-03)
+
+Dois ajustes de arrumação pedidos pelo usuário logo depois do #117. Narrativa em `DECISOES.md` #117.1.
+
+- **Cabeçalho do grupo em duas linhas** — `animation-panel__group-title` (botão de recolher com o nome + contagem) em cima, as setas ↑ ↓ do bloco embaixo. Nome de grupo é texto livre e disputava a linha com os botões numa coluna estreita.
+- **Silhueta antes da casca do boneco na barra superior** — a silhueta é a checagem que se liga e desliga o tempo todo; a casca se escolhe uma vez. Só a ordem no JSX mudou.
+- **Testes**: a estrutura do cabeçalho (contagem dentro do título, setas fora — o jsdom não calcula CSS, mesma tática do #115.2) e a ordem dos dois controles no DOM (`compareDocumentPosition`).
+
+**Saldo: de 2.666 para 2.668 testes** (+2); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no navegador**: as duas linhas do cabeçalho na largura real do painel.
+
+### Um gesto, um passo de undo ✅ (concluído em 2026-08-03)
+
+Pedido do usuário: avaliar a lógica de undo/redo de poses e passar a registrar só o estado dos bonecos **depois de soltar o botão do mouse** — os intermediários do arrasto podem ser ignorados. A abrangência foi perguntada antes de codificar, e ele escolheu **todo gesto contínuo** (não só os bonecos). Narrativa em `DECISOES.md` #118.
+
+- **Diagnóstico** — o `zundo` registra um passo por `set` de conteúdo, e todo gesto contínuo escreve o store dezenas de vezes: gizmo a cada `onObjectChange`, módulo de poses a cada quadro do rAF, slider a cada pixel. Um arrasto de dois segundos enchia sozinho o teto de 100 passos e o Ctrl+Z voltava um pixel.
+- **`src/store/undoBatch.ts` (novo)** — `beginUndoBatch` (no `pointerdown`) fotografa o estado e PAUSA o rastreio; `endUndoBatch` (no `pointerup`) religa e empilha UM passo com o retrato de antes. Contagem de profundidade para gestos que se sobrepõem (arrasto + torção no módulo de poses), e rede de segurança na janela (`pointerup`/`pointercancel`/`blur`, só quando não sobra ponteiro pressionado, adiada uma volta do loop de eventos) para que um gesto interrompido nunca deixe o histórico pausado.
+- **`figuresStore.ts`** — `partialize`/`equality`/`limit` do `temporal` deixaram de ser literais e viraram `undoPartialize`/`undoEquality`/`UNDO_LIMIT` exportados: o passo empilhado à mão precisa do MESMO recorte, da mesma noção de "nada mudou" e do mesmo teto. Sem mudança de comportamento no store.
+- **Fiação** — `SelectionGizmo`, `JointDragGizmo`, os gizmos de objeto de cena (mover/girar/medir e arrasto de vértice), o arrasto e a torção do `PosesViewport` (o `endUndoBatch` vem DEPOIS do `processMove` pendente, para o último trecho do gesto cair dentro do lote) e os sliders de painel — eixos de junta e da raiz, mistura de poses, altura no módulo de poses — por um `UNDO_BATCH_POINTER_PROPS` compartilhado. Teclado fica fora de propósito: seta é edição discreta.
+- **Testes**: um passo por lote (nada durante o gesto), undo voltando ao estado de ANTES e não a um intermediário, redo devolvendo o fim do gesto, gesto sem escrita não deixando passo, `futureStates` descartado, aninhamento, teto do histórico, rede de segurança, e o slider do painel de Propriedades de ponta a ponta (`pointerdown` → 5 `change` → `pointerup` = 1 passo).
+
+**Saldo: de 2.668 para 2.679 testes** (+11); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no navegador**: arrastar um gizmo e conferir que um Ctrl+Z desfaz o movimento inteiro (arrasto de gizmo não é testável por unit test, #31.5).
+
+### Profundidade da marcação: a opção em vigor fica acesa ✅ (concluído em 2026-08-03)
+
+Pedido do usuário: ao posar sobre foto/vídeo, deixar o botão de profundidade marcado, para lembrar qual opção está valendo ao voltar ao ponto. Narrativa em `DECISOES.md` #118.1.
+
+- **Diagnóstico** — o estado nunca esteve perdido: a escolha vive em `PoseMark.depth`, sobrevive a mover o ponto, andar com o cursor e parar/recomeçar a marcação, e o painel já punha `aria-pressed` no botão certo. O que faltava era **regra de CSS**: o app estiliza botão apertado por seletor de atributo, uma regra por família, e `.photo-ref__depth` não tinha a sua. O atributo existia só para o leitor de tela e para os testes; na tela os três botões eram idênticos.
+- **`index.css`** — `.photo-ref__depth button[aria-pressed='true']` fica **cheio** (`background: var(--text-h)`, `color: var(--bg)`), a convenção dos grupos de escolha ÚNICA (presets de lente), e não moldura acesa, que é das chaves independentes (visível/travado/oculto) — mesma lógica do #88. Cores de variável de tema: legível no claro e no escuro. Vale nas duas cascas, que compartilham o componente.
+- **Testes**: o round-trip do painel — "No plano" marcado por padrão, a marca trocando de botão ao clicar e, o que ninguém cobria, a escolha **ainda marcada depois de sair da junta e voltar** (o cenário exato do pedido).
+
+**Saldo: de 2.679 para 2.680 testes** (+1); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no navegador**: os três botões nas duas cascas, no tema claro e no escuro.
+
+### Base do tórax e a raiz conferida pelos quadris ✅ (concluído em 2026-08-03)
+
+Pedido do usuário em duas etapas: primeiro **avaliar** se valia um ponto novo para a coluna na inferência por foto, "para pegar rotações do tronco em relação à raiz"; depois, implementar o ponto **e** a conferência da raiz que a avaliação levantou. Narrativa em `DECISOES.md` #119.
+
+- **O que a avaliação mudou no pedido** — um ponto **sobre o eixo** do tronco não pode dizer torção (girar o tronco em torno do próprio eixo não move ponto nenhum que esteja nele); a torção já vinha da linha dos ombros (#115). O que o ponto dá é a **quebra** do tronco, que faltava: `solveTorso` repartia meio a meio entre `spine` e `chest`, e todo tronco saía reto — arco, contraposto e ombro caído viravam a mesma inclinação uniforme.
+- **A marca é a base do TÓRAX, não a cintura** — a junta `spine` não se move com rotação de tronco nenhuma (é filha direta da raiz); quem a rotação da coluna move é a junta `chest`. De quebra, a alavanca triplica: 0,41 m contra 0,17 m, e o ruído angular de um toque de 1% da altura cai de ~5,7° para ~2,4°.
+- **`poseSolver.solveTorso` ganhou `midUp` opcional** — com ele, `spineFromMidTorso` desfaz o trecho fixo `root→spine` por `|t·d − a·ŷ| = b` (exato; a conta ingênua subestimaria a quebra em ~40%) e o peito fecha contra o frame dos ombros. Sem ele, a repartição meio a meio de sempre — é o que o retarget automático (#109) continua usando, porque o BlazePose não tem marco no meio da coluna.
+- **Zona morta de 6°** (`TORSO_BREAK_MIN_DEG`) — abaixo dela a marca é ruído, e o ruído sairia como um **S falso**, pior de olhar que a reta.
+- **`POSE_MARK_SEQUENCE`: 18 pontos**, 14 obrigatórios — `chest` entra **opcional**, logo após a base do pescoço, fechando o eixo do tronco antes dos membros. Não aceita profundidade (o encurtamento de 0,24 m fora do plano é ~1 cm em 1,70 m, abaixo do ruído).
+- **`inferRootRotationFromMarks`** — a linha dos quadris marcada contra a pelve do boneco. Com profundidade no par, arco mínimo (corrige o giro, não toca na inclinação frente/trás, que a linha não vê); sem profundidade, gira só em torno do eixo de **visão** até as projeções casarem — corrige a inclinação lateral da pelve e **não inventa** o giro em profundidade (escolhas do usuário).
+- **Botão "Acertar raiz pelos quadris"** no painel compartilhado, ao lado de "Inferir pose" — ato explícito, com passo de undo próprio, por `setRootRotation` (respeita âncora e travas de eixo). "Inferir" continua sem tocar na colocação (#111), mas passa a **avisar** (`warnRootHips`) quando a linha discorda da raiz em 5° ou mais.
+- **`buildMarkedPoints` extraído** de `inferPoseFromMarks` — a conferência da raiz precisa dos MESMOS pontos, com os dois passes de profundidade já aplicados.
+- **Testes**: a curva em C recuperada (coluna exata, peito no lado oposto) contra a reta de antes, a zona morta segurando um deslize de 0,5% da foto, os três comportamentos da correção de raiz (com profundidade, sem profundidade em Y invisível, sem profundidade em Z visível), o `null` sem os dois quadris, o aviso na inferência e o botão na UI (habilitação, correção aplicada e mensagem certa).
+
+**Saldo: de 2.680 para 2.689 testes** (+9); `tsc -b`, `eslint .` e `npm run build` limpos. **Falta a conferência no navegador**: marcar a base do tórax numa foto de perfil/3-4 e ver o tronco arquear, e o botão da raiz numa foto em que o alinhamento a olho saiu torto.

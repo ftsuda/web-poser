@@ -77,8 +77,13 @@ export function TimelineBar() {
   // Só há o que inserir dentro de um trecho: em cima de um keyframe (ou nas
   // pontas) não há nada para cortar. Tocando também não, porque o instante
   // mudaria entre ver o botão e clicá-lo.
-  const canInsert =
-    active !== null && exportPhase !== 'running' && !playing && planKeyframeSplit(active, currentMs) !== null
+  const split = active !== null && !playing ? planKeyframeSplit(active, currentMs) : null
+  const canInsert = active !== null && exportPhase !== 'running' && !playing && split !== null
+  // Aviso do item 26: num trecho SUAVIZADO, inserir faz as duas metades
+  // assumirem linear — duas metades reinterpoladas não reproduzem a curva.
+  // Avisar ANTES é a metade barata da decisão registrada no plano.
+  const insertResetsEasing =
+    canInsert && active !== null && split !== null && active.keyframes[split.index]?.easing !== undefined
 
   const title = t('timeline.title')
   const toggleLabel = collapsed ? t('panels.expand', { title }) : t('panels.collapse', { title })
@@ -143,10 +148,21 @@ export function TimelineBar() {
               className="timeline-bar__insert"
               onClick={handleInsertKeyframe}
               disabled={!canInsert}
-              title={t('panels.animation.insertHint')}
+              title={
+                insertResetsEasing
+                  ? `${t('panels.animation.insertHint')} ${t('timeline.insertEasingLinear')}`
+                  : t('panels.animation.insertHint')
+              }
             >
               {t('panels.animation.insert')}
             </button>
+            {/* O aviso do item 26 fica visível, não só no title: quem vai
+                clicar precisa saber que o trecho suavizado vira linear. */}
+            {insertResetsEasing && (
+              <span className="timeline-bar__insert-warning" role="note">
+                {t('timeline.insertEasingLinear')}
+              </span>
+            )}
 
             <div className="timeline-bar__transport">
               <button type="button" onClick={playing ? pause : play} disabled={!canPlay}>

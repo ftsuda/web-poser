@@ -6,10 +6,14 @@ import {
   MAX_PROP_SIZE_M,
   MIN_PROP_SIZE_M,
   PROP_SHAPES,
+  propShapeHasFreeVertex,
   vertexOffsetCount,
   type PropShape,
   type SceneProp,
 } from '../props/sceneProp'
+import { JOINT_GROUPS } from '../figure/jointGroups'
+import { ROOT_JOINT_NAME } from '../figure/skeleton'
+import { JOINT_GROUP_LABEL_KEYS } from './jointGroupLabels'
 import { useFiguresStore } from '../store/figuresStore'
 import { useUIStore, type PropGizmoMode } from '../store/uiStore'
 
@@ -219,10 +223,34 @@ export function PropProperties({ prop }: { prop: SceneProp }) {
   const setPropSize = useFiguresStore((state) => state.setPropSize)
   const seatPropOnGround = useFiguresStore((state) => state.seatPropOnGround)
   const clearPropVertices = useFiguresStore((state) => state.clearPropVertices)
+  const figures = useFiguresStore((state) => state.figures)
+  const attachProp = useFiguresStore((state) => state.attachProp)
+  const detachProp = useFiguresStore((state) => state.detachProp)
+  const setPropAttachmentOffset = useFiguresStore((state) => state.setPropAttachmentOffset)
   const mode = useUIStore((state) => state.propGizmoMode)
   const setPropGizmoMode = useUIStore((state) => state.setPropGizmoMode)
 
+  // Escolha pendente dos combos de amarração. O boneco cai no primeiro da
+  // cena quando o escolhido some — estado derivado durante o render, como o
+  // `handleKey` das alças de vértice.
+  const [attachFigureId, setAttachFigureId] = useState<string | null>(null)
+  const [attachJointName, setAttachJointName] = useState('wrist.R')
+  const effectiveFigureId =
+    attachFigureId !== null && figures.some((figure) => figure.id === attachFigureId)
+      ? attachFigureId
+      : (figures[0]?.id ?? null)
+
   const moved = vertexOffsetCount(prop.vertexOffsets)
+
+  // Amarrado, os campos de posição/rotação editam o OFFSET relativo à junta —
+  // a colocação própria (para onde o objeto volta sem o boneco) não é editável
+  // enquanto a amarração existe, porque não é ela que está na tela.
+  const attachment = prop.attachment
+  const shownPosition = attachment ? attachment.position : prop.position
+  const shownRotation = attachment ? attachment.rotation : prop.rotation
+  const attachedFigureName = attachment
+    ? (figures.find((figure) => figure.id === attachment.figureId)?.name ?? attachment.figureId)
+    : null
 
   return (
     <div className="prop-properties">
@@ -232,7 +260,9 @@ export function PropProperties({ prop }: { prop: SceneProp }) {
             key={candidate}
             type="button"
             aria-pressed={mode === candidate}
-            disabled={prop.locked}
+            // Forma composta (kit de armas) é modelo íntegro: a ferramenta de
+            // vértices não existe para ela.
+            disabled={prop.locked || (candidate === 'vertex' && !propShapeHasFreeVertex(prop.shape))}
             onClick={() => setPropGizmoMode(candidate)}
           >
             {t(`panels.properties.prop.tools.${candidate}`)}
@@ -285,21 +315,24 @@ export function PropProperties({ prop }: { prop: SceneProp }) {
       </fieldset>
 
       <fieldset className="prop-properties__vectors">
-        <legend>{t('panels.properties.prop.position')}</legend>
+        <legend>
+          {attachment ? t('panels.properties.prop.offsetPosition') : t('panels.properties.prop.position')}
+        </legend>
         {SIZE_AXES.map((axis) => (
           <label key={axis}>
             {['X', 'Y', 'Z'][axis]}
             <input
               type="number"
               step={0.05}
-              value={prop.position[axis]}
+              value={shownPosition[axis]}
               disabled={prop.locked}
               onChange={(event) => {
                 const value = Number(event.target.value)
                 if (Number.isNaN(value)) return
-                const position: [number, number, number] = [...prop.position]
+                const position: [number, number, number] = [...shownPosition]
                 position[axis] = value
-                setPropPosition(prop.id, position)
+                if (attachment) setPropAttachmentOffset(prop.id, { position })
+                else setPropPosition(prop.id, position)
               }}
             />
           </label>
@@ -307,45 +340,123 @@ export function PropProperties({ prop }: { prop: SceneProp }) {
       </fieldset>
 
       <fieldset className="prop-properties__vectors">
-        <legend>{t('panels.properties.prop.rotation')}</legend>
+        <legend>
+          {attachment ? t('panels.properties.prop.offsetRotation') : t('panels.properties.prop.rotation')}
+        </legend>
         {ROTATION_AXES.map((axis) => (
           <label key={axis}>
             {axis.toUpperCase()}
             <input
               type="number"
               step={5}
-              value={prop.rotation[axis]}
+              value={shownRotation[axis]}
               disabled={prop.locked}
               onChange={(event) => {
                 const value = Number(event.target.value)
                 if (Number.isNaN(value)) return
-                setPropRotation(prop.id, { [axis]: value })
+                if (attachment) setPropAttachmentOffset(prop.id, { rotation: { [axis]: value } })
+                else setPropRotation(prop.id, { [axis]: value })
               }}
             />
           </label>
         ))}
       </fieldset>
 
+      <fieldset className="prop-properties__attach">
+        <legend>{t('panels.properties.prop.attachTitle')}</legend>
+        {attachment ? (
+          <>
+            <p className="prop-properties__hint">
+              {t('panels.properties.prop.attachedTo', {
+                figure: attachedFigureName,
+                joint: attachment.jointName,
+              })}
+            </p>
+            <button
+              type="button"
+              className="panel-action"
+              disabled={prop.locked}
+              onClick={() => detachProp(prop.id)}
+            >
+              {t('panels.properties.prop.detach')}
+            </button>
+          </>
+        ) : figures.length === 0 ? (
+          <p className="prop-properties__hint">{t('panels.properties.prop.attachNeedsFigure')}</p>
+        ) : (
+          <>
+            <label className="prop-properties__shape">
+              {t('panels.properties.prop.attachFigure')}
+              <select
+                value={effectiveFigureId ?? ''}
+                disabled={prop.locked}
+                onChange={(event) => setAttachFigureId(event.target.value)}
+              >
+                {figures.map((figure) => (
+                  <option key={figure.id} value={figure.id}>
+                    {figure.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="prop-properties__shape">
+              {t('panels.properties.prop.attachJoint')}
+              <select
+                value={attachJointName}
+                disabled={prop.locked}
+                onChange={(event) => setAttachJointName(event.target.value)}
+              >
+                <option value={ROOT_JOINT_NAME}>{t('panels.properties.jointSelectRoot')}</option>
+                {JOINT_GROUPS.map((group) => (
+                  <optgroup key={group.key} label={t(JOINT_GROUP_LABEL_KEYS[group.key])}>
+                    {group.joints.map((jointName) => (
+                      <option key={jointName} value={jointName}>
+                        {jointName}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="panel-action"
+              disabled={prop.locked || effectiveFigureId === null}
+              onClick={() => {
+                if (effectiveFigureId === null) return
+                attachProp(prop.id, effectiveFigureId, attachJointName)
+              }}
+            >
+              {t('panels.properties.prop.attachAction')}
+            </button>
+          </>
+        )}
+      </fieldset>
+
       <button
         type="button"
         className="panel-action"
-        disabled={prop.locked}
+        disabled={prop.locked || attachment !== null}
         onClick={() => seatPropOnGround(prop.id)}
       >
         {t('panels.properties.prop.seatOnGround')}
       </button>
 
-      <p className="prop-properties__vertices">
-        {t('panels.properties.prop.vertexCount', { moved, total: controlPointCount(prop.shape) })}
-      </p>
-      <button
-        type="button"
-        className="panel-action"
-        disabled={prop.locked || moved === 0}
-        onClick={() => clearPropVertices(prop.id)}
-      >
-        {t('panels.properties.prop.clearVertices')}
-      </button>
+      {propShapeHasFreeVertex(prop.shape) && (
+        <>
+          <p className="prop-properties__vertices">
+            {t('panels.properties.prop.vertexCount', { moved, total: controlPointCount(prop.shape) })}
+          </p>
+          <button
+            type="button"
+            className="panel-action"
+            disabled={prop.locked || moved === 0}
+            onClick={() => clearPropVertices(prop.id)}
+          >
+            {t('panels.properties.prop.clearVertices')}
+          </button>
+        </>
+      )}
     </div>
   )
 }

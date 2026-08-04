@@ -3,6 +3,7 @@ import { useStore } from 'zustand'
 import { saveWorkspaceToLocalStorage } from '../persistence/autosave'
 import { useFiguresStore } from '../store/figuresStore'
 import { usePosesShellStore } from '../store/posesShellStore'
+import { useUIStore } from '../store/uiStore'
 import { POSES_AUTOSAVE_KEY, switchShell } from './shellChoice'
 import { POSES_VIEW_KEYS } from './posesViews'
 
@@ -13,7 +14,9 @@ import { POSES_VIEW_KEYS } from './posesViews'
  * gestos de toque para undo) e a volta para a aplicação completa.
  */
 export function PosesTopBar() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const autosaveStatus = useUIStore((state) => state.autosaveStatus)
+  const lastSavedAt = useUIStore((state) => state.lastSavedAt)
   const viewKey = usePosesShellStore((state) => state.viewKey)
   const setViewKey = usePosesShellStore((state) => state.setViewKey)
   const stepView = usePosesShellStore((state) => state.stepView)
@@ -24,6 +27,24 @@ export function PosesTopBar() {
 
   const canUndo = useStore(useFiguresStore.temporal, (state) => state.pastStates.length > 0)
   const canRedo = useStore(useFiguresStore.temporal, (state) => state.futureStates.length > 0)
+
+  // Badge de autosave (item 53): o módulo grava na chave própria (#92), mas o
+  // ESTADO da gravação é o mesmo `uiStore` — o hook `useWorkspaceAutosave` é
+  // compartilhado com o desktop. Numa barra de celular não cabe a frase da
+  // Toolbar: o badge é um ponto colorido, e a frase (as MESMAS chaves de i18n
+  // da Toolbar) vira o nome acessível e a dica de toque.
+  const savedTime =
+    lastSavedAt === null
+      ? ''
+      : new Date(lastSavedAt).toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' })
+  const autosaveLabel =
+    autosaveStatus === 'pending'
+      ? t('toolbar.autosaveSaving')
+      : autosaveStatus === 'error'
+        ? t('toolbar.autosaveError')
+        : autosaveStatus === 'saved'
+          ? t('toolbar.autosaveSaved', { time: savedTime })
+          : t('toolbar.autosaveNever')
 
   const handleSwitchToDesktop = () => {
     // Grava a sessão do módulo AGORA (o debounce do autosave pode estar no
@@ -97,6 +118,12 @@ export function PosesTopBar() {
       )}
 
       <div className="poses-topbar__actions">
+        <span
+          role="status"
+          className={`poses-topbar__autosave poses-topbar__autosave--${autosaveStatus}`}
+          aria-label={autosaveLabel}
+          title={autosaveLabel}
+        />
         <button
           type="button"
           className="poses-topbar__icon"

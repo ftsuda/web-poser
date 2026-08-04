@@ -11,7 +11,9 @@
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "pose:preset": "node tools/pose-para-preset.mjs",
-    "poses:folha": "node tools/folha-de-contato.mjs"
+    "poses:folha": "node tools/folha-de-contato.mjs",
+    "pose:model": "node tools/baixar-modelo-pose.mjs",
+    "pose:from-image": "node tools/pose-from-image.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -29,6 +31,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@mediapipe/tasks-vision": "^1.0.1",
     "@playwright/test": "^1.62.1",
     "@react-three/test-renderer": "^9.1.0",
     "@testing-library/jest-dom": "^7.0.0",

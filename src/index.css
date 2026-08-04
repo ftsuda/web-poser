@@ -1464,6 +1464,14 @@ code {
   white-space: nowrap;
 }
 
+/* Aviso do item 26: inserir num trecho suavizado devolve as metades ao linear. */
+.timeline-bar__insert-warning {
+  font-size: 0.72rem;
+  color: var(--text);
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
 /* Confirmação de "Regravar" (pedido do usuário): o botão que executa a perda
    fica em destaque de PERIGO, para não ser mais um botão cinza igual ao lado. */
 .animation-panel__confirm {
@@ -1725,13 +1733,20 @@ code {
 }
 
 /* Cabeçalho de grupo na lista de keyframes do painel (item 38). */
+/* Duas linhas (#117.1): título + contagem em cima, setas do bloco embaixo. */
 .animation-panel__group {
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
+  flex-direction: column;
+  gap: 0.2rem;
   margin-top: 0.4rem;
   border-top: 1px solid var(--border);
   padding-top: 0.25rem;
+}
+
+.animation-panel__group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
 }
 
 .animation-panel__group-toggle {
@@ -1746,6 +1761,18 @@ code {
 .animation-panel__group-count {
   font-size: 0.75rem;
   opacity: 0.7;
+}
+
+/* Mover o bloco inteiro (#117): linha própria sob o título, longe do ↑ ↓ de
+   cada keyframe — são a mesma seta para alvos diferentes. */
+.animation-panel__group-actions {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.animation-panel__group-actions button {
+  padding: 0 0.35rem;
+  line-height: 1.4;
 }
 
 .animation-panel__group-field {
@@ -1980,3 +2007,179 @@ code {
   font-size: 0.72rem;
   opacity: 0.85;
 }
+
+/* ---------------------------------------------------------------------------
+   Foto de referência (item 7) + marcação de pose (pose por marcação manual).
+   Classes COMPARTILHADAS pelas duas cascas, como .panel-action: o overlay
+   ancora no contêiner do viewport de cada uma (ambos position: relative).
+   --------------------------------------------------------------------------- */
+
+/* O papel vegetal: por cima da cena, atravessável fora do modo de marcação. */
+.reference-photo {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* No modo de marcação a camada ENGOLE os toques: é o que congela órbita e
+   seleção sem tocar em nenhum controle — o alinhamento root+foto fica salvo. */
+.reference-photo--marking {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+/* Modo "ajustar foto": arrasto move, pinça/roda ampliam — mesma captura. */
+.reference-photo--adjusting {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+/* Sem isto o navegador fica com a pinça (zoom da página) antes de nós. */
+.reference-photo--marking,
+.reference-photo--adjusting {
+  touch-action: none;
+}
+
+.reference-photo__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+/* Marcador numerado: alvo de DEDO (28px + halo), pequeno o bastante para não
+   tapar a foto. A cor diz o lado (convenção esquerda azul / direita vermelha). */
+.reference-photo__mark {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgb(255 255 255 / 85%);
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: grab;
+  touch-action: none;
+}
+
+.reference-photo__mark--left { border-color: #4fc3f7; }
+.reference-photo__mark--right { border-color: #e04040; }
+.reference-photo__mark--center { border-color: #ffd54a; }
+.reference-photo__mark--selected { background: rgb(255 213 74 / 85%); color: #000; }
+
+/* Profundidade opt-in: à frente = cheio, atrás = vazado — legível na foto. */
+.reference-photo__mark--front { box-shadow: 0 0 0 3px rgb(255 255 255 / 45%); }
+.reference-photo__mark--back { background: transparent; color: inherit; border-style: dashed; }
+
+/* Os controles (seção do painel de Propriedades / aba Foto do módulo). */
+.photo-ref {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* Vídeo: frame anterior · reproduzir/pausar · próximo frame, lado a lado. */
+.photo-ref__frames {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.photo-ref__frames button {
+  flex: 1;
+}
+
+.photo-ref__name {
+  margin: 0;
+  font-size: 0.75rem;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-ref__hint {
+  margin: 0;
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.photo-ref__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.photo-ref__row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.photo-ref__row--check {
+  cursor: pointer;
+}
+
+/* Rótulo em cima, controle numa linha inteira embaixo — para rótulo comprido
+   (a linha do tempo do vídeo traz tempo e duração) que espremeria a barra. */
+.photo-ref__row--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.2rem;
+}
+
+.photo-ref__row--stack input[type='range'] {
+  flex: none;
+  width: 100%;
+}
+
+.photo-ref__progress {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.photo-ref__depth {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.4rem;
+}
+
+.photo-ref__depth legend {
+  font-size: 0.72rem;
+  padding: 0 0.25rem;
+}
+
+/* A opção de profundidade EM VIGOR fica acesa (DECISOES.md #118.1). O
+   `aria-pressed` já dizia qual era, mas só para o leitor de tela: na tela os
+   três botões eram idênticos, e quem voltasse a uma junta já marcada — o
+   gesto normal de reconferir o corpo todo — não tinha como lembrar o que
+   havia escolhido. Botão CHEIO, e não moldura acesa, porque a escolha é
+   exclusiva entre três (no plano · à frente · atrás): é a convenção dos
+   grupos de escolha única, como os presets do painel de câmera; a moldura
+   fica para as chaves independentes (visível, travado, oculto). */
+.photo-ref__depth button[aria-pressed='true'] {
+  background: var(--text-h);
+  color: var(--bg);
+}
+
+.photo-ref__feedback {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.72rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.photo-ref__feedback--error { color: var(--danger, #e04040); }

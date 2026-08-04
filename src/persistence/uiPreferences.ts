@@ -72,6 +72,8 @@ export const SECTION_KEYS = [
   'cameraBookmarks',
   /** Configurações do painel de Cenas — hoje, a faixa do mapa de profundidade (fase 13). */
   'sceneSettings',
+  /** Foto de referência + marcação de pose (item 7 / pose por marcação manual), no painel de Propriedades. */
+  'referencePhoto',
 ] as const
 
 export type SectionKey = (typeof SECTION_KEYS)[number]
@@ -140,6 +142,13 @@ export interface UIPreferences {
    * seriam dois desenhos do mesmo objeto, sem nenhum uso.
    */
   figureStyle: FigureStyle
+  /**
+   * Modo SILHUETA (item 8): os bonecos em preto chapado, para checar a leitura
+   * da pose — a primeira coisa que um ilustrador confere. Mesmo regime da
+   * casca: modo de visualização, preferência de tela, vale para todos os
+   * bonecos ao mesmo tempo.
+   */
+  figureSilhouette: boolean
 }
 
 /** Padrão de fábrica: tudo expandido menos o animador, régua e máscara desligadas, par automático ligado, manequim de madeira. */
@@ -153,6 +162,7 @@ function createDefaults(): UIPreferences {
     frameMaskSource: 'off',
     pairPoseEnabled: true,
     figureStyle: DEFAULT_FIGURE_STYLE,
+    figureSilhouette: false,
   }
 }
 
@@ -207,6 +217,7 @@ export function loadUIPreferences(): UIPreferences {
   // apenas `true` faria o desligamento gravado ser ignorado a cada sessão.
   if (typeof source.pairPoseEnabled === 'boolean') preferences.pairPoseEnabled = source.pairPoseEnabled
   if (isFigureStyle(source.figureStyle)) preferences.figureStyle = source.figureStyle
+  if (source.figureSilhouette === true) preferences.figureSilhouette = true
   return preferences
 }
 

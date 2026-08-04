@@ -12,6 +12,7 @@ import {
 import { ConfirmDialog } from '../layout/ConfirmDialog'
 import { PosesQrReceiveDialog } from './PosesQrReceiveDialog'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
+import { parseFigurePoseFile } from '../persistence/figurePoseFile'
 import { slugifySceneName } from '../snapshot/snapshotNaming'
 import { useFiguresStore, type AnimationImportMode } from '../store/figuresStore'
 import { usePosesShellStore } from '../store/posesShellStore'
@@ -28,6 +29,8 @@ export function PosesFileTab() {
   const animations = useFiguresStore((state) => state.animations)
   const importAnimation = useFiguresStore((state) => state.importAnimation)
   const loadRestoredWorkspace = useFiguresStore((state) => state.loadRestoredWorkspace)
+  const selectedFigureId = useFiguresStore((state) => state.selectedFigureId)
+  const applyImportedFigurePose = useFiguresStore((state) => state.applyImportedFigurePose)
   const setCurrentKeyframeId = usePosesShellStore((state) => state.setCurrentKeyframeId)
   const [errorKey, setErrorKey] = useState<string | null>(null)
   /** Confirmação em dois passos do "trazer sessão do desktop" (item 54) — substitui a sessão inteira. */
@@ -88,6 +91,28 @@ export function PosesFileTab() {
     else setCurrentKeyframeId(null)
   }
 
+  // Aplicar pose avulsa (item 55): o leitor é o MESMO do "Pose em arquivo" do
+  // desktop (`parseFigurePoseFile`, #81/#87), que aceita a família inteira de
+  // formatos — arquivo de pose, boneco cru, keyframe, animação, animations.json.
+  // Aplica ao boneco em edição pelas regras de sempre: X/Z preservados, juntas
+  // travadas intactas, ângulos grampeados.
+  const handleApplyPoseFile = async () => {
+    setErrorKey(null)
+    if (!selectedFigureId) return
+    const picked = await pickFile('.json,application/json')
+    if (!picked) return
+    try {
+      const imported = parseFigurePoseFile(JSON.parse(new TextDecoder().decode(picked.data)))
+      if (!imported) {
+        setErrorKey('errors.importNoPose')
+        return
+      }
+      applyImportedFigurePose(selectedFigureId, imported)
+    } catch {
+      setErrorKey('errors.importUnreadableJson')
+    }
+  }
+
   // Trazer a sessão do desktop (item 54): a outra ponte com a aplicação
   // completa — sem arquivo, direto da chave de autosave dela (#92). A leitura
   // passa pela mesma sanitização do autosave, e o keyframe corrente é zerado:
@@ -125,6 +150,19 @@ export function PosesFileTab() {
           {t('poses.file.share')}
         </button>
       </div>
+      {/* Aplicar pose avulsa ao boneco em edição (item 55). Botão sozinho =
+          `.panel-action` (#88); desabilitado sem boneco em edição, porque a
+          pose precisa de um destino. */}
+      <button
+        type="button"
+        className="panel-action"
+        disabled={!selectedFigureId}
+        title={t('poses.file.applyPoseHint')}
+        onClick={() => void handleApplyPoseFile()}
+      >
+        {t('poses.file.applyPose')}
+      </button>
+
       {/* Trazer a sessão do desktop (item 54): substitui a sessão INTEIRA do
           módulo — por isso a confirmação em MODAL (`ConfirmDialog`, o mesmo
           do desktop). Botão sozinho = `.panel-action` (#88). */}

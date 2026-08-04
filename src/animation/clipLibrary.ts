@@ -1,7 +1,13 @@
 import { getHeightScale, type JointRotation } from '../figure/skeleton'
 import { asRecord, readRotation, sanitizePose, toVec3 } from '../figure/figureFormat'
 import type { Figure } from '../store/figuresStore'
-import { clampKeyframeDuration, type Animation, type AnimationKeyframe } from './animation'
+import {
+  clampKeyframeDuration,
+  isKeyframeEasing,
+  type Animation,
+  type AnimationKeyframe,
+  type KeyframeEasing,
+} from './animation'
 
 /**
  * Biblioteca de TRECHOS do usuário (PLANO.md > lista de propostas, item 39):
@@ -43,6 +49,8 @@ export interface SavedClipStep {
   durationMs: number
   /** Rótulo do grupo do keyframe gravado (item 38), quando havia um. */
   label?: string
+  /** Suavização da transição que chega (item 26), quando o keyframe gravado tinha uma — viaja com o trecho, como o rótulo. */
+  easing?: KeyframeEasing
   figures: SavedClipFigureState[]
 }
 
@@ -97,6 +105,7 @@ export function captureClipFromAnimation(
     // dele: quem a define é onde o trecho for inserido.
     durationMs: keyframe.durationMs,
     ...(keyframe.label ? { label: keyframe.label } : {}),
+    ...(keyframe.easing ? { easing: keyframe.easing } : {}),
     figures: roles.map((role, roleIndex) => {
       const figure = keyframe.figures.find((candidate) => candidate.id === role.id) ?? role
       return {
@@ -188,9 +197,12 @@ export function sanitizeSavedClips(value: unknown): SavedClip[] {
       const step = asRecord(rawStep)
       if (!Array.isArray(step.figures) || step.figures.length === 0) continue
       const label = typeof step.label === 'string' ? step.label.trim() : ''
+      const easing: KeyframeEasing | null =
+        isKeyframeEasing(step.easing) && step.easing !== 'linear' ? step.easing : null
       steps.push({
         durationMs: clampKeyframeDuration(step.durationMs),
         ...(label === '' ? {} : { label }),
+        ...(easing === null ? {} : { easing }),
         figures: step.figures.map((rawFigure, roleIndex) => {
           const figure = asRecord(rawFigure)
           return {
@@ -273,5 +285,7 @@ export function buildKeyframesFromClip(options: {
     }),
     camera,
     ...(label ? { label } : {}),
+    // A suavização gravada volta com o trecho (item 26), como a duração.
+    ...(step.easing ? { easing: step.easing } : {}),
   }))
 }

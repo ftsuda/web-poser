@@ -23,6 +23,13 @@ export interface AnimationKeyframe {
   id: string
   /** Duração, em ms, da transição que CHEGA a este keyframe. Ignorada no primeiro. */
   durationMs: number
+  /**
+   * Suavização da transição que CHEGA a este keyframe (item 26) — mesma
+   * convenção da duração, e ignorada no primeiro pelo mesmo motivo. Ausente =
+   * linear, que é como toda animação gravada antes do campo existir se
+   * comporta; 'linear' explícito nunca é gravado (seria ruído no arquivo).
+   */
+  easing?: KeyframeEasing
   /** Bonecos inteiros — pose, colocação, altura, cor e visibilidade. */
   figures: Figure[]
   /** Câmera viva: posição, alvo, topo da tela e lente — o `CameraViewState` do movimento (#46). */
@@ -95,6 +102,49 @@ export function createWorkingAnimation(): Animation {
     speed: DEFAULT_ANIMATION_SPEED,
     keyframes: [],
   }
+}
+
+// ---------------------------------------------------------------------------
+// Suavização por trecho (easing, item 26)
+// ---------------------------------------------------------------------------
+
+/**
+ * As quatro curvas, na ordem do seletor do painel. A interpolação continua
+ * sendo a de sempre (`blendFigure`/`interpolateCameraView`): o easing é só uma
+ * função pura `t → t'` aplicada ANTES, remapeando o avanço dentro do trecho —
+ * exatamente o conserto que o item 26 descreve. Era a maior lacuna da
+ * animação: com `t` linear, todo movimento parte e para de repente, e a câmera
+ * quebra visivelmente em cada keyframe.
+ */
+export const KEYFRAME_EASINGS = ['linear', 'easeInOut', 'easeIn', 'easeOut'] as const
+
+export type KeyframeEasing = (typeof KEYFRAME_EASINGS)[number]
+
+/**
+ * O `t` remapeado pela curva do trecho. Todas as curvas fixam as pontas
+ * (`0 → 0`, `1 → 1`, exatos) — é o que preserva o contrato das pontas do
+ * amostrador: keyframe idêntico no começo e no fim do trecho.
+ *
+ * - `easeInOut`: smoothstep `t²(3−2t)` — devagar nas duas pontas.
+ * - `easeIn`: `t²` — parte devagar (suave na ENTRADA do trecho).
+ * - `easeOut`: `1−(1−t)²` — chega devagar (suave na SAÍDA/chegada).
+ */
+export function applyEasing(t: number, easing?: KeyframeEasing): number {
+  switch (easing) {
+    case 'easeInOut':
+      return t * t * (3 - 2 * t)
+    case 'easeIn':
+      return t * t
+    case 'easeOut':
+      return 1 - (1 - t) * (1 - t)
+    default:
+      return t
+  }
+}
+
+/** Aceita só as quatro curvas conhecidas — um arquivo editado à mão não liga uma curva inexistente. */
+export function isKeyframeEasing(value: unknown): value is KeyframeEasing {
+  return KEYFRAME_EASINGS.includes(value as KeyframeEasing)
 }
 
 /** Grampeia a duração digitada; o que não for número cai no padrão, em vez de virar `NaN` na linha do tempo. */
@@ -256,6 +306,72 @@ export function keyframeGroups(animation: Animation): KeyframeGroup[] {
   })
 
   return groups
+}
+
+/**
+ * O BLOCO a que um keyframe pertence: o trecho contíguo de mesmo rótulo, ou
+ * ele sozinho quando não tem rótulo. Mesma regra do `keyframeGroups` — dois
+ * trechos separados com o mesmo nome são dois blocos, e não se emendam.
+ */
+function keyframeBlockAt(
+  keyframes: readonly AnimationKeyframe[],
+  index: number,
+): { startIndex: number; endIndex: number } {
+  const label = keyframes[index].label?.trim() ?? ''
+  if (label === '') return { startIndex: index, endIndex: index }
+
+  let startIndex = index
+  while (startIndex > 0 && (keyframes[startIndex - 1].label?.trim() ?? '') === label) startIndex -= 1
+  let endIndex = index
+  while (
+    endIndex < keyframes.length - 1 &&
+    (keyframes[endIndex + 1].label?.trim() ?? '') === label
+  ) {
+    endIndex += 1
+  }
+  return { startIndex, endIndex }
+}
+
+/**
+ * Move o BLOCO nomeado a que `index` pertence uma posição para cima (-1) ou
+ * para baixo (+1), **pulando o vizinho inteiro** (#117): se o vizinho for
+ * outro bloco nomeado, o salto é sobre ele todo; se for keyframe solto, sobre
+ * um. É o que impede meio bloco de cair dentro do outro — um grupo só existe
+ * enquanto seus keyframes estão grudados (item 38), então entrar no meio de um
+ * vizinho o PARTIRIA em dois com o mesmo nome.
+ *
+ * A ordem interna e as durações viajam junto: o que muda é a posição do bloco
+ * na lista, e a linha do tempo se refaz a partir dela. Nas pontas (ou com
+ * índice inválido) devolve a MESMA lista, para o store não empilhar um passo
+ * de undo que não desfaz nada.
+ */
+export function moveKeyframeBlock(
+  keyframes: readonly AnimationKeyframe[],
+  index: number,
+  direction: 1 | -1,
+): readonly AnimationKeyframe[] {
+  if (index < 0 || index >= keyframes.length) return keyframes
+  const block = keyframeBlockAt(keyframes, index)
+
+  if (direction < 0) {
+    if (block.startIndex === 0) return keyframes
+    const neighbour = keyframeBlockAt(keyframes, block.startIndex - 1)
+    return [
+      ...keyframes.slice(0, neighbour.startIndex),
+      ...keyframes.slice(block.startIndex, block.endIndex + 1),
+      ...keyframes.slice(neighbour.startIndex, neighbour.endIndex + 1),
+      ...keyframes.slice(block.endIndex + 1),
+    ]
+  }
+
+  if (block.endIndex === keyframes.length - 1) return keyframes
+  const neighbour = keyframeBlockAt(keyframes, block.endIndex + 1)
+  return [
+    ...keyframes.slice(0, block.startIndex),
+    ...keyframes.slice(neighbour.startIndex, neighbour.endIndex + 1),
+    ...keyframes.slice(block.startIndex, block.endIndex + 1),
+    ...keyframes.slice(neighbour.endIndex + 1),
+  ]
 }
 
 /**
@@ -481,12 +597,18 @@ function sanitizeKeyframe(value: unknown, index: number): AnimationKeyframe | nu
   // com conteúdo entra como keyframe sem grupo, em vez de invalidá-lo.
   const label = typeof source.label === 'string' ? source.label.trim() : ''
 
+  // Easing (item 26): só as curvas conhecidas entram, e 'linear' — o padrão —
+  // não é gravado de volta. Curva desconhecida cai no linear, sem invalidar o
+  // keyframe: é ajuste de movimento, não conteúdo do retrato.
+  const easing = isKeyframeEasing(source.easing) && source.easing !== 'linear' ? source.easing : null
+
   return {
     id: typeof source.id === 'string' ? source.id : `keyframe-${index + 1}`,
     durationMs: clampKeyframeDuration(source.durationMs),
     figures: source.figures.map((figure, figureIndex) => sanitizeFigure(figure, figureIndex)),
     camera,
     ...(label === '' ? {} : { label }),
+    ...(easing === null ? {} : { easing }),
   }
 }
 

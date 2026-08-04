@@ -30,7 +30,9 @@ import { OnionSkin } from './OnionSkin'
 import { SceneFigures } from './SceneFigures'
 import { SceneProps } from './SceneProps'
 import { SelectionGizmo } from './SelectionGizmo'
+import { ReferencePhotoOverlay } from './ReferencePhotoOverlay'
 import { VerticalRuler } from './VerticalRuler'
+import { ViewportCameraBridge } from './ViewportCameraBridge'
 
 export function Viewport() {
   const { t } = useTranslation()
@@ -116,6 +118,20 @@ export function Viewport() {
     <div className="viewport" role="img" aria-label={t('viewport.label')}>
       <Canvas
         shadows
+        // Redesenho SOB DEMANDA (item 21): num app de poses estáticas, o loop
+        // contínuo era gasto puro de CPU/GPU e bateria com a cena parada.
+        // Auditoria dos pontos que animam algo (nenhum precisa de loop):
+        // - OrbitControls/TransformControls do drei invalidam no `change`;
+        // - reprodução de animação escreve `preview`/`timeMs` no store a cada
+        //   tick de rAF próprio → commit React → invalidate;
+        // - CameraRig aplica vistas em efeitos disparados por re-render (o
+        //   commit que o disparou já invalidou o quadro);
+        // - `useFrame` idempotentes (DepthPreview, gizmos que se realinham)
+        //   rodam em todo quadro DESENHADO — e o que os alimenta só muda por
+        //   estado React, que invalida;
+        // - captura de PNG e exportação de MP4 renderizam por conta própria
+        //   (`gl.render`), fora do loop.
+        frameloop="demand"
         camera={{ position: CAMERA_DEFAULTS.position, fov: CAMERA_DEFAULTS.fov }}
         onPointerMissed={() => selectTarget(null)}
       >
@@ -171,6 +187,9 @@ export function Viewport() {
         <AnimationPlayer />
         <SnapshotCapture />
         <DepthPreview />
+        {/* Ponte da câmera viva para a inferência da marcação sobre a foto
+            de referência — lida no clique de "Inferir pose", nunca por quadro. */}
+        <ViewportCameraBridge />
         {/* Órbita só no modo edição: no modo visão-câmera a vista é o quadro
             da câmera de cena, travado (ajustes pelo painel ou pelo gizmo, de
             volta na edição). Durante a REPRODUÇÃO a bancada fica livre — a
@@ -189,6 +208,10 @@ export function Viewport() {
       {/* Por CIMA da tela de desenho, e nunca dentro dela: o que a máscara
           escurece não entra no PNG nem no MP4. */}
       <FrameMaskOverlay />
+      {/* A foto de referência (item 7): papel vegetal por cima da cena, no
+          mesmo regime da máscara — DOM, nunca nas capturas. No modo de
+          marcação ela engole os toques, congelando órbita e seleção. */}
+      <ReferencePhotoOverlay />
       {/* Aviso de modo (fase 11): destacado no modo visão-câmera, discreto na
           edição — o usuário sempre sabe por qual olho está olhando. */}
       <div

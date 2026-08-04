@@ -45,6 +45,7 @@ export function ScenesPanel() {
   const saveSceneSnapshot = useFiguresStore((state) => state.saveSceneSnapshot)
   const loadSceneSnapshot = useFiguresStore((state) => state.loadSceneSnapshot)
   const removeSceneSnapshot = useFiguresStore((state) => state.removeSceneSnapshot)
+  const moveSceneSnapshot = useFiguresStore((state) => state.moveSceneSnapshot)
   const loadSceneWorkingState = useFiguresStore((state) => state.loadSceneWorkingState)
   const loadWorkspaceCatalog = useFiguresStore((state) => state.loadWorkspaceCatalog)
   const poseLibrary = useFiguresStore((state) => state.poseLibrary)
@@ -220,7 +221,7 @@ export function ScenesPanel() {
         <p className="panel__empty">{t('panels.scenes.empty')}</p>
       ) : (
         <ul className="scenes-panel__list">
-          {scenes.map((scene) => (
+          {scenes.map((scene, index) => (
             <li key={scene.id} className="scenes-panel__row">
               <span className="scenes-panel__name">
                 {scene.name}
@@ -228,6 +229,26 @@ export function ScenesPanel() {
                   <span className="scenes-panel__active-badge">{t('panels.scenes.active')}</span>
                 )}
               </span>
+              {/* Reordenar (item 19): a ordem era fixa pela criação. Nas
+                  bordas o botão desabilita — mesma linguagem dos keyframes. */}
+              <button
+                type="button"
+                aria-label={t('panels.scenes.moveUp')}
+                title={t('panels.scenes.moveUp')}
+                disabled={index === 0}
+                onClick={() => moveSceneSnapshot(scene.id, -1)}
+              >
+                &#8593;
+              </button>
+              <button
+                type="button"
+                aria-label={t('panels.scenes.moveDown')}
+                title={t('panels.scenes.moveDown')}
+                disabled={index === scenes.length - 1}
+                onClick={() => moveSceneSnapshot(scene.id, 1)}
+              >
+                &#8595;
+              </button>
               <button
                 type="button"
                 aria-label={t('panels.scenes.load')}

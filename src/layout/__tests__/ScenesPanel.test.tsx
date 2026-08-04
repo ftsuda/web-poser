@@ -75,6 +75,22 @@ describe('ScenesPanel', () => {
     expect(state.scenes[0].name).toBe('Pose final')
   })
 
+  it('reordena as cenas pelos botões ↑/↓, com as bordas desabilitadas (item 19)', async () => {
+    useFiguresStore.getState().saveSceneSnapshot('Cena A')
+    useFiguresStore.getState().saveSceneSnapshot('Cena B')
+
+    const user = userEvent.setup()
+    await renderScenesPanel()
+
+    const rows = screen.getAllByRole('listitem')
+    // Primeira linha não sobe; última não desce.
+    expect(within(rows[0]).getByRole('button', { name: 'Mover cena para cima' })).toBeDisabled()
+    expect(within(rows[1]).getByRole('button', { name: 'Mover cena para baixo' })).toBeDisabled()
+
+    await user.click(within(rows[1]).getByRole('button', { name: 'Mover cena para cima' }))
+    expect(useFiguresStore.getState().scenes.map((scene) => scene.name)).toEqual(['Cena B', 'Cena A'])
+  })
+
   it('lists saved snapshots and loads one on click', async () => {
     useFiguresStore.getState().addFigure()
     const id = useFiguresStore.getState().saveSceneSnapshot('Cena A')

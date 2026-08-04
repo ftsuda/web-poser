@@ -189,4 +189,91 @@ describe('PropProperties', () => {
     await user.click(screen.getByRole('button', { name: 'Apoiar no chão' }))
     expect(useFiguresStore.getState().props[0].position[1]).toBeCloseTo(0.25, 6)
   })
+
+  describe('formas compostas (kit de armas)', () => {
+    it('a ferramenta de vértices fica desabilitada e o contador some', () => {
+      act(() => {
+        useFiguresStore.getState().addProp('sword')
+      })
+      renderProperties()
+
+      expect(screen.getByRole('button', { name: 'Vértices' })).toBeDisabled()
+      expect(screen.queryByText(/vértices movidos/)).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Desfazer deformação' })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('amarração a junta', () => {
+    it('sem boneco na cena, o bloco explica em vez de oferecer combos', () => {
+      act(() => {
+        useFiguresStore.getState().addProp('box')
+      })
+      renderProperties()
+
+      expect(screen.getByText('Crie um boneco para amarrar o objeto a uma junta.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Amarrar à junta' })).not.toBeInTheDocument()
+    })
+
+    it('amarra pelo painel: boneco e junta escolhidos nos combos', async () => {
+      const user = userEvent.setup()
+      act(() => {
+        useFiguresStore.getState().addFigure()
+        useFiguresStore.getState().addProp('box')
+      })
+      renderProperties()
+
+      await user.selectOptions(screen.getByLabelText('Junta da amarração'), 'wrist.L')
+      await user.click(screen.getByRole('button', { name: 'Amarrar à junta' }))
+
+      const prop = useFiguresStore.getState().props[0]
+      expect(prop.attachment?.jointName).toBe('wrist.L')
+      expect(prop.attachment?.figureId).toBe(useFiguresStore.getState().figures[0].id)
+    })
+
+    it('amarrado, mostra o alvo e solta pelo botão — ficando onde está', async () => {
+      const user = userEvent.setup()
+      act(() => {
+        const figureId = useFiguresStore.getState().addFigure()!
+        const propId = useFiguresStore.getState().addProp('box')!
+        useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+      })
+      renderProperties()
+
+      expect(screen.getByText(/Amarrado a .* · wrist\.R/)).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Soltar (fica onde está)' }))
+      expect(useFiguresStore.getState().props[0].attachment).toBeNull()
+    })
+
+    it('amarrado, os campos de posição editam o OFFSET da junta, e a legenda diz isso', () => {
+      act(() => {
+        const figureId = useFiguresStore.getState().addFigure()!
+        const propId = useFiguresStore.getState().addProp('box')!
+        useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+      })
+      const { rerender } = renderProperties()
+
+      expect(screen.getByText('Posição (offset da junta)')).toBeInTheDocument()
+      expect(screen.getByText('Rotação (offset da junta)')).toBeInTheDocument()
+
+      const positionInputs = screen.getAllByLabelText('X')
+      // Ordem dos fieldsets: tamanho vem primeiro, posição em seguida.
+      fireEvent.change(positionInputs[1], { target: { value: '0.1' } })
+
+      rerender(<PropProperties prop={useFiguresStore.getState().props[0]} />)
+      const attachment = useFiguresStore.getState().props[0].attachment!
+      expect(attachment.position[0]).toBeCloseTo(0.1, 6)
+    })
+
+    it('amarrado, o botão de apoiar no chão fica desabilitado', () => {
+      act(() => {
+        const figureId = useFiguresStore.getState().addFigure()!
+        const propId = useFiguresStore.getState().addProp('box')!
+        useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+      })
+      renderProperties()
+
+      expect(screen.getByRole('button', { name: 'Apoiar no chão' })).toBeDisabled()
+    })
+  })
 })

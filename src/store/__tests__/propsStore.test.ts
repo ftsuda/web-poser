@@ -3,6 +3,7 @@ import { useFiguresStore } from '../figuresStore'
 import { useCameraStore } from '../cameraStore'
 import { selectTarget } from '../selection'
 import { controlPointCount, controlPointPosition, controlPointsOf } from '../../props/propGeometry'
+import { attachedPropPlacement } from '../../props/propAttachment'
 import { DEFAULT_PROP_COLOR, DEFAULT_PROP_SIZE, MAX_PROPS } from '../../props/sceneProp'
 
 /** O objeto que acabou de ser criado — as ações devolvem o id, não o objeto. */
@@ -267,6 +268,170 @@ describe('objetos de cena no figuresStore', () => {
       selectTarget(null)
       expect(useFiguresStore.getState().selectedFigureId).toBeNull()
       expect(useCameraStore.getState().cameraSelected).toBe(false)
+    })
+  })
+
+  describe('formas compostas (kit de armas)', () => {
+    it('a espada nasce apoiada no chão, de pé, no tamanho padrão', () => {
+      const prop = propById(useFiguresStore.getState().addProp('sword'))
+      expect(prop?.shape).toBe('sword')
+      expect(prop?.size).toEqual([0.15, 1.1, 0.03])
+      expect(prop?.position[1]).toBeCloseTo(0.55, 4)
+    })
+
+    it('composta não aceita vértice livre — nem pelo store', () => {
+      const id = useFiguresStore.getState().addProp('sword')!
+      useFiguresStore.getState().setPropVertex(id, 0, [3, 3, 3])
+      expect(propById(id)?.vertexOffsets).toEqual({})
+    })
+  })
+
+  describe('amarração a junta (PLANO.md > amarração, metade 1)', () => {
+    /** Boneco + objeto prontos para amarrar; devolve os dois ids. */
+    function setup() {
+      const figureId = useFiguresStore.getState().addFigure()!
+      const propId = useFiguresStore.getState().addProp('box')!
+      return { figureId, propId }
+    }
+
+    function figureById(id: string) {
+      return useFiguresStore.getState().figures.find((figure) => figure.id === id)!
+    }
+
+    it('amarrar guarda {figureId, jointName} e NÃO muda a colocação própria do objeto', () => {
+      const { figureId, propId } = setup()
+      const before = propById(propId)!
+
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+
+      const after = propById(propId)!
+      expect(after.attachment?.figureId).toBe(figureId)
+      expect(after.attachment?.jointName).toBe('wrist.R')
+      expect(after.position).toEqual(before.position)
+      expect(after.rotation).toEqual(before.rotation)
+    })
+
+    it('amarrar preserva a colocação de MUNDO: o objeto não pula ao ganhar a amarração', () => {
+      const { figureId, propId } = setup()
+      const before = propById(propId)!
+
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+
+      const placement = attachedPropPlacement(figureById(figureId), propById(propId)!.attachment!)!
+      expect(placement.position[0]).toBeCloseTo(before.position[0], 5)
+      expect(placement.position[1]).toBeCloseTo(before.position[1], 5)
+      expect(placement.position[2]).toBeCloseTo(before.position[2], 5)
+    })
+
+    it('junta desconhecida ou boneco inexistente não amarram', () => {
+      const { propId } = setup()
+      useFiguresStore.getState().attachProp(propId, 'figure-99', 'wrist.R')
+      expect(propById(propId)?.attachment).toBeNull()
+
+      const { figureId } = setup()
+      useFiguresStore.getState().attachProp(propId, figureId, 'rabo')
+      expect(propById(propId)?.attachment).toBeNull()
+    })
+
+    it('objeto travado não amarra', () => {
+      const { figureId, propId } = setup()
+      useFiguresStore.getState().togglePropLocked(propId)
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+      expect(propById(propId)?.attachment).toBeNull()
+    })
+
+    it('soltar GRAVA a colocação de mundo no objeto: ele fica onde estava, agora como cenário', () => {
+      const { figureId, propId } = setup()
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+      const placement = attachedPropPlacement(figureById(figureId), propById(propId)!.attachment!)!
+
+      useFiguresStore.getState().detachProp(propId)
+
+      const after = propById(propId)!
+      expect(after.attachment).toBeNull()
+      expect(after.position[0]).toBeCloseTo(placement.position[0], 5)
+      expect(after.position[1]).toBeCloseTo(placement.position[1], 5)
+      expect(after.position[2]).toBeCloseTo(placement.position[2], 5)
+    })
+
+    it('remover o boneco devolve o objeto à PRÓPRIA colocação (decisão do usuário)', () => {
+      const { figureId, propId } = setup()
+      const own = propById(propId)!.position
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+
+      useFiguresStore.getState().removeFigure(figureId)
+
+      const after = propById(propId)!
+      expect(after.attachment).toBeNull()
+      expect(after.position).toEqual(own)
+    })
+
+    it('mover objeto amarrado (gizmo/painel) escreve o OFFSET: a colocação derivada segue o pedido', () => {
+      const { figureId, propId } = setup()
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+      const ownBefore = propById(propId)!.position
+
+      useFiguresStore.getState().setPropPosition(propId, [0.3, 1.4, -0.2])
+
+      const after = propById(propId)!
+      // A colocação própria não muda — o arrasto virou offset relativo à junta.
+      expect(after.position).toEqual(ownBefore)
+      const placement = attachedPropPlacement(figureById(figureId), after.attachment!)!
+      expect(placement.position[0]).toBeCloseTo(0.3, 5)
+      expect(placement.position[1]).toBeCloseTo(1.4, 5)
+      expect(placement.position[2]).toBeCloseTo(-0.2, 5)
+    })
+
+    it('girar objeto amarrado escreve o offset de rotação, sem tocar a rotação própria', () => {
+      const { figureId, propId } = setup()
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+      const before = propById(propId)!
+
+      useFiguresStore.getState().setPropRotation(propId, { y: 45 })
+
+      const after = propById(propId)!
+      expect(after.rotation).toEqual(before.rotation)
+      expect(after.attachment!.rotation).not.toEqual(before.attachment!.rotation)
+    })
+
+    it('o offset também se edita direto (campos do painel)', () => {
+      const { figureId, propId } = setup()
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.L')
+
+      useFiguresStore.getState().setPropAttachmentOffset(propId, {
+        position: [0, -0.05, 0],
+        rotation: { z: 90 },
+      })
+
+      const attachment = propById(propId)!.attachment!
+      expect(attachment.position).toEqual([0, -0.05, 0])
+      expect(attachment.rotation.z).toBe(90)
+    })
+
+    it('apoiar no chão não faz nada com objeto amarrado — quem manda é a junta', () => {
+      const { figureId, propId } = setup()
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+      const before = propById(propId)!
+
+      useFiguresStore.getState().seatPropOnGround(propId)
+      expect(propById(propId)).toBe(before)
+    })
+
+    it('a cópia de um objeto amarrado nasce SOLTA, ao lado da colocação própria', () => {
+      const { figureId, propId } = setup()
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+
+      const copy = propById(useFiguresStore.getState().duplicateProp(propId))
+      expect(copy?.attachment).toBeNull()
+    })
+
+    it('amarrar e soltar entram no undo', () => {
+      const { figureId, propId } = setup()
+      useFiguresStore.getState().attachProp(propId, figureId, 'wrist.R')
+      expect(propById(propId)?.attachment).not.toBeNull()
+
+      useFiguresStore.temporal.getState().undo()
+      expect(propById(propId)?.attachment).toBeNull()
     })
   })
 

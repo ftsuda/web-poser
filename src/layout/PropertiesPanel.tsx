@@ -13,18 +13,25 @@ import {
   POSE_PRESET_GROUPS,
   resolvePosePreset,
   resolvePosePresetPlacement,
-  type PosePresetGroupKey,
   type PosePresetKey,
 } from '../figure/posePresets'
+import {
+  POSE_PRESET_GROUP_LABEL_KEYS,
+  POSE_PRESET_HINT_KEYS,
+  POSE_PRESET_LABEL_KEYS,
+} from './posePresetLabels'
 import { ROOT_JOINT_NAME, getJoint, getJointAxes, type Axis } from '../figure/skeleton'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { parseFigurePoseFile, serializeFigurePoseFile } from '../persistence/figurePoseFile'
+import { matchesPoseFilter } from './poseFilter'
 import { AXIS_COLORS } from '../scene/axisColors'
 import { slugifySceneName } from '../snapshot/snapshotNaming'
 import { useFiguresStore, type Figure } from '../store/figuresStore'
 import { useUIStore, type GizmoMode } from '../store/uiStore'
+import { UNDO_BATCH_POINTER_PROPS } from '../store/undoBatch'
 import { CollapsiblePanel } from './CollapsiblePanel'
 import { CollapsibleSection } from './CollapsibleSection'
+import { ReferencePhotoControls } from './ReferencePhotoControls'
 import { PropProperties } from './PropsSection'
 
 const POSITION_AXES: readonly Axis[] = ['x', 'y', 'z']
@@ -105,6 +112,9 @@ function AxisSlider({
         value={value}
         disabled={disabled}
         onChange={onChange}
+        // Arrastar o slider é um gesto só, e um passo de undo só
+        // (DECISOES.md #118) — as setas do teclado continuam passo a passo.
+        {...UNDO_BATCH_POINTER_PROPS}
       />
       <span className="properties-panel__value">{Math.round(value)}°</span>
       {onToggleLock && (
@@ -121,179 +131,6 @@ function AxisSlider({
       )}
     </div>
   )
-}
-
-const POSE_PRESET_LABEL_KEYS: Record<PosePresetKey, string> = {
-  standing: 'panels.properties.posePresetStanding',
-  tpose: 'panels.properties.posePresetTPose',
-  sitting: 'panels.properties.posePresetSitting',
-  walking: 'panels.properties.posePresetWalking',
-  running: 'panels.properties.posePresetRunning',
-  lyingHandsBehindHead: 'panels.properties.posePresetLying',
-  fetal: 'panels.properties.posePresetFetal',
-  fighting: 'panels.properties.posePresetFighting',
-  superman: 'panels.properties.posePresetSuperman',
-  model: 'panels.properties.posePresetModel',
-  punchGiving: 'panels.properties.posePresetPunchGiving',
-  punchTaking: 'panels.properties.posePresetPunchTaking',
-  kickGiving: 'panels.properties.posePresetKickGiving',
-  kickTaking: 'panels.properties.posePresetKickTaking',
-  chokeGiving: 'panels.properties.posePresetChokeGiving',
-  chokeTaking: 'panels.properties.posePresetChokeTaking',
-  apose: 'panels.properties.posePresetAPose',
-  pointForward: 'panels.properties.posePresetPointForward',
-  pointUp: 'panels.properties.posePresetPointUp',
-  pointDown: 'panels.properties.posePresetPointDown',
-  pointFar: 'panels.properties.posePresetPointFar',
-  pointAtOther: 'panels.properties.posePresetPointAtOther',
-  presenting: 'panels.properties.posePresetPresenting',
-  pointSelf: 'panels.properties.posePresetPointSelf',
-  thumbBack: 'panels.properties.posePresetThumbBack',
-  squat: 'panels.properties.posePresetSquat',
-  kneelingOneKnee: 'panels.properties.posePresetKneelingOneKnee',
-  kneelingBoth: 'panels.properties.posePresetKneelingBoth',
-  crossLegged: 'panels.properties.posePresetCrossLegged',
-  allFours: 'panels.properties.posePresetAllFours',
-  plank: 'panels.properties.posePresetPlank',
-  pronePropped: 'panels.properties.posePresetPronePropped',
-  sideLying: 'panels.properties.posePresetSideLying',
-  touchToes: 'panels.properties.posePresetTouchToes',
-  armsCrossed: 'panels.properties.posePresetArmsCrossed',
-  handsOnHips: 'panels.properties.posePresetHandsOnHips',
-  waving: 'panels.properties.posePresetWaving',
-  celebrating: 'panels.properties.posePresetCelebrating',
-  handOnChin: 'panels.properties.posePresetHandOnChin',
-  headDown: 'panels.properties.posePresetHeadDown',
-  startled: 'panels.properties.posePresetStartled',
-  kpopFingerHeart: 'panels.properties.posePresetKpopFingerHeart',
-  kpopBoxArms: 'panels.properties.posePresetKpopBoxArms',
-  kpopPointDance: 'panels.properties.posePresetKpopPointDance',
-  kpopShoulderWave: 'panels.properties.posePresetKpopShoulderWave',
-  jumping: 'panels.properties.posePresetJumping',
-  throwing: 'panels.properties.posePresetThrowing',
-  kickingBall: 'panels.properties.posePresetKickingBall',
-  carryingBox: 'panels.properties.posePresetCarryingBox',
-  climbing: 'panels.properties.posePresetClimbing',
-  stepUp: 'panels.properties.posePresetStepUp',
-  balletPreparation: 'panels.properties.posePresetBalletPreparation',
-  balletPirouette: 'panels.properties.posePresetBalletPirouette',
-  handshake: 'panels.properties.posePresetHandshake',
-  hug: 'panels.properties.posePresetHug',
-  danceLead: 'panels.properties.posePresetDanceLead',
-  danceFollow: 'panels.properties.posePresetDanceFollow',
-  carryingPiggyback: 'panels.properties.posePresetCarryingPiggyback',
-  carriedPiggyback: 'panels.properties.posePresetCarriedPiggyback',
-  carryingCradle: 'panels.properties.posePresetCarryingCradle',
-  carriedCradle: 'panels.properties.posePresetCarriedCradle',
-  pullingUp: 'panels.properties.posePresetPullingUp',
-  beingPulledUp: 'panels.properties.posePresetBeingPulledUp',
-  pushGiving: 'panels.properties.posePresetPushGiving',
-  pushTaking: 'panels.properties.posePresetPushTaking',
-  kneeStrikeGiving: 'panels.properties.posePresetKneeStrikeGiving',
-  kneeStrikeTaking: 'panels.properties.posePresetKneeStrikeTaking',
-  armLockPushGiving: 'panels.properties.posePresetArmLockPushGiving',
-  armLockPushTaking: 'panels.properties.posePresetArmLockPushTaking',
-  armLockPullGiving: 'panels.properties.posePresetArmLockPullGiving',
-  armLockPullTaking: 'panels.properties.posePresetArmLockPullTaking',
-  clinch: 'panels.properties.posePresetClinch',
-  meditating: 'panels.properties.posePresetMeditating',
-  businessman: 'panels.properties.posePresetBusinessman',
-  heroStance: 'panels.properties.posePresetHeroStance',
-  lyingSpreadSupine: 'panels.properties.posePresetLyingSpreadSupine',
-  lyingSpreadProne: 'panels.properties.posePresetLyingSpreadProne',
-  sittingLegsForward: 'panels.properties.posePresetSittingLegsForward',
-  sittingKneesBent: 'panels.properties.posePresetSittingKneesBent',
-  rearChokeKneeling: 'panels.properties.posePresetRearChokeKneeling',
-  rearChokeSeated: 'panels.properties.posePresetRearChokeSeated',
-  groundChokeGiving: 'panels.properties.posePresetGroundChokeGiving',
-  groundChokeTaking: 'panels.properties.posePresetGroundChokeTaking',
-}
-
-/** Descrição longa (tooltip) das poses cujo rótulo curto não se explica sozinho. */
-const POSE_PRESET_HINT_KEYS: Partial<Record<PosePresetKey, string>> = {
-  lyingHandsBehindHead: 'panels.properties.posePresetLyingHint',
-  fetal: 'panels.properties.posePresetFetalHint',
-  fighting: 'panels.properties.posePresetFightingHint',
-  superman: 'panels.properties.posePresetSupermanHint',
-  model: 'panels.properties.posePresetModelHint',
-  // As poses de luta vêm em par: a dica de cada uma diz com qual outra ela
-  // se encaixa, senão não dá para saber que existe um par (DECISOES.md #35).
-  punchGiving: 'panels.properties.posePresetPunchGivingHint',
-  punchTaking: 'panels.properties.posePresetPunchTakingHint',
-  kickGiving: 'panels.properties.posePresetKickGivingHint',
-  kickTaking: 'panels.properties.posePresetKickTakingHint',
-  chokeGiving: 'panels.properties.posePresetChokeGivingHint',
-  chokeTaking: 'panels.properties.posePresetChokeTakingHint',
-  apose: 'panels.properties.posePresetAPoseHint',
-  pointForward: 'panels.properties.posePresetPointForwardHint',
-  pointUp: 'panels.properties.posePresetPointUpHint',
-  pointDown: 'panels.properties.posePresetPointDownHint',
-  pointFar: 'panels.properties.posePresetPointFarHint',
-  pointAtOther: 'panels.properties.posePresetPointAtOtherHint',
-  presenting: 'panels.properties.posePresetPresentingHint',
-  pointSelf: 'panels.properties.posePresetPointSelfHint',
-  thumbBack: 'panels.properties.posePresetThumbBackHint',
-  squat: 'panels.properties.posePresetSquatHint',
-  kneelingOneKnee: 'panels.properties.posePresetKneelingOneKneeHint',
-  kneelingBoth: 'panels.properties.posePresetKneelingBothHint',
-  crossLegged: 'panels.properties.posePresetCrossLeggedHint',
-  allFours: 'panels.properties.posePresetAllFoursHint',
-  plank: 'panels.properties.posePresetPlankHint',
-  pronePropped: 'panels.properties.posePresetProneProppedHint',
-  sideLying: 'panels.properties.posePresetSideLyingHint',
-  touchToes: 'panels.properties.posePresetTouchToesHint',
-  armsCrossed: 'panels.properties.posePresetArmsCrossedHint',
-  handsOnHips: 'panels.properties.posePresetHandsOnHipsHint',
-  waving: 'panels.properties.posePresetWavingHint',
-  celebrating: 'panels.properties.posePresetCelebratingHint',
-  handOnChin: 'panels.properties.posePresetHandOnChinHint',
-  headDown: 'panels.properties.posePresetHeadDownHint',
-  startled: 'panels.properties.posePresetStartledHint',
-  kpopFingerHeart: 'panels.properties.posePresetKpopFingerHeartHint',
-  kpopBoxArms: 'panels.properties.posePresetKpopBoxArmsHint',
-  kpopPointDance: 'panels.properties.posePresetKpopPointDanceHint',
-  kpopShoulderWave: 'panels.properties.posePresetKpopShoulderWaveHint',
-  jumping: 'panels.properties.posePresetJumpingHint',
-  throwing: 'panels.properties.posePresetThrowingHint',
-  kickingBall: 'panels.properties.posePresetKickingBallHint',
-  carryingBox: 'panels.properties.posePresetCarryingBoxHint',
-  climbing: 'panels.properties.posePresetClimbingHint',
-  stepUp: 'panels.properties.posePresetStepUpHint',
-  balletPreparation: 'panels.properties.posePresetBalletPreparationHint',
-  balletPirouette: 'panels.properties.posePresetBalletPirouetteHint',
-  // Nos pares, a dica é a única coisa que diz a DISTÂNCIA em que as duas
-  // poses se encaixam — sem ela o encaixe resolvido numericamente não chega
-  // ao usuário (DECISOES.md #37).
-  handshake: 'panels.properties.posePresetHandshakeHint',
-  hug: 'panels.properties.posePresetHugHint',
-  danceLead: 'panels.properties.posePresetDanceLeadHint',
-  danceFollow: 'panels.properties.posePresetDanceFollowHint',
-  carryingPiggyback: 'panels.properties.posePresetCarryingPiggybackHint',
-  carriedPiggyback: 'panels.properties.posePresetCarriedPiggybackHint',
-  carryingCradle: 'panels.properties.posePresetCarryingCradleHint',
-  carriedCradle: 'panels.properties.posePresetCarriedCradleHint',
-  pullingUp: 'panels.properties.posePresetPullingUpHint',
-  beingPulledUp: 'panels.properties.posePresetBeingPulledUpHint',
-  pushGiving: 'panels.properties.posePresetPushGivingHint',
-  pushTaking: 'panels.properties.posePresetPushTakingHint',
-  kneeStrikeGiving: 'panels.properties.posePresetKneeStrikeGivingHint',
-  kneeStrikeTaking: 'panels.properties.posePresetKneeStrikeTakingHint',
-  armLockPushGiving: 'panels.properties.posePresetArmLockPushGivingHint',
-  armLockPushTaking: 'panels.properties.posePresetArmLockPushTakingHint',
-  armLockPullGiving: 'panels.properties.posePresetArmLockPullGivingHint',
-  armLockPullTaking: 'panels.properties.posePresetArmLockPullTakingHint',
-  clinch: 'panels.properties.posePresetClinchHint',
-  meditating: 'panels.properties.posePresetMeditatingHint',
-  businessman: 'panels.properties.posePresetBusinessmanHint',
-  heroStance: 'panels.properties.posePresetHeroStanceHint',
-  lyingSpreadSupine: 'panels.properties.posePresetLyingSpreadSupineHint',
-  lyingSpreadProne: 'panels.properties.posePresetLyingSpreadProneHint',
-  sittingLegsForward: 'panels.properties.posePresetSittingLegsForwardHint',
-  sittingKneesBent: 'panels.properties.posePresetSittingKneesBentHint',
-  rearChokeKneeling: 'panels.properties.posePresetRearChokeKneelingHint',
-  rearChokeSeated: 'panels.properties.posePresetRearChokeSeatedHint',
-  groundChokeGiving: 'panels.properties.posePresetGroundChokeGivingHint',
-  groundChokeTaking: 'panels.properties.posePresetGroundChokeTakingHint',
 }
 
 const HAND_PRESET_LABEL_KEYS: Record<HandPresetKey, string> = {
@@ -591,18 +428,6 @@ function SymmetryFieldset({ figureId, scopeJoint }: SymmetryFieldsetProps) {
  */
 const SAVED_POSE_PREFIX = 'saved:'
 
-const POSE_PRESET_GROUP_LABEL_KEYS: Record<PosePresetGroupKey, string> = {
-  reference: 'panels.properties.poseGroupReference',
-  everyday: 'panels.properties.poseGroupEveryday',
-  ground: 'panels.properties.poseGroupGround',
-  pointing: 'panels.properties.poseGroupPointing',
-  action: 'panels.properties.poseGroupAction',
-  expressive: 'panels.properties.poseGroupExpressive',
-  kpop: 'panels.properties.poseGroupKpop',
-  pairs: 'panels.properties.poseGroupPairs',
-  fight: 'panels.properties.poseGroupFight',
-}
-
 interface PoseNameFormProps {
   value: string
   onChange: (value: string) => void
@@ -650,6 +475,12 @@ export function PropertiesPanel() {
    * colidirem com as chaves de fábrica.
    */
   const [selectedPose, setSelectedPose] = useState<string>('standing')
+  /**
+   * Filtro da lista de poses (item 35): são dezenas de presets em grupos, e
+   * achar um pelo combo exigia varrer grupo a grupo. Busca por trecho do nome,
+   * sem caixa e sem acento (`poseFilter.ts`). Estado de tela, como o combo.
+   */
+  const [poseFilter, setPoseFilter] = useState('')
   /**
    * Formulário de nome da biblioteca de poses — fechado por padrão. Serve aos
    * dois gestos: batizar uma pose NOVA e renomear a que está escolhida no
@@ -726,6 +557,12 @@ export function PropertiesPanel() {
     return (
       <CollapsiblePanel panelKey="properties" className="panel--properties" title={t('panels.properties.title')}>
         <p className="panel__empty">{t('panels.properties.empty')}</p>
+        {/* A foto de referência não depende de seleção: carregar e regular a
+            opacidade valem como auxílio avulso (item 7) — só o "Inferir pose"
+            pede um boneco, e o próprio botão explica. */}
+        <CollapsibleSection sectionKey="referencePhoto" title={t('panels.properties.referencePhoto')}>
+          <ReferencePhotoControls />
+        </CollapsibleSection>
       </CollapsiblePanel>
     )
   }
@@ -771,6 +608,20 @@ export function PropertiesPanel() {
   const isSelectedJointPinned = pinnedJoints.includes(selectedJointName)
   const isSelectedJointFrozen = frozenJointsByPins(jointPins, figure.id).includes(selectedJointName)
   const placementPinned = isPlacementPinned(jointPins, figure.id)
+
+  // Filtro da lista de poses (item 35). A opção ESCOLHIDA nunca é filtrada
+  // para fora: um `<select>` cujo valor não está entre as opções fica em
+  // branco no meio da digitação. Grupo sem sobrevivente some inteiro.
+  const visiblePresetGroups = POSE_PRESET_GROUPS.map((group) => ({
+    key: group.key,
+    poses: group.poses.filter(
+      (key) => key === poseSelectValue || matchesPoseFilter(t(POSE_PRESET_LABEL_KEYS[key]), poseFilter),
+    ),
+  })).filter((group) => group.poses.length > 0)
+  const visibleLibrary = poseLibrary.filter(
+    (pose) =>
+      `${SAVED_POSE_PREFIX}${pose.id}` === poseSelectValue || matchesPoseFilter(pose.name, poseFilter),
+  )
 
   /** A pose escolhida no combo, no formato comum a presets e biblioteca. */
   const selectedPoseSource: BlendSource | null = savedPose
@@ -974,6 +825,17 @@ export function PropertiesPanel() {
               predefinida em sentido nenhum. */}
           <CollapsibleSection sectionKey="poses" title={t('panels.properties.posePresets')}>
             <fieldset aria-label={t('panels.properties.posePresets')}>
+                {/* Filtro (item 35): reduz o combo abaixo ao que casa com o
+                    texto — presets e biblioteca, todos os grupos de uma vez. */}
+                <label htmlFor="pose-filter" className="properties-panel__field properties-panel__field--stacked">
+                  {t('panels.properties.poseFilter')}
+                  <input
+                    id="pose-filter"
+                    type="search"
+                    value={poseFilter}
+                    onChange={(event) => setPoseFilter(event.target.value)}
+                  />
+                </label>
                 <select
                   id="pose-preset-select"
                   className="properties-panel__pose-select"
@@ -981,7 +843,7 @@ export function PropertiesPanel() {
                   value={poseSelectValue}
                   onChange={(event) => setSelectedPose(event.target.value)}
                 >
-                  {POSE_PRESET_GROUPS.map((group) => (
+                  {visiblePresetGroups.map((group) => (
                     <optgroup key={group.key} label={t(POSE_PRESET_GROUP_LABEL_KEYS[group.key])}>
                       {group.poses.map((key) => (
                         <option key={key} value={key}>
@@ -993,9 +855,9 @@ export function PropertiesPanel() {
                   {/* Biblioteca do usuário no MESMO combo das poses de fábrica
                       (DECISOES.md #42): escolher e aplicar uma pose é um gesto
                       só, venha ela de onde vier. */}
-                  {poseLibrary.length > 0 && (
+                  {visibleLibrary.length > 0 && (
                     <optgroup label={t('panels.properties.poseGroupLibrary')}>
-                      {poseLibrary.map((pose) => (
+                      {visibleLibrary.map((pose) => (
                         <option key={pose.id} value={`${SAVED_POSE_PREFIX}${pose.id}`}>
                           {pose.name}
                         </option>
@@ -1086,6 +948,7 @@ export function PropertiesPanel() {
                     step={1}
                     value={mixAmount}
                     onChange={handleMixChange}
+                    {...UNDO_BATCH_POINTER_PROPS}
                   />
                   <span className="properties-panel__value">{mixAmount}%</span>
                 </div>
@@ -1367,6 +1230,12 @@ export function PropertiesPanel() {
           <ResetGroupFieldset figureId={figure.id} />
         </>
       )}
+
+      {/* Foto de referência + marcação (item 7 / pose por marcação manual):
+          por último porque é fluxo esporádico — e recolhida por padrão. */}
+      <CollapsibleSection sectionKey="referencePhoto" title={t('panels.properties.referencePhoto')}>
+        <ReferencePhotoControls />
+      </CollapsibleSection>
     </CollapsiblePanel>
   )
 }

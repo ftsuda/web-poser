@@ -13,6 +13,7 @@ import {
   DEFAULT_PROP_SIZE,
   PROP_SHAPES,
   clampPropSize,
+  propShapeHasFreeVertex,
   sanitizeVertexOffsets,
   vertexOffsetCount,
   withVertexOffset,
@@ -34,6 +35,7 @@ function makeProp(overrides: Partial<SceneProp> = {}): SceneProp {
     rotation: { x: 0, y: 0, z: 0 },
     size: DEFAULT_PROP_SIZE[shape],
     vertexOffsets: {},
+    attachment: null,
     ...overrides,
   }
 }
@@ -59,6 +61,12 @@ describe('pontos de controle', () => {
     expect(controlPointCount('cylinder')).toBe(34)
     expect(controlPointCount('cone')).toBe(18)
     expect(controlPointCount('sphere')).toBe(114)
+    // Compostas (kit de armas): a contagem existe para MEDIÇÃO (apoiar no
+    // chão), não para alças — vértice livre não vale para elas, e desvio
+    // gravado é descartado na leitura (`propShapeHasFreeVertex`).
+    expect(controlPointCount('sword')).toBe(181)
+    expect(controlPointCount('shield')).toBe(119)
+    expect(controlPointCount('scabbard')).toBe(34)
   })
 
   it('a soldagem cobre TODO vértice do buffer, sem sobra nem repetição', () => {
@@ -84,6 +92,42 @@ describe('pontos de controle', () => {
     const small = controlPointPosition('box', [0.1, 0.1, 0.1], {}, 0)
     const large = controlPointPosition('box', [4, 4, 4], {}, 0)
     expect(small.map((v) => Math.sign(v))).toEqual(large.map((v) => Math.sign(v)))
+  })
+})
+
+describe('formas compostas (kit de armas)', () => {
+  it('cada composta cabe na caixa do próprio tamanho em metros', () => {
+    for (const shape of ['sword', 'shield', 'scabbard'] as const) {
+      const size = DEFAULT_PROP_SIZE[shape]
+      const box = boundingBox(makeProp({ shape }))
+      expect(box.min.x).toBeGreaterThanOrEqual(-size[0] / 2 - 1e-6)
+      expect(box.max.x).toBeLessThanOrEqual(size[0] / 2 + 1e-6)
+      expect(box.min.y).toBeGreaterThanOrEqual(-size[1] / 2 - 1e-6)
+      expect(box.max.y).toBeLessThanOrEqual(size[1] / 2 + 1e-6)
+      expect(box.min.z).toBeGreaterThanOrEqual(-size[2] / 2 - 1e-6)
+      expect(box.max.z).toBeLessThanOrEqual(size[2] / 2 + 1e-6)
+    }
+  })
+
+  it('a espada usa a altura inteira (do pomo à ponta) e apoia no chão pela metade dela', () => {
+    const sword = makeProp({ shape: 'sword' })
+    const box = boundingBox(sword)
+    expect(box.min.y).toBeCloseTo(-DEFAULT_PROP_SIZE.sword[1] / 2, 4)
+    expect(box.max.y).toBeCloseTo(DEFAULT_PROP_SIZE.sword[1] / 2, 4)
+    expect(propGroundOffset(sword)).toBeCloseTo(DEFAULT_PROP_SIZE.sword[1] / 2, 4)
+  })
+
+  it('composta não tem vértice livre; primitiva tem', () => {
+    expect(propShapeHasFreeVertex('sword')).toBe(false)
+    expect(propShapeHasFreeVertex('shield')).toBe(false)
+    expect(propShapeHasFreeVertex('scabbard')).toBe(false)
+    expect(propShapeHasFreeVertex('box')).toBe(true)
+    expect(propShapeHasFreeVertex('sphere')).toBe(true)
+  })
+
+  it('esticar o Y da espada alonga a composição inteira, em metros', () => {
+    const stretched = boundingBox(makeProp({ shape: 'sword', size: [0.15, 2.2, 0.03] }))
+    expect(stretched.max.y).toBeCloseTo(1.1, 4)
   })
 })
 

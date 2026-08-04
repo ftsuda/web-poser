@@ -88,7 +88,7 @@ Cada junta tem limites min/max por eixo (Euler, ordem definida por junta) para i
 2. **Selecionar articulação** (clique na esfera da junta) → gizmo de rotação restrito aos eixos/limites daquela junta + sliders numéricos no painel lateral.
 3. **Modo IK (fase 7):** alvos arrastáveis nas mãos e pés; CCD resolve ombro+cotovelo / quadril+joelho respeitando os limites; alternância FK/IK por membro.
 4. **Poses predefinidas** (em pé, sentado, andando, correndo) como ponto de partida — barato de implementar e muito útil.
-5. **Undo/redo** (Ctrl+Z / Ctrl+Shift+Z ou Ctrl+Y) sobre alterações de pose, posição, bonecos e configuração da cena — disponível **desde a fase 3**, junto com a primeira edição de pose. A navegação de câmera (órbita/pan/zoom) fica **fora** do histórico de undo, seguindo o padrão dos editores 3D; bookmarks de câmera (criar/remover) entram no histórico normalmente.
+5. **Undo/redo** (Ctrl+Z / Ctrl+Shift+Z ou Ctrl+Y) sobre alterações de pose, posição, bonecos e configuração da cena — disponível **desde a fase 3**, junto com a primeira edição de pose. A navegação de câmera (órbita/pan/zoom) fica **fora** do histórico de undo, seguindo o padrão dos editores 3D; bookmarks de câmera (criar/remover) entram no histórico normalmente. A granularidade é o **gesto, não o evento** (`DECISOES.md` #118): arrasto de gizmo, arrasto no módulo de poses e arrasto de slider registram um único passo, com o estado de quando o botão (ou o dedo) é solto — os intermediários não entram. Ajuste por teclado continua passo a passo.
 
 ## Persistência (formato da cena)
 
@@ -525,6 +525,8 @@ Duas restrições de escopo valem para tudo o que segue: **nenhuma dependência 
 
 **Atualização em 2026-07-29:** entraram os itens **36 a 39** (animação, grupo H), pedidos pelo usuário já com as decisões de desenho tomadas — passam a ser **27 abertas**. A avaliação de conflitos com o que estava pendente, também pedida por ele, está no fim do grupo H ("Conflitos e ordem entre os itens 36–39 e o que já estava pendente").
 
+**Atualização em 2026-08-02:** o usuário pediu a ordem sugerida para tudo que estava pendente e mandou implementar os três primeiros blocos dela — foram construídos **8, 17, 19, 21, 26, 35** desta lista e **52, 53, 55, 58** do módulo de poses (ver `DECISOES.md` #105–#107). Da lista numerada restam abertas: **7, 9, 10, 12, 13, 14❓, 16, 18❓, 23, 24❓, 25, 32** — o ❓ do 18 perdeu o objeto com a remoção do glTF (#85): sem `.glb`, a miniatura pode ser um dataURL no próprio `scene.json`, e o item ficou mais barato do que quando foi escrito.
+
 ### A. Fluxo de posar
 
 1. ✅ **Biblioteca de poses do usuário** (concluído em 2026-07-26, ver `DECISOES.md` #42). Salvar a pose de um boneco com nome, reaplicá-la em qualquer boneco de qualquer cena e gravá-la no workspace como `poses.json` ao lado do `joint-limits.json` — pelo padrão do #29, como previsto aqui. Uma decisão a mais surgiu na execução e foi confirmada com o usuário: a pose salva guarda também o **assentamento** (inclinação e altura do quadril), senão uma pose deitada voltaria em pé atravessando o chão.
@@ -535,12 +537,12 @@ Duas restrições de escopo valem para tudo o que segue: **nenhuma dependência 
 6. ✅ **Mistura entre duas poses** (concluído em 2026-07-26, ver `DECISOES.md` #43). Slider 0-100% entre a pose atual e a escolhida no combo (preset ou biblioteca), com o resultado sendo uma pose estática única — não animação, como previsto aqui. ⚠️ **A ressalva técnica deste item estava invertida, e a medição que ele mesmo exigia mostrou isso:** interpolar por eixo nunca sai dos limites articulares (a faixa de cada eixo é convexa — correção do clamp medida em 0,000000°), enquanto o quatérnio sai e o clamp então distorce a pose no meio do caminho (`elbow.R` em +99° com limite `[-150, 0]`, salto de 0,562 m contra 0,033 m). O método simples era também o correto. Duas coisas a mais entraram na execução: 100% é idêntico a "Aplicar pose", e uma correção de chão impede o boneco de afundar 17 cm no meio da mistura.
 32. 🟡 **"Olhar para" — cabeça e pescoço.** O gesto mais repetido ao montar cena com dois bonecos, e hoje só existe como dois sliders de `neck`/`head`. Mirar em: a câmera, outro boneco, ou um ponto. É um aim de duas juntas com os limites de sempre — bem mais simples que o solver de membro de `ikSolver.ts`. Opcionalmente com peso no tronco, para o corpo acompanhar.
 33. ✅ **Botão "apoiar no chão"** (concluído em 2026-07-28, ver `DECISOES.md` #58; o cálculo veio do #57). `seatFigureOnGround` mexe só na altura, entra no undo, e o botão aparece nas duas seções do painel — depois de dobrar um joelho quem está posando tem uma junta selecionada, e voltar à raiz só para apoiar seria atrito no pior momento. Texto original do item: A correção de chão existe, mas **só dentro** de `blendPoses` (e desligada na animação, por decisão do #52). Depois de mexer no quadril ou nos joelhos, o boneco flutua ou afunda, e o conserto é na mão. Como ação avulsa é `buildJointFrames` + descer o root até a junta mais baixa tocar `y = 0` — código que já está todo escrito.
-35. 🟢 **Filtro na lista de poses.** São dezenas de presets em grupos; um campo de busca por nome é meia hora de trabalho e retorno imediato. Baixa prioridade só porque as outras valem mais.
+35. ✅ **Filtro na lista de poses** (concluído em 2026-08-02, ver `DECISOES.md` #105). Campo "Filtrar poses" acima do combo, busca por trecho do nome sem caixa e sem acento (`poseFilter.ts`); a pose escolhida nunca some do combo e o filtro vale para presets e biblioteca. Texto original do item: São dezenas de presets em grupos; um campo de busca por nome é meia hora de trabalho e retorno imediato. Baixa prioridade só porque as outras valem mais.
 
 ### B. Referência para desenho — o propósito do app
 
-7. 🟡 **Imagem de referência no viewport.** Carregar uma foto local (nunca por rede) como fundo do viewport ou como plano no espaço 3D, para posar o boneco por cima dela. É o uso clássico do manequim físico e hoje não há nada equivalente. ❓ Decidir se a imagem viaja no workspace (embutida, o que pode pesar muito) ou é só um auxílio de sessão, não persistido.
-8. 🟢 **Modo silhueta / contorno.** Alternar o material do boneco para preto chapado (silhueta) ou só arestas — a silhueta é a primeira coisa que um ilustrador checa numa pose, e um render chapado revela problemas de leitura que a versão sombreada esconde. Barato: é um material alternativo em `Figure2.tsx`, sem tocar em geometria.
+7. ✅ **Imagem de referência no viewport** (concluído em 2026-08-03, como etapa 1 da proposta "Pose por marcação manual" — ver `DECISOES.md` #111). Foto local POR CIMA do viewport (papel vegetal com opacidade), nas duas cascas, só sessão com botão de limpar; nunca sai no PNG/MP4. Texto original do item: Carregar uma foto local (nunca por rede) como fundo do viewport ou como plano no espaço 3D, para posar o boneco por cima dela. É o uso clássico do manequim físico e hoje não há nada equivalente. ❓ Decidir se a imagem viaja no workspace (embutida, o que pode pesar muito) ou é só um auxílio de sessão, não persistido — **respondido**: só sessão.
+8. ✅ **Modo silhueta** (concluído em 2026-08-02, ver `DECISOES.md` #105). Checkbox "Silhueta" na Toolbar, no regime da casca (preferência de tela, fora do undo e do arquivo): todas as peças em preto chapado (`meshBasicMaterial`), sem destaques emissivos; o fantasma do papel-cebola vence; clique e edição continuam; sai no PNG/MP4. A variante "só arestas" ficou de fora do primeiro corte. Texto original do item: Alternar o material do boneco para preto chapado (silhueta) ou só arestas — a silhueta é a primeira coisa que um ilustrador checa numa pose, e um render chapado revela problemas de leitura que a versão sombreada esconde. Barato: é um material alternativo em `Figure2.tsx`, sem tocar em geometria.
 9. 🟡 **Linha de ação e linhas de ombro/quadril.** Sobrepor no viewport a curva que liga cabeça → pelve → pé de apoio (a "linha de ação" do desenho gestual) e as duas linhas que mostram a inclinação relativa de ombros e quadril (o contraposto). É vocabulário direto de quem desenha figura humana, e todos os pontos necessários já saem de `buildJointFrames`.
 10. 🟢 **Escala de cabeças.** Régua sobreposta marcando a divisão clássica de 7,5-8 cabeças. Combina com o item 11 da fase 9 (régua vertical) — talvez seja a mesma régua com um segundo modo de unidade, em vez de dois recursos separados.
 11. ✅ **Presets de lente em milímetros** — construído em 2026-07-27 (ver `DECISOES.md` #46), junto com enquadramento cinematográfico, ângulos de câmera e movimento entre dois pontos. Texto original do item: O painel de câmera hoje expõe FOV em graus (`CameraPanel.tsx`); ilustrador e fotógrafo pensam em 24/35/50/85 mm. Botões de distância focal equivalente (conversão trivial para FOV) tornam o controle de distorção de perspectiva muito mais previsível — importante porque a perspectiva escolhida muda radicalmente a pose que se deve desenhar.
@@ -561,17 +563,17 @@ Duas restrições de escopo valem para tudo o que segue: **nenhuma dependência 
 ### D. Ambiente e leitura de volume
 
 16. 🟡 **Direção e intensidade da luz controláveis.** A `directionalLight` de `SceneContent.tsx` tem posição fixa. Poder girar a luz (azimute/elevação) muda quais volumes ficam legíveis e é uma decisão de referência tão relevante quanto o ângulo de câmera — sombra é o que comunica forma num keyframe.
-17. 🟢 **Revisar sombra de contato vs. sombra projetada.** Hoje coexistem duas coisas: a elipse translúcida sempre presa ao chão (`FigureShadow`, decisão deliberada como indicador de altura) e a sombra real do shadow map. Vale conferir se as duas juntas não atrapalham a leitura em algumas poses — em especial nas poses do #30 que erguem o boneco do chão (Superman) ou o deitam.
+17. ✅ **Revisar sombra de contato vs. sombra projetada** (concluído em 2026-08-02, ver `DECISOES.md` #105). A revisão achou uma premissa falsa: o boneco NUNCA projetou sombra real (`castShadow` ausente das peças — só os objetos de cena projetavam). Corrigido: peças e ossos ganharam `castShadow` (fantasma não), cumprindo o que a tabela de arquitetura sempre prometeu; a elipse fica, como indicador distinto de colocação/altura. Falta a conferência visual no navegador. Texto original do item: Hoje coexistem duas coisas: a elipse translúcida sempre presa ao chão (`FigureShadow`, decisão deliberada como indicador de altura) e a sombra real do shadow map. Vale conferir se as duas juntas não atrapalham a leitura em algumas poses — em especial nas poses do #30 que erguem o boneco do chão (Superman) ou o deitam.
 
 ### E. Workspace e organização
 
 18. 🟡 **Miniatura das cenas salvas.** O painel de Cenas lista só nomes; com 10 cenas, achar "aquela do salto" exige carregar uma a uma. Gerar um PNG pequeno no momento de salvar (a captura sob demanda já existe) e guardá-lo no `extras` do `.glb` da cena resolveria. ❓ Confirmar antes que embutir a miniatura não atrapalha a ida e volta com o Blender já validada na fase 6.
-19. 🟢 **Reordenar cenas na lista.** Renomear já existe no store (`renameSceneSnapshot`), mas a ordem é fixa pela ordem de criação.
+19. ✅ **Reordenar cenas na lista** (concluído em 2026-08-02, ver `DECISOES.md` #105). Setas ↑/↓ por cena no painel de Cenas, e — como previsto na avaliação de conflitos do item 36 — o mesmo código (`moveById`) serviu à biblioteca de animações ("Subir/Descer na lista"). Entra no undo; a animação de trabalho fica onde está. Texto original do item: Renomear já existe no store (`renameSceneSnapshot`), mas a ordem é fixa pela ordem de criação.
 
 ### F. Dívida técnica e higiene
 
 20. ✅ **Código morto: `Figure.tsx` e a duplicidade `skeleton2.ts`** (resolvido em 2026-07-25, ver `DECISOES.md` #32). O renderizador antigo foi removido, `Figure2.tsx` voltou a se chamar `Figure.tsx` e a camada visual do `skeleton2.ts` foi **fundida** no `skeleton.ts` (escolha do usuário entre fundir e renomear) — um único arquivo de esqueleto, com cinemática e aparência separadas por um cabeçalho de seção. `Viewport.tsx` perdeu o alias `Figure2 as Figure` e o import comentado que permitia reverter o visual.
-21. 🟡 **`frameloop="demand"` no `Canvas`.** Hoje o `Canvas` (`Viewport.tsx`) roda no modo padrão, redesenhando continuamente mesmo com a cena parada — o que num app de **poses estáticas** é gasto puro de CPU/GPU e bateria. Mudar para redesenho sob demanda casa com a natureza do app, mas exige auditar cada ponto que anima algo (gizmos, `OrbitControls`, captura) para invalidar o quadro corretamente; daí o custo médio e não baixo.
+21. ✅ **`frameloop="demand"` no `Canvas`** (concluído em 2026-08-02, ver `DECISOES.md` #107). A auditoria prevista está registrada no comentário do próprio `Canvas` e no #107: nenhum ponto precisou de `invalidate()` manual (controles do drei invalidam no `change`; reprodução e comandos de câmera passam por estado React; captura/vídeo renderizam por conta própria). Escopo deliberado: só o `Viewport` do desktop — o viewport do módulo de poses fica para depois, se a medição em aparelho pedir. Falta a conferência visual no navegador. Texto original do item: Hoje o `Canvas` (`Viewport.tsx`) roda no modo padrão, redesenhando continuamente mesmo com a cena parada — o que num app de **poses estáticas** é gasto puro de CPU/GPU e bateria. Mudar para redesenho sob demanda casa com a natureza do app, mas exige auditar cada ponto que anima algo (gizmos, `OrbitControls`, captura) para invalidar o quadro corretamente; daí o custo médio e não baixo.
 22. ✅ **Atalhos previstos no plano e não construídos** (resolvido em 2026-07-25, ver `DECISOES.md` #32). `F` (enquadrar no boneco selecionado, medindo a caixa real da pose), `Ctrl+S` (salva/regrava a cena ativa no catálogo, sem duplicar) e `W`/`E` (gizmo da raiz mover/girar) foram construídos; o `Q` saiu do mapa por não ter equivalente no app. O `SHORTCUT_CATALOG` — e portanto o painel `?` — cobre agora o mapa inteiro.
 23. 🟡 **Suíte de testes: 1.490 testes, ~175 s** (581 quando este item foi escrito; 1.316 na última vez que a métrica foi atualizada). O tempo dobrou na entrega da câmera (#46) — a maior parte é disputa de CPU entre os arquivos de painel, que remontam a UI a cada interação, e foi o que obrigou a subir o `testTimeout` de 5 s para 20 s. O custo por rodada vem subindo a cada fase. Se passar a incomodar, o caminho é separar os testes de render 3D (os mais lentos, por montarem o `@react-three/test-renderer`) dos de lógica pura, permitindo rodar só os rápidos durante o desenvolvimento.
 
@@ -593,8 +595,8 @@ Duas restrições de escopo valem para tudo o que segue: **nenhuma dependência 
 
 *(a numeração continua do fim, sem renumerar os itens acima — mesma convenção do grupo G. Estes itens saíram da revisão de pose, câmera e animação pedida pelo usuário em 2026-07-28; os de pose e de câmera daquela revisão foram para os grupos A e C.)*
 
-26. 🟡❓ **Easing por trecho (aceleração/desaceleração).** Hoje `sampleAnimation` calcula `t` linear (`animationSampler.ts`), e o leiame do `animations.json` até documenta a consequência: *"a velocidade é constante dentro de cada trecho e muda em cada keyframe"*. Na prática todo movimento parte e para de repente, e a câmera quebra visivelmente em cada keyframe. **É a maior lacuna da animação** — o que mais separa o vídeo atual de um que pareça animado. O conserto é uma função pura `t → t'` aplicada antes de `blendFigure`/`interpolateCameraView`: um seletor por keyframe (linear / suave nos dois lados / suave na entrada / suave na saída), do mesmo tamanho do campo de duração.
-    - **❓ Decisão embutida:** com easing, o "Inserir keyframe aqui" (#54) **deixa de ser invisível** — duas metades reinterpoladas linearmente não reproduzem uma curva suave. Ou o corte reparte a curva (subdivisão de Bézier, matemática conhecida), ou o keyframe inserido dentro de um trecho suavizado assume linear e o painel avisa. A segunda é honesta e barata; a primeira é a certa se easing virar o padrão.
+26. ✅ **Easing por trecho (aceleração/desaceleração)** (concluído em 2026-08-02, ver `DECISOES.md` #106). Saiu como o item previa: `applyEasing` puro remapeando o `t` do trecho antes de `blendFigure`/`interpolateCameraView`, seletor "Suavização" por keyframe (linear / suave nos dois lados / na entrada / na saída), campo aditivo que 'linear' nunca grava — e o easing viaja nos trechos salvos (a sinergia 39×26 anotada abaixo). Texto original do item: Hoje `sampleAnimation` calcula `t` linear (`animationSampler.ts`), e o leiame do `animations.json` até documenta a consequência: *"a velocidade é constante dentro de cada trecho e muda em cada keyframe"*. Na prática todo movimento parte e para de repente, e a câmera quebra visivelmente em cada keyframe. **É a maior lacuna da animação** — o que mais separa o vídeo atual de um que pareça animado. O conserto é uma função pura `t → t'` aplicada antes de `blendFigure`/`interpolateCameraView`: um seletor por keyframe (linear / suave nos dois lados / suave na entrada / suave na saída), do mesmo tamanho do campo de duração.
+    - **❓ Decisão embutida — resolvida pela rota honesta e barata (2026-08-02):** o keyframe inserido dentro de um trecho suavizado guarda o retrato do instante SUAVIZADO e as duas metades assumem linear, com aviso visível na barra da linha do tempo antes de inserir. A subdivisão da curva fica anotada como upgrade possível se easing virar o padrão. Texto original: com easing, o "Inserir keyframe aqui" (#54) **deixa de ser invisível** — duas metades reinterpoladas linearmente não reproduzem uma curva suave. Ou o corte reparte a curva (subdivisão de Bézier, matemática conhecida), ou o keyframe inserido dentro de um trecho suavizado assume linear e o painel avisa. A segunda é honesta e barata; a primeira é a certa se easing virar o padrão.
 27. ✅ **Laço na reprodução, e "fechar o ciclo"** (concluído em 2026-07-29, ver `DECISOES.md` #65). Checkbox **Repetir** na barra da linha do tempo, valendo só na tela (o arquivo continua com uma passada), com o excedente reentrando pelo começo para o ciclo emendar sem engasgo; e **"Fechar o ciclo"**, que copia o keyframe 1 para o fim com a duração do último trecho — sem levar o rótulo de grupo dele (seriam dois blocos com o mesmo nome). Texto original do item: `AnimationPlayer.tsx` para no fim de propósito (repetir sozinho esconderia onde a animação termina), mas para acertar um ciclo de caminhada é preciso clicar "Tocar" a cada volta. Um checkbox **Repetir** que afeta só a reprodução na tela — o arquivo continua com uma passada — custa pouquíssimo. Junto: um botão **"fechar o ciclo"**, que duplica o keyframe 1 no fim; sem ele nenhum ciclo emenda.
 28. ✅ **Duplicar keyframe e copiar a pose do vizinho** (concluído em 2026-07-29, ver `DECISOES.md` #65). `copyAnimationKeyframeFigures` é o simétrico exato do "Câm ↑/↓", e duplicar põe a cópia logo depois com a MESMA duração — dois retratos iguais são a pausa, e ela dura o mesmo que o trecho que chegou ali. Texto original do item: Simétricos ao "Câm ↑/↓" (#55) e quase o mesmo código — `copyAnimationKeyframeCamera` trocando o campo. Hoje existe o gesto de **segurar o enquadramento e deixar a cena andar**; falta o complementar, **segurar a pose e mover só a câmera**. E duplicar um keyframe é como se cria uma pausa (dois retratos iguais), que hoje só sai recapturando a cena.
 29. ✅ **Régua da linha do tempo, agora como BARRA DO RODAPÉ** (concluído em 2026-07-29, ver `DECISOES.md` #65). Pedido do usuário no meio da execução: a régua saiu do painel de Animação e virou `TimelineBar.tsx`, uma barra de largura inteira no rodapé, recolhível e nascendo recolhida. Ficou com as marcas dos keyframes (`<datalist>`), o passo de exatamente 1/fps, os botões de keyframe anterior/próximo, o transporte (tocar/parar) e a caixa **Repetir** do item 27 — no painel ficou o que é edição, aqui o que é navegação. As faixas dos grupos do item 38 são a segunda camada desta mesma régua. Texto original do item: O slider do `AnimationPanel` tem `step={10}` e nenhuma referência visual: não dá para ver onde estão os keyframes nem parar em cima de um. Três coisas baratas — marcas dos keyframes sob o slider (`<datalist>` resolve), setas ←/→ andando exatamente 1/fps, e botões "keyframe anterior/próximo". Muda o dia a dia de quem ajusta tempo.
@@ -612,7 +614,7 @@ Duas restrições de escopo valem para tudo o que segue: **nenhuma dependência 
     - **Risco a tratar:** sobrescrever a de trabalho joga fora o que estava nela. Mitigação já validada em outro canto do app — passo único de undo, como nos snapshots de cena — mais o aviso no painel; nada de diálogo de confirmação, que o projeto evita desde o `Delete` do boneco (fase 3).
 37. ✅ **Checkboxes de bonecos nos trechos prontos (solo)** (concluído em 2026-07-29, ver `DECISOES.md` #65). `appendAnimationClip` aceita uma LISTA no papel A; em dupla continua um combo por papel. Texto original do item: O papel é um `select` de um boneco só (`animation-clip-role-a`), então um corpo de baile — as danças do #62, várias pessoas andando na mesma cena — é montado repetindo o mesmo trecho boneco a boneco, cada vez a partir do fim da linha do tempo. Com **checkboxes dos bonecos em cena**, marcar N aplica o trecho inteiro aos N ao mesmo tempo, cada um ancorado no próprio lugar e no próprio heading (a ancoragem por papel já é o que `appendAnimationClip` faz). Padrão: o boneco selecionado marcado, para o gesto de um clique continuar existindo.
     - **Trechos em DUPLA ficam como estão**, com os dois combos A e B — decisão do usuário: os papéis são distintos e os encaixes vêm **medidos par a par** de `posePairs.ts`; marcar vários para o mesmo papel os empilharia todos exatamente no mesmo ponto.
-38. ✅ **Grupos rotulados de keyframes, recolhíveis** (concluído em 2026-07-29, ver `DECISOES.md` #65). Rótulo por keyframe, consecutivos iguais colapsando, cabeçalho recolhível no painel e faixa na régua do rodapé; duas regras de unicidade (estender o grupo vizinho à mão é aceito, repetir num trecho novo ganha sufixo) e herança de rótulo no cortar/duplicar — menos no que fecha o ciclo. Texto original do item: Com dez ou vinte cards "Keyframe 7 — 1.5s" ninguém sabe onde começa a caminhada e onde começa o salto. **Modelo decidido com o usuário:** rótulo opcional **por keyframe** (`label?: string` em `AnimationKeyframe`, campo aditivo com sanitização em `animation.ts`, como todo dado que vem do autosave e do `animations.json`); keyframes **consecutivos** com o mesmo rótulo formam um grupo, com cabeçalho **recolhível** na lista. Nada de entidade "grupo" com faixa a manter consistente a cada inserir/mover/remover — um grupo é uma leitura da lista, não um objeto à parte.
+38. ✅ **Grupos rotulados de keyframes, recolhíveis** (concluído em 2026-07-29, ver `DECISOES.md` #65; o cabeçalho ganhou ↑ ↓ para mover o BLOCO inteiro em 2026-08-03, ver #117). Rótulo por keyframe, consecutivos iguais colapsando, cabeçalho recolhível no painel e faixa na régua do rodapé; duas regras de unicidade (estender o grupo vizinho à mão é aceito, repetir num trecho novo ganha sufixo) e herança de rótulo no cortar/duplicar — menos no que fecha o ciclo. Texto original do item: Com dez ou vinte cards "Keyframe 7 — 1.5s" ninguém sabe onde começa a caminhada e onde começa o salto. **Modelo decidido com o usuário:** rótulo opcional **por keyframe** (`label?: string` em `AnimationKeyframe`, campo aditivo com sanitização em `animation.ts`, como todo dado que vem do autosave e do `animations.json`); keyframes **consecutivos** com o mesmo rótulo formam um grupo, com cabeçalho **recolhível** na lista. Nada de entidade "grupo" com faixa a manter consistente a cada inserir/mover/remover — um grupo é uma leitura da lista, não um objeto à parte.
     - **Rótulo não se repete:** dois trechos de caminhada são "Andando 1" e "Andando 2". Repetir o mesmo nome não remonta um grupo partido (seriam dois blocos separados com o mesmo título, que é justamente a confusão que o item existe para tirar), então o painel força o sufixo.
     - Recolher/expandir é **estado de ferramenta**: fora do undo e do arquivo, como o recolhimento de painel do `uiStore`.
     - **Ganho de graça:** o trecho pronto inserido pode já nascer rotulado com o nome dele ("Andando 1"), e a regra do sufixo resolve a segunda inserção sozinha — o grupo mais comum sai sem ninguém digitar nada.
@@ -799,19 +801,19 @@ Duas restrições de escopo valem para tudo o que segue: **nenhuma dependência 
 
 51. ✅ **Botões ±1°/±5° nos sliders** (concluído em 2026-07-31). Torção e rotação da raiz ganharam ajuste fino por botão — dedo em slider é impreciso, e o grampeamento continua o dos limites.
 
-52. ⏳ **Poses de partida na aba Boneco.** `applyPosePreset` já existe (em pé, sentado, T-pose…); montar pose do zero no celular sem ponto de partida é trabalhoso. O plano tirou os presets da Lite ("O que sai da Lite"), então é uma revisão consciente a decidir.
+52. ✅ **Poses de partida na aba Boneco** (concluído em 2026-08-02, ver `DECISOES.md` #105). A revisão consciente foi decidida pelo usuário ao mandar implementar: combo "Pose de partida" com o catálogo inteiro do desktop (rótulos compartilhados via `posePresetLabels.ts`, extraídos do `PropertiesPanel`) + "Aplicar pose" via `applyPosePreset`, sem o pareamento de dupla. Texto original do item: `applyPosePreset` já existe (em pé, sentado, T-pose…); montar pose do zero no celular sem ponto de partida é trabalhoso. O plano tirou os presets da Lite ("O que sai da Lite"), então é uma revisão consciente a decidir.
 
-53. ⏳ **Indicador de autosave no módulo.** O módulo grava na chave própria mas não mostra estado; o `uiStore` já marca pendente/salvo/falha — falta só o badge.
+53. ✅ **Indicador de autosave no módulo** (concluído em 2026-08-02, ver `DECISOES.md` #105). Badge de ponto colorido no `PosesTopBar`, lendo o mesmo `uiStore` e reusando as chaves `toolbar.autosave*` como nome acessível/título — nenhuma string nova. Texto original do item: O módulo grava na chave própria mas não mostra estado; o `uiStore` já marca pendente/salvo/falha — falta só o badge.
 
 54. ✅ **Trazer/levar a sessão entre as cascas** (concluído em 2026-08-01, ver DECISOES.md #98). As sessões são separadas por decisão (#92); no mesmo aparelho, um botão "trazer a sessão da outra casca" (com confirmação — substitui a sessão atual e zera o undo) no painel de Cenas do desktop e na aba Arquivos do módulo completa o desenho para quem começa numa casca e continua na outra.
 
-55. ⏳ **Aba Arquivos aceitar pose avulsa.** O leitor de "Pose em arquivo" (#81/#87) aceita a família inteira de formatos; a aba só abre animação. Aplicar um JSON de pose ao boneco selecionado reusaria `parseFigurePoseFile` quase de graça.
+55. ✅ **Aba Arquivos aceitar pose avulsa** (concluído em 2026-08-02, ver `DECISOES.md` #105). Botão "Aplicar pose do arquivo": `parseFigurePoseFile` → `applyImportedFigurePose` no boneco em edição, com as mensagens de erro do desktop; desabilitado sem boneco em edição. Texto original do item: O leitor de "Pose em arquivo" (#81/#87) aceita a família inteira de formatos; a aba só abre animação. Aplicar um JSON de pose ao boneco selecionado reusaria `parseFigurePoseFile` quase de graça.
 
 56. ✅ **Atalho do PWA para o módulo de poses** (concluído em 2026-07-31). Entrada `shortcuts` no manifest apontando para `./?shell=poses`; a URL vence o override gravado (é o gesto mais explícito), e os botões de troca de casca removem o parâmetro ao navegar — sem isso, um app aberto pelo atalho ficaria preso à casca da URL.
 
 57. ✅ **Playwright para o que o unit test não alcança** (concluído em 2026-08-01, ver `DECISOES.md` #95). Quatro smokes em `e2e/poses.spec.ts` (`npm run test:e2e`, Chromium sobre o dev server): casca por URL e troca pelos botões, arrasto REAL da raiz na vista de frente (asserção pelo autosave do módulo), pan de um dedo que não toca na pose, e vista Livre com cadeado — todos conferindo console limpo. Texto original: Arrasto, gizmo, pan por um dedo e troca de casca são conferência manual hoje; #31.5 já provou que o Playwright alcança arrasto. Um smoke por vista pagaria o custo rápido.
 
-58. ⏳ **Extrair a lógica de arrasto do `PosesViewport`.** O componente concentra arrasto planar, por eixo, gesto de torção e gizmo; um módulo/hook testável separado deixaria a matemática coberta e o componente só com a cola.
+58. ✅ **Extrair a lógica de arrasto do `PosesViewport`** (concluído em 2026-08-02, ver `DECISOES.md` #107). `posesDrag.ts`: `dragTargetForPointer` (as três formas do arrasto), `draggedRootPosition` e a máquina de estados do gesto de torção (`TwistTracker`), tudo puro e coberto por 8 testes; o componente ficou só com a cola, comportamento preservado. Texto original do item: O componente concentra arrasto planar, por eixo, gesto de torção e gizmo; um módulo/hook testável separado deixaria a matemática coberta e o componente só com a cola.
 
 59. ✅ **Espelho por membro na aba Simetria** (concluído em 2026-07-31). Seletor de alcance — boneco inteiro ou a partir da junta selecionada — usando o mesmo `scopeJoint` do desktop (#34); a opção por junta desabilita quando a selecionada não tem par no escopo.
 
@@ -917,9 +919,9 @@ A restrição estruturante vem das regras do projeto: zero rede em runtime + sem
 - **Política de privacidade**: por arquitetura ela é uma frase ("nenhum dado sai do seu aparelho"), mas as lojas exigem a página; a LGPD está praticamente resolvida por construção.
 - **Changelog visível**: o service worker atualiza sozinho (`autoUpdate`); com usuários de verdade, um "o que mudou" dentro do app evita a surpresa muda.
 
-## MCP de análise de pose — imagem/vídeo → keyframes ❓
+## MCP de análise de pose — imagem/vídeo → keyframes — etapas 1–2 ✅
 
-*(proposta sem número — avaliação de viabilidade feita em 2026-08-02 a pedido do usuário; viável, mas as decisões de desenho abaixo ficam em aberto até ele responder)*
+*(proposta sem número — avaliação de viabilidade feita em 2026-08-02 a pedido do usuário; **etapas 1–2 concluídas em 2026-08-03**: núcleo de retargeting em `src/pose-import/` testado por ida-e-volta com a cinemática do app, e a CLI `npm run pose:from-image` com MediaPipe wasm em Chromium headless + `npm run pose:model` para o modelo. Ver `DECISOES.md` #109 e `HISTORICO.md`. **Pendentes: etapa 3 (vídeo → keyframes) e etapa 4 (casca MCP)**)*
 
 Um servidor **MCP** (Model Context Protocol) que ferramentas de IA usam para analisar poses em imagens ou vídeos e gerar keyframes **no formato do app** (`animations.json`). Veredito da avaliação: **viável — e o MCP é a parte fácil** (~20% do trabalho); os 80% que decidem a qualidade moram no *retargeting*: converter landmarks em rotações por junta.
 
@@ -944,16 +946,58 @@ Um servidor **MCP** (Model Context Protocol) que ferramentas de IA usam para ana
 | 3 | Vídeo → keyframes (amostragem + suavização + seleção de instantes) | 1–2 sessões |
 | 4 | Casca MCP (tools `pose_from_image`, `keyframes_from_video`) | ~1 sessão |
 
-**Dúvidas em aberto ❓ — responder antes de virar item numerado:**
+**Dúvidas — respondidas pelo usuário em 2026-08-03 (ver `DECISOES.md` #109):**
 
-1. **Runtime do modelo:** MediaPipe em Node/wasm (uma língua só no projeto, integração menos batida) × sidecar Python (caminho mais sólido para vídeo, mas segunda runtime)?
-2. **Escopo do primeiro corte:** só imagem → pose (etapas 1–2, valor imediato e risco menor) × já mirar vídeo → keyframes?
-3. **Onde mora:** dentro do repositório (`tools/`, importando `src/` — recomendação, pela fonte de verdade única) × pacote separado?
-4. **Multi-pessoa:** primeiro corte assume UMA pessoa por imagem (multi-pessoa complica a associação com os bonecos da cena)?
+1. **Runtime do modelo:** ✅ **Node/wasm** (uma língua só; na prática, o wasm roda num Chromium headless do Playwright com rotas interceptadas — nada sai para a rede).
+2. **Escopo do primeiro corte:** ✅ **só imagem → pose** (etapas 1–2); vídeo e casca MCP ficam para cortes seguintes.
+3. **Onde mora:** ✅ **dentro do repositório** — núcleo em `src/pose-import/` (importa `skeleton.ts`, limites, `figurePoseFile`), CLI boba em `tools/`.
+4. **Multi-pessoa:** ✅ **multi-pessoa já** (contra a recomendação): um arquivo de pose por pessoa detectada; a associação com bonecos da cena continua manual.
 
-## Objetos pré-modelados e amarração a juntas ❓
+## Pose por marcação manual — foto + toques nas juntas → pose ✅
 
-*(proposta sem número — avaliação de viabilidade feita em 2026-08-02 a pedido do usuário; parecer favorável com ressalvas, decisões de desenho em aberto abaixo; nada implementado)*
+*(proposta sem número — avaliação, respostas e implementação em 2026-08-03: **as quatro etapas entregues**, incluindo o item 7 como etapa 1 e a profundidade opt-in por marcador da etapa 4. Ver `DECISOES.md` #111 e `HISTORICO.md`.)*
+
+*Refinamentos do mesmo dia, da prática do usuário: zoom/deslocamento da foto (#112), sequência agrupada por membro (#113), marca da base do pescoço (#113.1), vídeo como referência (#114), profundidade também nos PARES — ombros e quadris, a torção do tronco (#115) —, o cursor de marcação, uma junta por vez (#115.1), a opção de profundidade em vigor acesa na tela (#118.1) e a marca da **base do tórax** com a **conferência da raiz pela linha dos quadris** (#119).*
+
+*Sobre a marcação do tronco (#119): a fila tem **18 pontos**, 14 obrigatórios. A base do tórax é onde o tronco QUEBRA — sem ela, `spine` e `chest` repartem meio a meio o frame dos ombros e todo tronco sai reto. É um ponto SOBRE o eixo do tronco: diz a inclinação da coluna, nunca a torção em torno dela (essa continua vindo da linha dos ombros, #115). A raiz segue sendo o alinhamento manual do usuário (#111) e a inferência não a toca — mas "Acertar raiz pelos quadris" a confere contra a linha marcada, num botão próprio, e a inferência avisa quando as duas discordam.*
+
+O pedido: carregar uma foto na tela, marcar manualmente os pontos das juntas principais (dedos ignorados) e a aplicação inferir a pose. Veredito: **é o complemento natural do `pose:from-image` (#109), e a parte difícil já está pronta** — o núcleo de retargeting (`src/pose-import/retarget.ts`) recebe landmarks e devolve a pose, testado por ida-e-volta. O que falta é um ADAPTADOR pequeno e a UI de marcação.
+
+**Por que é mais barato do que parece:**
+- O `retargetPose` só usa **direções normalizadas** entre os pontos — coordenadas em PIXELS da foto servem direto, sem conversão de escala nenhuma (medido no código: toda direção passa por `normalize()`).
+- Ele já tolera ponto ausente por `visibility`: junta não marcada fica neutra com aviso — exatamente o contrato dos dedos ignorados.
+- A saída entra pelos caminhos que já existem (aplicar no boneco selecionado, ou "Pose em arquivo").
+- E cobre o buraco REAL do #109: na foto adversarial testada (pernas ocultas, contraluz), o MediaPipe inventou quadris na altura do nariz *dizendo* `visibility` 1,0. O olho humano não erra isso — a marcação manual é o plano B honesto, e roda no celular, onde a CLI (Playwright + modelo de 9 MB) nunca vai rodar.
+
+**A limitação estrutural — e a saída honesta:** um toque na foto dá `(x, y)`; profundidade não existe. Primeiro corte: **pose no plano da vista** (`z = 0` no plano da câmera ativa) — flexões que aparecem na foto saem exatas; o que sai do plano fica achatado e o usuário refina no editor, que é o regime "rascunho de pose" já aceito no #109. Um segundo corte pode recuperar `|dz|` por comprimento de osso conhecido (o esqueleto do app dá os comprimentos; sobra o SINAL, resolvível por um toggle "frente/trás" por membro) — fica fora do primeiro corte.
+
+**Pontos a marcar:** 2 ombros, 2 cotovelos, 2 punhos, 2 quadris, 2 joelhos, 2 tornozelos, cabeça (1 ponto), e opcionais: 2 pontas de pé, nariz (direção do olhar — só rende em vista lateral). **Tronco e raiz NÃO se marcam** — ver o fluxo abaixo. Total: 13 obrigatórios.
+
+**Dúvidas — respondidas pelo usuário em 2026-08-03:**
+
+1. **Onde mora a UI:** ✅ **em ambas as cascas** (desktop e módulo de poses).
+2. **Raiz e profundidade:** ✅ desenho do usuário, MELHOR que o proposto — **o root não é inferido pelos ombros/quadris: é ajustado à mão, com o próprio boneco sobreposto à foto** como referência (posição E rotação), e fica TRAVADO; as demais juntas são inferidas considerando o root fixo. Isso elimina o toggle "de costas", conserta a vista 3/4 (a linha dos quadris achatada enganaria a inferência; o olho do usuário não) e transforma a limitação de profundidade em decisão consciente de quem posa.
+3. **Foto e marcadores:** ✅ **só sessão, com botão de limpar** — nunca persistem; o que persiste é o RESULTADO (a pose aplicada, no undo).
+4. **Destino da pose:** ✅ **aplicar no boneco selecionado**.
+
+**Sinergia com o item 7 (verificada a pedido): a etapa inicial É o item 7.** "Ajustar o root com o boneco sobreposto à foto" exige exatamente o que o item 7 pede — foto local como fundo do viewport, com o boneco por cima. A resposta 3 ainda fecha o ❓ do item 7 (só sessão, não persiste). O plano de entrega natural é: **item 7 primeiro, como recurso avulso** (foto de referência com opacidade + limpar, nas duas cascas, no regime de estado de ferramenta — fora do undo e do arquivo), e a marcação como modo POR CIMA dele.
+
+**Fluxo consolidado:** (1) carregar a foto de referência (item 7) → (2) alinhar o boneco à foto com as ferramentas que já existem — mover/girar o root sobre a imagem → (3) entrar no modo de marcação: sequência guiada de toques ("agora: cotovelo esquerdo"), marcadores arrastáveis, root intocado pela inferência → (4) "Inferir pose" aplica no boneco selecionado, juntas no plano da vista ativa, avisos do retarget na tela.
+
+**Custo estimado, por etapa (cada uma útil sozinha):**
+
+| Etapa | O quê | Custo |
+|---|---|---|
+| 1 | **Item 7**: foto de referência no viewport das duas cascas (arquivo local, opacidade, limpar; só sessão) | ~1 sessão |
+| 2 | Adaptador `marcas 2D → pose` (root fixo dado, plano da câmera ativa, avisos) — puro, TDD com as fixtures projetadas do próprio retarget | 0,5–1 sessão |
+| 3 | Modo de marcação nas duas cascas (sequência guiada, arrastar, inferir/aplicar) | 1–2 sessões |
+| 4 | (depois, se doer) profundidade por comprimento de osso + toggle frente/trás | ~1 sessão |
+
+Nenhuma regra ameaçada: a foto entra por arquivo local (regime explícito do zero-rede), nunca persiste, e os marcadores são estado de trabalho, fora do undo e fora do arquivo.
+
+## Objetos pré-modelados e amarração a juntas — amarração + kit de armas ✅
+
+*(proposta sem número — avaliação de viabilidade feita em 2026-08-02 a pedido do usuário; **concluído em 2026-08-03**: a metade 1 inteira (amarração como derivação do frame da junta, gizmo escrevendo offset, persistência aditiva) e o primeiro kit da metade 2 (espada, escudo e bainha — compostas sem vértice livre). Ver `DECISOES.md` #108 e `HISTORICO.md`. **Pendentes: moto e animais rígidos, conforme demanda**; animais articulados seguem fora, como proposta própria)*
 
 O pedido tem duas metades independentes, com custos e riscos muito diferentes:
 
@@ -990,10 +1034,70 @@ O custo é o de MODELAR, um a um, como foi com o manequim:
 
 Amarração primeiro (metade 1, mecanismo que valoriza tudo que vier depois) → kit de armas (o caso de uso que motivou o pedido, e o mais barato) → moto/animais rígidos conforme demanda.
 
-**Dúvidas em aberto ❓ — responder antes de virar item numerado:**
+**Dúvidas — respondidas pelo usuário em 2026-08-03 (ver `DECISOES.md` #108):**
 
-1. **Amarração no arquivo da cena** (recomendação: sim, campo aditivo em `SceneExtras`) — e ao remover o boneco/junta amarrada, o objeto **volta à própria colocação** (recomendação) × é removido junto?
-2. **Offset da amarração:** editado arrastando o objeto com o gizmo normal (o arrasto vira offset relativo à junta — recomendação) × só campos numéricos no painel?
-3. **Formas compostas deformam?** Tamanho por eixo em metros e vértice livre valem para espada/moto (esticar lâmina = feature) × compostas têm tamanho uniforme e sem vértice livre (modelo "íntegro")?
-4. **Primeiro kit:** armas (espada, escudo, bainha) primeiro, como recomendado? E o teto `MAX_PROPS = 20` continua valendo com objetos compostos?
-5. **Animais:** confirma rígidos-primeiro, com articulados adiados para proposta própria?
+1. **Amarração no arquivo da cena:** ✅ sim, campo aditivo (`PropExtras.attachment`); ao remover o boneco, o objeto **volta à própria colocação** (soltar manualmente é o oposto: grava a colocação de mundo, o objeto fica onde está).
+2. **Offset da amarração:** ✅ **o gizmo normal edita o offset** (o arrasto vira offset relativo à junta); os campos numéricos do painel editam o mesmo offset, com a legenda dizendo isso.
+3. **Formas compostas:** ✅ **tamanho por eixo em metros, SEM vértice livre** (esticar a lâmina é feature; o modelo fica íntegro — `propShapeHasFreeVertex`).
+4. **Primeiro kit:** ✅ armas (espada, escudo, bainha); `MAX_PROPS = 20` continua valendo.
+5. **Animais:** ✅ rígidos-primeiro conforme demanda, articulados adiados para proposta própria.
+
+## Vídeo como referência — frame a frame sobre o papel vegetal ✅
+
+*(proposta sem número — avaliação feita em 2026-08-03 a pedido do usuário; **concluído em 2026-08-03**, com as quatro dúvidas nas recomendações: fps auto-detectado com seletor de apoio, scrubber + play/pause, marcas mantidas ao trocar de frame, um carregador só. Ver `DECISOES.md` #114 e `HISTORICO.md`)*
+
+O pedido: usar um VÍDEO como referência, com os mesmos recursos da foto (transparência, posicionamento, zoom) e controles para avançar/retroceder frame a frame — mantendo a funcionalidade de foto existente.
+
+**Veredito: viável e barato — a infraestrutura da foto (#111/#112) serve quase inteira.** O `<video>` é um irmão do `<img>`: entra por object URL de arquivo local (zero-rede intacto — quem decodifica é o navegador, nenhum byte sai), é posicionado pelo MESMO retângulo transformado do `referencePhotoView` (opacidade, zoom e deslocamento valem sem mudar uma linha da matemática), continua DOM por cima do viewport (nunca sai no PNG/MP4) e é só sessão, como a foto. A marcação e a inferência operam sobre o frame PARADO exatamente como sobre uma foto — o solver nem fica sabendo a origem dos pontos.
+
+**A única parte genuinamente nova: andar de frame.** A API de mídia do navegador não expõe "frame" — só `currentTime` em segundos; avançar/retroceder um frame é `currentTime ± 1/fps`, e o **fps não é exposto**. Saídas, da mais simples à mais fina:
+1. **Seletor de fps** (24/25/30/60, padrão 30) — sempre funciona, honesto;
+2. **Auto-detecção por `requestVideoFrameCallback`** (Chrome/Edge/Safari e Firefox recente): mede o intervalo real entre frames apresentados; cai no seletor onde a API não existir.
+
+Detalhes que importam: setar `currentTime` decodifica o frame exato (não usar `fastSeek`, que salta para o keyframe do codec); os formatos aceitos são os do navegador (h264/mp4, vp8/9/webm, av1 — o MP4 exportado pelo próprio app abre); vídeo grande não pesa na memória como imagem — o navegador faz stream do disco.
+
+**Desenho proposto (mantendo a foto intacta):**
+- `referenceImageStore` ganha `kind: 'image' | 'video'` (+ fps); url, aspect, opacidade, vista e marcas são os MESMOS campos — vídeo novo zera marcas como foto nova zera.
+- O overlay renderiza `<video>` quando for vídeo, com o mesmo rect/estilo, e registra o elemento num ref de módulo (precedente: `activeViewportCamera`) para os controles comandarem o seek sem acoplamento de árvore.
+- Os controles moram no mesmo `ReferencePhotoControls`: o carregador aceita `image/*,video/*`, e o bloco de vídeo (frame ◀ ▶, linha do tempo) só aparece quando for vídeo.
+- **Marcas mantidas ao trocar de frame — é a feature, não descuido:** o fluxo de animação vira marcar → inferir → gravar keyframe → avançar N frames → ARRASTAR as marcas (os deltas são pequenos) → inferir de novo. É a versão manual (e de celular) da etapa 3 do MCP de pose (#109, vídeo→keyframes automático), sem o modelo de 9 MB.
+
+**Custo estimado: ~1 sessão** (store + overlay + controles + i18n + testes; solver intocado). O que o jsdom não alcança — decodificação e seek de verdade — fica para a conferência no navegador, regime já aceito (#31.5); o resto (próximo tempo de frame com grampo 0–duração, detecção de tipo, estado, UI condicional) é puro e testável.
+
+**Dúvidas — fechadas em 2026-08-03, todas nas recomendações:**
+
+1. **Passo do frame:** ✅ auto-detecção por `requestVideoFrameCallback` com seletor de fps como fallback/override.
+2. **Linha do tempo:** ✅ scrubber arrastável E play/pause incluídos.
+3. **Marcas ao andar de frame:** ✅ mantidas — é o fluxo de keyframes acima.
+4. **Carregador:** ✅ um botão só ("Carregar foto/vídeo…"), o MIME decide.
+
+## Estouro de memória no navegador — levantamento ❓
+
+*(avaliação em 2026-08-03, a pedido do usuário, que relatou Out of Memory usando o app. **Não reproduzido aqui** — o que segue é auditoria de código: onde a memória cresce sem teto e onde ela é duplicada. A primeira recomendação é justamente MEDIR, para não consertar o item errado.)*
+
+**O que auditei e está são** (para não se procurar ali):
+
+- **Papel-cebola** é leitura por REFERÊNCIA (`OnionSkinFrame.keyframe`), não cópia dos bonecos.
+- **Undo** tem `limit: 100` e todas as escritas do store são imutáveis, então as entradas COMPARTILHAM estrutura: só o que mudou de fato ocupa espaço novo.
+- **Exportação MP4** tem contrapressão por quadro (`backpressure`), câmera descartável e material de profundidade criado UMA vez para o laço inteiro (nada de shader por quadro).
+- **Object URLs** da referência são revogados ao trocar e ao limpar.
+- **Malhas do boneco** nascem em `useMemo` com dependências estáveis (constantes do `skeleton.ts`): mudar de pose gira grupos, não recria geometria. `SceneProps` descarta a geometria do objeto ao trocá-la.
+- **Resoluções de saída são limitadas**: vídeo até 1080p, instantâneo até 3840 px por lado (`MAX_SNAPSHOT_DIMENSION`).
+
+**Onde NÃO há teto, por ordem de risco:**
+
+1. **A referência (foto/vídeo) é o único dado do app sem limite de tamanho** — e é recente. Uma foto de celular de 48 Mpx decodifica para ~190 MB de bitmap (o arquivo tem 5 MB; o bitmap não). Um vídeo 4K mantém vários quadros decodificados. Some-se o zoom (#112): o elemento é posicionado com largura/altura de até **8× o contêiner**, e uma camada de vídeo escalada assim é cara de compor. Agrava: **"Mostrar foto" desligado só zera a opacidade** — o `<video>` continua montado e decodificando.
+   - *Melhorias:* reamostrar a FOTO ao carregar (`createImageBitmap` + canvas, teto de ~4096 px no maior lado) e guardar o bitmap reduzido — a marcação é normalizada, então nada mais muda; pausar o vídeo e/ou soltar o elemento quando a camada está invisível; avisar quando o arquivo escolhido é muito grande. **Custo: ~meia sessão** (a foto é o grosso; o resto é pequeno).
+2. **O MP4 inteiro vive em RAM, duas vezes.** `BufferTarget` guarda o arquivo (a 1080p30, ~1 MB por segundo de vídeo) e `new Blob([buffer])` copia — dois minutos de vídeo são ~120 MB × 2, mais a URL de download, que fica viva até a página recarregar. O próprio `videoExport.ts` já registra a saída: `StreamTarget` gravando direto num `FileSystemWritableFileStream` (o app já usa File System Access no workspace).
+   - *Melhorias:* gravar direto em arquivo onde a API existir; revogar a URL da exportação anterior; soltar o buffer assim que o Blob existir. **Custo: ~meia sessão.**
+3. **Duas cascas, dois contextos WebGL.** Trocar desktop ↔ módulo de poses monta outro `<Canvas>`; navegadores limitam contextos (~8–16) e derrubam o mais antigo — "context lost" se parece com falta de memória. *Melhoria:* conferir a liberação no desmonte e, se preciso, `dispose()`/`forceContextLoss()` explícito. **Custo: pequeno, mas exige conferência no navegador.**
+4. **Miniaturas de keyframe como data URL** (`toDataURL('image/jpeg', 0.6)`, 160×90 ≈ 4 KB de base64 cada) vivem DENTRO do objeto da animação — logo, dentro do undo e do autosave, que tem cota de 5 MB no `localStorage`. Numa animação longa isso aperta o autosave antes da memória. *Melhoria:* tirar a miniatura do que entra no undo/arquivo, ou baixar para 96×54.
+5. **O QR de sessão gera TODOS os quadros SVG de uma vez**, proporcional ao tamanho do workspace. *Melhoria:* gerar sob demanda, só o quadro exibido.
+6. **Alocação por quadro na reprodução**: cada instante amostrado cria bonecos novos (`blendFigure`). É lixo de vida curta, não vazamento — só vira problema como pressão de GC (engasgo), e a saída seria reciclar objetos. Último da fila.
+
+**Antes de qualquer conserto: um diagnóstico.** Hoje não há como ver a memória crescer. Um bloco de diagnóstico (ligável, no painel de Cenas ou na ajuda) com `renderer.info.memory.geometries/textures`, `renderer.info.programs.length`, contagem de bonecos/objetos/keyframes e, onde existir, `performance.memory.usedJSHeapSize` transforma "estourou" em número — e diz em segundos qual dos seis itens acima é o caso. **Custo: pequeno**, e é o que evita gastar uma sessão no item errado.
+
+**Dúvidas ❓**
+1. O estouro acontece em qual momento — sessão longa de edição, carregar foto/vídeo de referência, exportar MP4, ou trocar de casca?
+2. Em que aparelho (desktop, tablet, celular) e com quanta memória?
+3. Quer o diagnóstico primeiro (medir e então consertar), ou já os itens 1 e 2 direto?

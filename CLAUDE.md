@@ -7,8 +7,8 @@ Este arquivo é a porta de entrada. O detalhe mora em três documentos, e **todo
 | Arquivo | O que é |
 |---|---|
 | `PLANO.md` | O que o app é, arquitetura, modelo do boneco e **a lista única de propostas de melhoria** (itens numerados 1–65, grupos A–J) |
-| `DECISOES.md` | As **106 decisões** numeradas (de #1 a #104, com subnúmeros), com a narrativa do porquê. É onde se descobre *por que* algo é como é. Tem índice no topo |
-| `HISTORICO.md` | O log de **91 entregas**, em ordem cronológica — uma entrada por sessão de trabalho. Tem índice no topo |
+| `DECISOES.md` | As **129 decisões** numeradas (de #1 a #119, com subnúmeros), com a narrativa do porquê. É onde se descobre *por que* algo é como é. Tem índice no topo |
+| `HISTORICO.md` | O log de **106 entregas**, em ordem cronológica — uma entrada por sessão de trabalho. Tem índice no topo |
 
 Ao citar uma decisão, use o número (`DECISOES.md` #86); os três documentos se referenciam assim.
 
@@ -23,10 +23,12 @@ npm run dev             # servidor de desenvolvimento
 npm run preview         # build servido, para conferência no navegador
 npm run pose:preset     # converte pose salva da biblioteca em bloco de preset
 npm run poses:folha     # folha de contato das poses
+npm run pose:model      # baixa (uma vez) o modelo do MediaPipe para tools/models/
+npm run pose:from-image # foto → arquivo(s) de pose do app (retargeting em src/pose-import/)
 npm run test:e2e        # smoke de Playwright do módulo de poses (item 57) — à parte da suíte
 ```
 
-**Antes de dar qualquer trabalho por concluído:** `npx vitest run`, `npm run build` e `npm run lint`, os três limpos. A suíte está em **~2.491 testes**; toda entrega registra o saldo (de X para Y).
+**Antes de dar qualquer trabalho por concluído:** `npx vitest run`, `npm run build` e `npm run lint`, os três limpos. A suíte está em **~2.690 testes**; toda entrega registra o saldo (de X para Y).
 
 ## Regras que não se negociam
 
@@ -43,13 +45,15 @@ npm run test:e2e        # smoke de Playwright do módulo de poses (item 57) — 
 src/figure/       modelo do boneco: skeleton.ts (32 juntas), poses, IK/arrasto,
                   espelho, travas, figureFormat.ts (leitor único do boneco)
 src/animation/    keyframes, amostrador, trechos prontos, remapeamento, MP4
-src/props/        objetos de cena (6 primitivas, tamanho em metros, vértice livre)
+src/props/        objetos de cena (6 primitivas + kit de armas, tamanho em metros,
+                  vértice livre, amarração a junta em propAttachment.ts)
 src/scene/        viewport, câmera, gizmos, renderização
 src/layout/       os painéis da UI (é onde mora quase toda a superfície visível)
 src/poses/        módulo de poses: a casca de toque (item 44) — escolha de casca,
                   vistas ortográficas, painel em abas, sessão própria (#92)
 src/store/        zustand — figuresStore (com zundo/undo), animation, camera, ui…
 src/persistence/  arquivos do workspace, autosave, serialização
+src/pose-import/  landmarks/marcas → boneco: retarget (#109), marcação manual (#111)
 src/i18n/         dicionários pt-BR e en
 ```
 
@@ -63,6 +67,8 @@ Coisas que parecem detalhe e custaram uma decisão inteira. Quebrá-las por desc
 - **`CollapsibleSection` ≠ `CollapsiblePanel`** (#83). O primeiro recolhe um *assunto dentro* de um painel; o segundo recolhe a *coluna inteira*. Seção nova exige chave em `SECTION_KEYS` (`src/persistence/uiPreferences.ts`), e nasce recolhida — as exceções são `poses` e `cameraFraming`.
 - **Botões seguem duas classes** (#88): `.panel-action` para ação sozinha (largura cheia) e `.panel-actions` para conjunto entre o qual se escolhe (grade de duas colunas). A escolha descreve o conteúdo, não a aparência.
 - **Ação que depende de decisão do usuário confirma em MODAL** (#100): `ConfirmDialog`/`ModalDialog` de `src/layout/` (`<dialog>` nativo — Esc cancela, atalhos globais calados), nunca confirm inline em dois passos nem `window.confirm`. Precedentes: regravar keyframe (#69), novo workspace e trazer sessão da outra casca. O botão que abre fica sempre visível; o modal é renderizado condicionalmente ao lado dele.
+- **Um gesto é UM passo de undo** (#118). Todo controle contínuo — gizmo, arrasto do módulo de poses, slider — abre um lote com `beginUndoBatch` no `pointerdown` e o fecha com `endUndoBatch` no `pointerup` (`src/store/undoBatch.ts`); o histórico guarda o estado de quando o botão foi solto. Controle contínuo novo tem de fazer o mesmo, ou volta a empilhar um passo por pixel. O recorte do histórico é `undoPartialize`/`undoEquality`/`UNDO_LIMIT`, exportados do `figuresStore` — o lote e o `zundo` usam os mesmos.
+- **Marca de foto só informa o que a projeção move** (#119). A marca do tronco é a **base do tórax** (junta `chest`), não a cintura: a junta `spine` é filha direta da raiz e rotação de tronco nenhuma a move — marcar ali daria zero. E um ponto SOBRE o eixo do tronco diz inclinação, jamais torção (girar em torno do eixo não move quem está nele) — a torção vem da linha dos ombros (#115). Mesma lógica na raiz: sem profundidade nos quadris, a correção gira só em torno do eixo de visão, porque o giro em profundidade a foto não mostra.
 - **Junta travada não muda por NADA automático** (#42): slider, gizmo, teclado, IK, sorteio, espelho e aplicar pose — todos respeitam a trava.
 - **Tamanho de objeto de cena é metro por eixo, nunca `scale` de nó** (#80). A contagem de pontos de controle soldados por forma é **contrato de arquivo**, travada por teste.
 - **O `package-lock.json` é gerado no Linux, nunca no Windows** (#103.1). `@napi-rs/wasm-runtime` declara peers que o npm no Windows não hoista, e o `npm ci` do GitHub Actions recusa o lock — sem nenhum aviso local, porque `npm install` é tolerante. Sempre que o lock mudar: `docker run --rm -v "$PWD:/app" -w /app node:24 npm install --package-lock-only`, e confira que as entradas `binding-win32` continuam lá.

@@ -171,6 +171,23 @@ describe('AnimationPanel', () => {
     expect(duracoes[1]).toBeEnabled()
   })
 
+  it('a suavização do trecho (item 26) grava no keyframe de chegada; a do primeiro é desabilitada', async () => {
+    const user = userEvent.setup()
+    const id = comAnimacao(2)
+    await renderAnimationPanel()
+
+    const curvas = screen.getAllByLabelText('Suavização')
+    expect(curvas[0]).toBeDisabled()
+
+    await user.selectOptions(curvas[1], 'Suave (entrada e saída)')
+    const animacao = () => useFiguresStore.getState().animations.find((a) => a.id === id)!
+    expect(animacao().keyframes[1].easing).toBe('easeInOut')
+
+    // Voltar ao linear limpa o campo — arquivo antigo e novo ficam iguais.
+    await user.selectOptions(curvas[1], 'Linear')
+    expect('easing' in animacao().keyframes[1]).toBe(false)
+  })
+
   /**
    * Confirma ao SAIR do campo, não a cada tecla — grampear por tecla faria
    * "2500" virar "12500" (o primeiro dígito cairia no mínimo e os seguintes se
@@ -441,6 +458,29 @@ describe('AnimationPanel — biblioteca de animações', () => {
     expect(salva.keyframes).toHaveLength(3)
   })
 
+  it('sobe/desce a salva escolhida na lista, com as bordas desabilitadas (item 19)', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    act(() => {
+      useFiguresStore.getState().saveAnimationToLibrary('Tomada 1')
+      useFiguresStore.getState().saveAnimationToLibrary('Tomada 2')
+    })
+    await renderAnimationPanel()
+
+    // O combo abre na primeira salva ("Tomada 1"): primeira não sobe.
+    expect(screen.getByRole('button', { name: 'Subir na lista' })).toBeDisabled()
+
+    await user.selectOptions(screen.getByLabelText('Animação salva'), 'Tomada 2')
+    expect(screen.getByRole('button', { name: 'Descer na lista' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Subir na lista' }))
+    const nomes = useFiguresStore
+      .getState()
+      .animations.filter((animation) => animation.id !== WORKING_ANIMATION_ID)
+      .map((animation) => animation.name)
+    expect(nomes).toEqual(['Tomada 2', 'Tomada 1'])
+  })
+
   it('remover tira só a salva escolhida, deixando a de trabalho onde está', async () => {
     const user = userEvent.setup()
     comAnimacao(2)
@@ -675,6 +715,57 @@ describe('AnimationPanel — bonecos do trecho e grupos', () => {
     expect(screen.queryByText('Keyframe 1 — 0.0s')).not.toBeInTheDocument()
     expect(screen.queryByText('Keyframe 2 — 1.0s')).not.toBeInTheDocument()
     expect(screen.getByText('Keyframe 3 — 2.0s')).toBeInTheDocument()
+  })
+
+  /** #117.1 — os botões do bloco moram numa LINHA própria, fora do título. */
+  it('as setas do grupo ficam fora da linha do título', async () => {
+    const id = comAnimacao(3)
+    act(() => {
+      for (const key of ['k1', 'k2']) {
+        useFiguresStore.getState().setAnimationKeyframeLabel(id, key, 'Andando')
+      }
+    })
+    await renderAnimationPanel()
+
+    const cabecalho = screen.getByRole('button', { name: /Andando/ }).closest('li')!
+    const titulo = cabecalho.querySelector('.animation-panel__group-title')!
+
+    // Nome e contagem na primeira linha…
+    expect(titulo).toContainElement(screen.getByText('2 keyframes'))
+    // …e as setas fora dela, na sua própria.
+    expect(titulo).not.toContainElement(screen.getByRole('button', { name: 'Subir o grupo' }))
+    expect(cabecalho).toContainElement(screen.getByRole('button', { name: 'Subir o grupo' }))
+  })
+
+  /** #117 — o cabeçalho do grupo move o BLOCO, e ele pula o vizinho inteiro. */
+  it('o cabeçalho do grupo move o bloco inteiro, pulando o vizinho inteiro', async () => {
+    const user = userEvent.setup()
+    const id = comAnimacao(5)
+    act(() => {
+      for (const key of ['k1', 'k2', 'k3']) {
+        useFiguresStore.getState().setAnimationKeyframeLabel(id, key, 'Andando')
+      }
+      for (const key of ['k4', 'k5']) {
+        useFiguresStore.getState().setAnimationKeyframeLabel(id, key, 'Correndo')
+      }
+    })
+    await renderAnimationPanel()
+
+    const subir = screen.getAllByRole('button', { name: 'Subir o grupo' })
+    const descer = screen.getAllByRole('button', { name: 'Descer o grupo' })
+    // Primeiro grupo não sobe, último não desce.
+    expect(subir[0]).toBeDisabled()
+    expect(descer[1]).toBeDisabled()
+
+    await user.click(subir[1])
+
+    expect(useFiguresStore.getState().animations[0].keyframes.map((k) => k.id)).toEqual([
+      'k4',
+      'k5',
+      'k1',
+      'k2',
+      'k3',
+    ])
   })
 
   it('digitar um rótulo já usado em outro trecho devolve o nome com sufixo', async () => {

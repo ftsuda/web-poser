@@ -41,6 +41,7 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
   const jointPins = useFiguresStore((state) => state.jointPins)
   const gizmoMode = useUIStore((state) => state.gizmoMode)
   const figureStyle = useUIStore((state) => state.figureStyle)
+  const figureSilhouette = useUIStore((state) => state.figureSilhouette)
   const previewFigures = useAnimationStore((state) => state.preview?.figures ?? null)
 
   const rendered = previewFigures ?? figures
@@ -76,6 +77,7 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
           // colocação e ancestrais — o efeito precisa se explicar sem gizmo.
           pinnedJointNames={jointPins[figure.id] ?? null}
           style={figureStyle}
+          silhouette={figureSilhouette}
           onSelectJoint={(jointName) => handleSelectJoint(figure.id, jointName)}
           onJointRef={(jointName, object) => onJointRef(figure.id, jointName, object)}
         />

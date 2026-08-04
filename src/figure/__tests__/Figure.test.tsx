@@ -256,6 +256,80 @@ describe('Figure — manequim de madeira', () => {
   })
 })
 
+describe('Figure — modo silhueta (item 8)', () => {
+  it('pinta todas as peças em preto chapado (MeshBasicMaterial), inclusive olhos e pino da mão', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure figure={makeFigure({ color: '#4060e0' })} silhouette />,
+    )
+
+    const meshes = renderer.scene
+      .findAllByType('Mesh')
+      // A elipse de contato não é silhueta do corpo — fica de fora da conta.
+      .filter((mesh) => mesh.props.name !== 'figure-shadow-f1')
+    expect(meshes.length).toBeGreaterThan(0)
+    for (const mesh of meshes) {
+      const material = mesh.allChildren.find((child) => child.type === 'MeshBasicMaterial')
+      expect(material, `peça sem material chapado: ${String(mesh.props.name)}`).toBeDefined()
+      expect(
+        (material!.instance as unknown as THREE.MeshBasicMaterial).color.getHexString(),
+      ).toBe('0a0a0a')
+    }
+  })
+
+  it('não destaca seleção nem trava — a silhueta é uma leitura chapada de propósito', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure
+        figure={makeFigure()}
+        silhouette
+        selectedJointName="chest"
+        lockedJointNames={['shoulder.L']}
+      />,
+    )
+    const chest = renderer.scene.findByProps({ name: 'segment-chest' })
+    expect(chest.allChildren.find((child) => child.type === 'MeshBasicMaterial')).toBeDefined()
+    expect(chest.allChildren.find((child) => child.type === 'MeshStandardMaterial')).toBeUndefined()
+  })
+
+  it('continua clicável: a silhueta é material, não interação', async () => {
+    const clicks: string[] = []
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure figure={makeFigure()} silhouette onSelectJoint={(name) => clicks.push(name)} />,
+    )
+    const elbow = renderer.scene.findByProps({ name: 'segment-elbow.L' })
+    await renderer.fireEvent(elbow, 'click')
+    expect(clicks).toEqual(['elbow.L'])
+  })
+
+  it('o fantasma vence a silhueta: papel-cebola continua translúcido', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure figure={makeFigure()} silhouette ghost={{ color: '#88aaff', opacity: 0.3 }} />,
+    )
+    const standard = renderer.scene
+      .findAllByType('Mesh')
+      .flatMap((mesh) => mesh.allChildren.filter((child) => child.type === 'MeshStandardMaterial'))
+    expect(standard.length).toBeGreaterThan(0)
+  })
+})
+
+describe('Figure — sombra projetada real (item 17)', () => {
+  it('as peças do corpo projetam sombra (castShadow), como os objetos de cena já faziam', async () => {
+    const renderer = await ReactThreeTestRenderer.create(<Figure figure={makeFigure()} />)
+    const chest = renderer.scene.findByProps({ name: 'segment-chest' })
+    expect((chest.instance as unknown as THREE.Mesh).castShadow).toBe(true)
+  })
+
+  it('o fantasma do papel-cebola não projeta sombra', async () => {
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure figure={makeFigure()} ghost={{ color: '#88aaff', opacity: 0.3 }} />,
+    )
+    const meshes = renderer.scene.findAllByType('Mesh')
+    expect(meshes.length).toBeGreaterThan(0)
+    for (const mesh of meshes) {
+      expect((mesh.instance as unknown as THREE.Mesh).castShadow).toBe(false)
+    }
+  })
+})
+
 describe('Figure — seleção de junta', () => {
   it('chama onSelectJoint com o nome da junta ao clicar no seu corpo', async () => {
     const clicks: string[] = []

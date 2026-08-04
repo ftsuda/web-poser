@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useWorkspaceAutosave } from '../persistence/useWorkspaceAutosave'
+import { ReferencePhotoOverlay } from '../scene/ReferencePhotoOverlay'
 import { PosesCaptureButton } from './PosesCaptureButton'
 import { PosesPanel } from './PosesPanel'
 import { PosesTopBar } from './PosesTopBar'
@@ -55,6 +56,9 @@ export function PosesShell() {
       <PosesTopBar />
       <main className="poses-shell__viewport">
         <PosesViewport />
+        {/* A foto de referência (item 7): papel vegetal por cima do viewport,
+            compartilhada com o desktop pelo mesmo store de sessão. */}
+        <ReferencePhotoOverlay />
         <PosesCaptureButton />
       </main>
       <PosesPanel />

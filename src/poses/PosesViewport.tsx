@@ -9,21 +9,26 @@ import { ROOT_JOINT_NAME } from '../figure/skeleton'
 import { solveJointDrag } from '../figure/dragSolver'
 import { isPlacementPinned } from '../figure/jointPins'
 import { BACKGROUND_COLORS, CAMERA_DEFAULTS, GRID_DIVISIONS, GROUND_SIZE } from '../scene/constants'
+import { ViewportCameraBridge } from '../scene/ViewportCameraBridge'
 import { useAnimationStore } from '../store/animationStore'
 import { effectiveLockedJoints, useFiguresStore } from '../store/figuresStore'
 import { usePosesShellStore } from '../store/posesShellStore'
+import { beginUndoBatch, endUndoBatch } from '../store/undoBatch'
 import { AXIS_COLORS, GIZMO_SCALE_PER_METER } from './gizmoStyle'
 import { JointAxisRings } from './JointAxisRings'
 import { twistAxisForJoint } from './jointTwist'
 import { jointWorldPosition } from './posesEdit'
 import {
-  POSES_VIEWS,
-  closestPointOnAxisToRay,
-  projectPointerOnPlane,
-  projectPointerOnViewPlane,
-  viewCameraPose,
-  type Vec3,
-} from './posesViews'
+  createTwistTracker,
+  dragTargetForPointer,
+  draggedRootPosition,
+  twistPointerDown,
+  twistPointerMove,
+  twistPointerUp,
+  type PosesDragState,
+  type TwistTracker,
+} from './posesDrag'
+import { POSES_VIEWS, viewCameraPose, type Vec3 } from './posesViews'
 import type { Axis } from '../figure/skeleton'
 
 /**
@@ -48,27 +53,9 @@ const VIEW_TARGET: Vec3 = [0, 1, 0]
 const ORTHO_FRAME_HEIGHT_M = 2.4
 /** Raio (m, antes da escala de altura) do alvo de toque invisível por junta. */
 const TOUCH_TARGET_RADIUS_M = 0.055
-/** Giro acumulado (graus) de dois dedos a partir do qual o gesto vira torção, e não câmera. */
-const TWIST_DECIDE_DEG = 10
 
 /** Janela (ms) do duplo toque na junta = travar/destravar (item 50). */
 const DOUBLE_TAP_MS = 350
-
-interface DragState {
-  figureId: string
-  jointName: string
-  /** Posição de mundo da junta no INÍCIO do arrasto — o plano de projeção fica preso a ela. */
-  anchor: Vec3
-  /** Colocação do boneco no início — o arrasto da raiz soma o delta a partir daqui. */
-  startPosition: readonly [number, number, number]
-  /**
-   * Vista Livre: normal do plano paralelo à tela (a direção da câmera no
-   * momento do toque). `null` nas vistas travadas — lá o plano vem do eixo.
-   */
-  planeNormal: Vec3 | null
-  /** Arrasto por SETA do gizmo (vista Livre): o eixo do mundo que restringe o alvo. */
-  axis: Axis | null
-}
 
 /** Direções e cores das setas do gizmo de translação — as cores por eixo são o padrão único (`gizmoStyle.ts`). */
 const GIZMO_AXES: readonly { axis: Axis; dir: Vec3; color: string; rotation: [number, number, number] }[] = [
@@ -77,19 +64,40 @@ const GIZMO_AXES: readonly { axis: Axis; dir: Vec3; color: string; rotation: [nu
   { axis: 'z', dir: [0, 0, 1], color: AXIS_COLORS.z, rotation: [Math.PI / 2, 0, 0] },
 ]
 
-const GIZMO_AXIS_DIRS: Record<Axis, Vec3> = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] }
-
 interface FreeViewGizmoProps {
   anchor: Vec3
   onAxisPointerDown: (axis: Axis) => (event: ThreeEvent<PointerEvent>) => void
 }
 
 /**
+ * As medidas das setas, DOBRADAS em 2026-08-03 (pedido do usuário): no touch,
+ * o tamanho original era alvo difícil de acertar. Há teste travando os
+ * mínimos (`posesGizmo.test.tsx`) — encolher de volta é regressão de
+ * usabilidade, não ajuste estético. A haste começa afastada da origem para
+ * não tapar a junta selecionada.
+ */
+const ARROW = {
+  shaftRadius: 0.012,
+  shaftLength: 0.36,
+  /** Centro da haste: vão de 0,12 até a origem, o dobro do vão original. */
+  shaftCenter: 0.3,
+  headRadius: 0.04,
+  headLength: 0.1,
+  headCenter: 0.53,
+  hitRadius: 0.09,
+  hitLength: 0.6,
+  hitCenter: 0.34,
+} as const
+
+/**
  * Gizmo de translação da vista Livre (#93) com TAMANHO CONSTANTE EM TELA
  * (item 48): o grupo é reescalado por quadro pela distância da câmera — longe
  * as setas não viram alvo de dedo minúsculo, perto não engolem o boneco.
+ *
+ * Exportado só para o teste de geometria (`posesGizmo.test.tsx`); quem o
+ * renderiza é este arquivo.
  */
-function FreeViewGizmo({ anchor, onAxisPointerDown }: FreeViewGizmoProps) {
+export function FreeViewGizmo({ anchor, onAxisPointerDown }: FreeViewGizmoProps) {
   const groupRef = useRef<THREE.Group>(null)
   useFrame(({ camera: liveCamera }) => {
     const group = groupRef.current
@@ -104,31 +112,21 @@ function FreeViewGizmo({ anchor, onAxisPointerDown }: FreeViewGizmoProps) {
     <group ref={groupRef} position={anchor as [number, number, number]}>
       {GIZMO_AXES.map(({ axis, color, rotation }) => (
         <group key={axis} rotation={rotation}>
-          <mesh position={[0, 0.15, 0]} renderOrder={10}>
-            <cylinderGeometry args={[0.006, 0.006, 0.18, 8]} />
+          <mesh position={[0, ARROW.shaftCenter, 0]} renderOrder={10}>
+            <cylinderGeometry args={[ARROW.shaftRadius, ARROW.shaftRadius, ARROW.shaftLength, 8]} />
             <meshBasicMaterial color={color} depthTest={false} />
           </mesh>
-          <mesh position={[0, 0.26, 0]} renderOrder={10}>
-            <coneGeometry args={[0.02, 0.05, 12]} />
+          <mesh position={[0, ARROW.headCenter, 0]} renderOrder={10}>
+            <coneGeometry args={[ARROW.headRadius, ARROW.headLength, 12]} />
             <meshBasicMaterial color={color} depthTest={false} />
           </mesh>
-          <mesh visible={false} position={[0, 0.17, 0]} onPointerDown={onAxisPointerDown(axis)}>
-            <cylinderGeometry args={[0.045, 0.045, 0.3, 6]} />
+          <mesh visible={false} position={[0, ARROW.hitCenter, 0]} onPointerDown={onAxisPointerDown(axis)}>
+            <cylinderGeometry args={[ARROW.hitRadius, ARROW.hitRadius, ARROW.hitLength, 6]} />
           </mesh>
         </group>
       ))}
     </group>
   )
-}
-
-interface TwistPointer {
-  x: number
-  y: number
-}
-
-/** Ângulo (graus) da reta entre dois ponteiros — a base do gesto de torção. */
-function pointerAngleDeg(a: TwistPointer, b: TwistPointer): number {
-  return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
 }
 
 function PosesCameraRig() {
@@ -267,13 +265,8 @@ function PosesSceneContent() {
   })
 
   const [dragging, setDragging] = useState(false)
-  const dragRef = useRef<DragState | null>(null)
-  const twistRef = useRef<{
-    pointers: Map<number, TwistPointer>
-    lastAngle: number
-    accumulated: number
-    active: boolean
-  } | null>(null)
+  const dragRef = useRef<PosesDragState | null>(null)
+  const twistRef = useRef<TwistTracker | null>(null)
   const [twisting, setTwisting] = useState(false)
 
   // ---------------------------------------------------------------------
@@ -310,13 +303,10 @@ function PosesSceneContent() {
         raycaster.ray.direction.y,
         raycaster.ray.direction.z,
       ]
-      // Três formas do mesmo arrasto: por seta do gizmo (reta do eixo), no
-      // plano da tela (vista Livre) ou no plano da vista travada.
-      const target = drag.axis
-        ? closestPointOnAxisToRay(drag.anchor, GIZMO_AXIS_DIRS[drag.axis], origin, dir)
-        : drag.planeNormal
-          ? projectPointerOnPlane(drag.anchor, drag.planeNormal, origin, dir)
-          : projectPointerOnViewPlane(viewKey, drag.anchor, origin, dir)
+      // As três formas do mesmo arrasto (seta do gizmo, plano da tela, plano
+      // da vista travada) moram em `posesDrag.ts` (item 58) — matemática pura,
+      // coberta por unit test.
+      const target = dragTargetForPointer(drag, viewKey, origin, dir)
       if (!target) return
 
       const state = useFiguresStore.getState()
@@ -324,11 +314,7 @@ function PosesSceneContent() {
       if (!figure) return
 
       if (drag.jointName === ROOT_JOINT_NAME) {
-        setPosition(drag.figureId, [
-          drag.startPosition[0] + (target[0] - drag.anchor[0]),
-          drag.startPosition[1] + (target[1] - drag.anchor[1]),
-          drag.startPosition[2] + (target[2] - drag.anchor[2]),
-        ])
+        setPosition(drag.figureId, draggedRootPosition(drag, target))
         return
       }
 
@@ -360,6 +346,9 @@ function PosesSceneContent() {
       pendingMove = null
       if (!dragRef.current) return
       dragRef.current = null
+      // Depois do `processMove` acima: o último trecho do arrasto tem de cair
+      // DENTRO do passo de undo do gesto (DECISOES.md #118).
+      endUndoBatch()
       setDragging(false)
     }
 
@@ -388,49 +377,39 @@ function PosesSceneContent() {
 
     const handleDown = (event: PointerEvent) => {
       if (!view.editable) return
-      const twist = twistRef.current ?? {
-        pointers: new Map<number, TwistPointer>(),
-        lastAngle: 0,
-        accumulated: 0,
-        active: false,
-      }
-      twist.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
-      if (twist.pointers.size === 2) {
-        const [a, b] = [...twist.pointers.values()]
-        twist.lastAngle = pointerAngleDeg(a, b)
-        twist.accumulated = 0
-        twist.active = false
-      }
+      const twist = twistRef.current ?? createTwistTracker()
+      const armedBefore = twist.pointers.size === 2
+      twistPointerDown(twist, event.pointerId, { x: event.clientX, y: event.clientY })
       twistRef.current = twist
+      // O gesto de dois dedos, quando vira torção, escreve a junta a cada
+      // movimento: um passo de undo só, como o arrasto (DECISOES.md #118). O
+      // lote abre já ao armar, e não ao decidir, porque a decisão acontece no
+      // meio do gesto — e fechá-lo sem nenhuma escrita (pinça e pan, que
+      // continuam da câmera) não deixa passo nenhum de qualquer modo.
+      if (!armedBefore && twist.pointers.size === 2) beginUndoBatch()
     }
 
     const handleMove = (event: PointerEvent) => {
       const twist = twistRef.current
       if (!twist || !twist.pointers.has(event.pointerId)) return
-      twist.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
-      if (twist.pointers.size !== 2) return
 
       const state = useFiguresStore.getState()
       const figureId = state.selectedFigureId
       const jointName = state.selectedJointName
-      if (!figureId || !jointName) return
-      const axis = twistAxisForJoint(jointName)
-      if (!axis) return
-
-      const [a, b] = [...twist.pointers.values()]
-      const angle = pointerAngleDeg(a, b)
-      let delta = angle - twist.lastAngle
-      if (delta > 180) delta -= 360
-      if (delta < -180) delta += 360
-      twist.lastAngle = angle
-
-      if (!twist.active) {
-        twist.accumulated += delta
-        if (Math.abs(twist.accumulated) < TWIST_DECIDE_DEG) return
-        twist.active = true
-        setTwisting(true)
-        delta = twist.accumulated
+      const axis = jointName ? twistAxisForJoint(jointName) : null
+      if (!figureId || !jointName || !axis) {
+        // Sem junta torcível o gesto não decide nada, mas o ponteiro continua
+        // rastreado — como antes da extração (item 58).
+        twist.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+        return
       }
+
+      // A máquina de estados do gesto é pura (`posesDrag.ts`, item 58):
+      // devolve `null` enquanto pinça/pan ainda são da câmera, e o delta em
+      // graus quando o giro acumulado venceu o limiar.
+      const delta = twistPointerMove(twist, event.pointerId, { x: event.clientX, y: event.clientY })
+      if (delta === null) return
+      setTwisting(true)
 
       const figure = state.figures.find((candidate) => candidate.id === figureId)
       if (!figure) return
@@ -445,12 +424,10 @@ function PosesSceneContent() {
     const handleUp = (event: PointerEvent) => {
       const twist = twistRef.current
       if (!twist) return
-      twist.pointers.delete(event.pointerId)
-      if (twist.pointers.size < 2) {
-        twist.active = false
-        twist.accumulated = 0
-        setTwisting(false)
-      }
+      const armedBefore = twist.pointers.size === 2
+      if (!twistPointerUp(twist, event.pointerId)) setTwisting(false)
+      // Desarmou (sobrou menos de um par de dedos): fecha o passo do gesto.
+      if (armedBefore && twist.pointers.size < 2) endUndoBatch()
     }
 
     // O gesto COMEÇA no canvas, mas mover/soltar valem na window (item 45):
@@ -493,6 +470,9 @@ function PosesSceneContent() {
       planeNormal: worldDir ? [worldDir.x, worldDir.y, worldDir.z] : null,
       axis: null,
     }
+    // O arrasto inteiro é UM passo de undo (DECISOES.md #118) — aqui a conta
+    // seria pior que no desktop: cada QUADRO do rAF escreve o store.
+    beginUndoBatch()
     setDragging(true)
   }
 
@@ -539,6 +519,7 @@ function PosesSceneContent() {
       planeNormal: null,
       axis,
     }
+    beginUndoBatch()
     setDragging(true)
   }
 
@@ -631,6 +612,8 @@ export function PosesViewport() {
           rolar a página — o maior atrito de canvas no celular (item 44). */}
       <Canvas style={{ touchAction: 'none' }}>
         <PosesSceneContent />
+        {/* Ponte da câmera viva para a inferência da marcação (foto de referência). */}
+        <ViewportCameraBridge />
       </Canvas>
     </div>
   )

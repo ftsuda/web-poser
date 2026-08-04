@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import {
   DEFAULT_PROP_SIZE,
   vertexOffsetAt,
@@ -96,8 +97,101 @@ function buildUnitRamp(): THREE.BufferGeometry {
 }
 
 /**
+ * Uma peça de forma composta: primitiva girada, escalada e transladada para o
+ * lugar dela DENTRO da caixa unitária. A ordem (girar → escalar → mover) é a
+ * que deixa os números das peças legíveis como dimensões.
+ */
+function placedPart(
+  geometry: THREE.BufferGeometry,
+  options: { rotate?: { x?: number; z?: number }; scale: Vec3; position: Vec3 },
+): THREE.BufferGeometry {
+  if (options.rotate?.x) geometry.rotateX(options.rotate.x)
+  if (options.rotate?.z) geometry.rotateZ(options.rotate.z)
+  geometry.scale(...options.scale)
+  geometry.translate(...options.position)
+  return geometry
+}
+
+/**
+ * Espada apontando para +Y, de pé: pomo, punho, guarda de largura cheia,
+ * lâmina e ponta. As larguras usam a caixa unitária inteira — é o `size`
+ * padrão (`sceneProp.DEFAULT_PROP_SIZE.sword`) que dá as proporções de espada;
+ * esticar Y alonga a lâmina, como decidido com o usuário.
+ */
+function buildUnitSword(): THREE.BufferGeometry {
+  const segments = PROP_SEGMENTS.radial
+  return mergeGeometries([
+    // Pomo
+    placedPart(new THREE.SphereGeometry(0.5, PROP_SEGMENTS.sphereWidth, PROP_SEGMENTS.sphereHeight), {
+      scale: [0.2, 0.09, 1],
+      position: [0, -0.455, 0],
+    }),
+    // Punho
+    placedPart(new THREE.CylinderGeometry(0.5, 0.5, 1, segments), {
+      scale: [0.13, 0.15, 0.8],
+      position: [0, -0.335, 0],
+    }),
+    // Guarda (largura cheia — é ela que define o X do objeto)
+    placedPart(new THREE.BoxGeometry(1, 1, 1), {
+      scale: [1, 0.045, 1],
+      position: [0, -0.24, 0],
+    }),
+    // Lâmina
+    placedPart(new THREE.BoxGeometry(1, 1, 1), {
+      scale: [0.36, 0.62, 0.55],
+      position: [0, 0.0925, 0],
+    }),
+    // Ponta (o ápice fecha exatamente em +0.5 — a caixa unitária é contrato)
+    placedPart(new THREE.ConeGeometry(0.5, 1, segments), {
+      scale: [0.36, 0.1, 0.55],
+      position: [0, 0.45, 0],
+    }),
+  ])
+}
+
+/** Escudo redondo de frente para +Z: disco levemente cônico atrás, bossa esférica na frente. */
+function buildUnitShield(): THREE.BufferGeometry {
+  return mergeGeometries([
+    placedPart(new THREE.CylinderGeometry(0.5, 0.46, 1, PROP_SEGMENTS.radial), {
+      rotate: { x: Math.PI / 2 },
+      scale: [1, 1, 0.5],
+      position: [0, 0, -0.25],
+    }),
+    placedPart(new THREE.SphereGeometry(0.5, 12, 8), {
+      scale: [0.36, 0.36, 1],
+      position: [0, 0, 0],
+    }),
+  ])
+}
+
+/** Bainha pendurada para baixo: corpo, boca (a faixa mais larga no topo) e ponteira cônica. */
+function buildUnitScabbard(): THREE.BufferGeometry {
+  return mergeGeometries([
+    // Corpo
+    placedPart(new THREE.BoxGeometry(1, 1, 1), {
+      scale: [0.9, 0.85, 0.9],
+      position: [0, 0.075, 0],
+    }),
+    // Boca (largura cheia)
+    placedPart(new THREE.BoxGeometry(1, 1, 1), {
+      scale: [1, 0.08, 1],
+      position: [0, 0.36, 0],
+    }),
+    // Ponteira, ápice para baixo
+    placedPart(new THREE.ConeGeometry(0.5, 1, PROP_SEGMENTS.radial), {
+      rotate: { z: Math.PI },
+      scale: [0.9, 0.15, 0.9],
+      position: [0, -0.425, 0],
+    }),
+  ])
+}
+
+/**
  * A primitiva de cada forma, unitária (dentro de uma caixa 1×1×1 centrada na
- * origem) — é o `size` que a leva ao tamanho real depois.
+ * origem) — é o `size` que a leva ao tamanho real depois. As três últimas são
+ * as COMPOSTAS do kit de armas: peças de primitivas fundidas numa malha só
+ * (`mergeGeometries`), no mesmo espírito do boneco — geometria nasce de
+ * código, nunca de asset externo.
  */
 function buildUnitGeometry(shape: PropShape): THREE.BufferGeometry {
   switch (shape) {
@@ -115,6 +209,12 @@ function buildUnitGeometry(shape: PropShape): THREE.BufferGeometry {
       return new THREE.PlaneGeometry(1, 1)
     case 'ramp':
       return buildUnitRamp()
+    case 'sword':
+      return buildUnitSword()
+    case 'shield':
+      return buildUnitShield()
+    case 'scabbard':
+      return buildUnitScabbard()
   }
 }
 
