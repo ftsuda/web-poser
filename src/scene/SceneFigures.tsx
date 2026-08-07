@@ -1,11 +1,13 @@
+import { useCallback } from 'react'
 import * as THREE from 'three'
 import { Figure } from '../figure/Figure'
 import { isDraggableJoint } from '../figure/dragSolver'
 import { getLockedJoints } from '../figure/jointLocks'
-import { ROOT_JOINT_NAME } from '../figure/skeleton'
+import { ROOT_JOINT_NAME, type FigureStyle } from '../figure/skeleton'
 import { useAnimationStore } from '../store/animationStore'
-import { useFiguresStore } from '../store/figuresStore'
+import { useFiguresStore, type Figure as FigureData } from '../store/figuresStore'
 import { useUIStore } from '../store/uiStore'
+import { isFigureInteractive } from './figureSelection'
 
 export interface SceneFiguresProps {
   onJointRef: (figureId: string, jointName: string, object: THREE.Group | null) => void
@@ -42,6 +44,7 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
   const gizmoMode = useUIStore((state) => state.gizmoMode)
   const figureStyle = useUIStore((state) => state.figureStyle)
   const figureSilhouette = useUIStore((state) => state.figureSilhouette)
+  const isolateSelection = useUIStore((state) => state.isolateSelection)
   const previewFigures = useAnimationStore((state) => state.preview?.figures ?? null)
 
   const rendered = previewFigures ?? figures
@@ -64,7 +67,7 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
   return (
     <>
       {rendered.map((figure) => (
-        <Figure
+        <SceneFigure
           key={figure.id}
           figure={figure}
           selectedJointName={figure.id === selectedFigureId ? selectedJointName : null}
@@ -78,10 +81,52 @@ export function SceneFigures({ onJointRef }: SceneFiguresProps) {
           pinnedJointNames={jointPins[figure.id] ?? null}
           style={figureStyle}
           silhouette={figureSilhouette}
-          onSelectJoint={(jointName) => handleSelectJoint(figure.id, jointName)}
-          onJointRef={(jointName, object) => onJointRef(figure.id, jointName, object)}
+          // Isolar a seleção: sem o `onSelectJoint`, as peças do boneco deixam
+          // de ter tratador e o raio do clique passa direto por elas — quem
+          // está sendo editado não é mais trocado por engano ao mirar numa
+          // junta que tem um figurante atrás (`figureSelection.ts`).
+          onSelectJoint={
+            isFigureInteractive(figure.id, selectedFigureId, isolateSelection)
+              ? (jointName) => handleSelectJoint(figure.id, jointName)
+              : undefined
+          }
+          onJointRef={onJointRef}
         />
       ))}
     </>
   )
+}
+
+interface SceneFigureProps {
+  figure: FigureData
+  selectedJointName: string | null
+  lockedJointNames: readonly string[] | null
+  pinnedJointNames: readonly string[] | null
+  style: FigureStyle
+  silhouette: boolean
+  onSelectJoint?: (jointName: string) => void
+  onJointRef: (figureId: string, jointName: string, object: THREE.Group | null) => void
+}
+
+/**
+ * Um boneco da cena. Existe como componente só para poder ter um `useCallback`
+ * PRÓPRIO: o `onJointRef` que o `Figure` recebe vira o `ref` de cada uma das 32
+ * juntas, e o React reexecuta um `ref` sempre que a IDENTIDADE do callback muda
+ * — o anterior com `null`, o novo com o objeto.
+ *
+ * Com a seta inline que ficava no `map` acima, cada re-render do viewport
+ * desregistrava e registrava as 32 juntas de cada boneco, e cada registro é um
+ * `setState` no `Viewport`, que re-renderiza os bonecos: um laço de re-render
+ * que só parava sozinho. Medido no navegador com UM boneco, andar um quadro na
+ * linha do tempo custava ~740 registros, 17 renders do viewport e ~1 s de
+ * script — por clique (DECISOES.md #132).
+ */
+function SceneFigure({ figure, onJointRef, ...rest }: SceneFigureProps) {
+  const figureId = figure.id
+  const registerJoint = useCallback(
+    (jointName: string, object: THREE.Group | null) => onJointRef(figureId, jointName, object),
+    [onJointRef, figureId],
+  )
+
+  return <Figure figure={figure} onJointRef={registerJoint} {...rest} />
 }

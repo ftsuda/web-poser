@@ -9,6 +9,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test": "vitest run",
+    "test:rapido": "vitest run --project unidade",
     "test:e2e": "playwright test",
     "pose:preset": "node tools/pose-para-preset.mjs",
     "poses:folha": "node tools/folha-de-contato.mjs",

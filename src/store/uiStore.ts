@@ -91,6 +91,9 @@ export interface UIState {
 
   /** Régua vertical do viewport (fase 9, item 11) — preferência de tela, persistida junto dos painéis. */
   rulerVisible: boolean
+  /** Linhas de gesto (item 9) — apoio de TELA, como a régua: fora do undo e do arquivo. */
+  gestureLinesVisible: boolean
+  toggleGestureLines: () => void
   toggleRuler: () => void
 
   /** De qual saída a máscara de enquadramento mostra a proporção (`frameMask.ts`). */
@@ -127,6 +130,16 @@ export interface UIState {
    */
   figureSilhouette: boolean
   toggleFigureSilhouette: () => void
+
+  /**
+   * Isolar a seleção (pedido do usuário, 2026-08-04): com a chave ligada, só o
+   * boneco selecionado responde ao clique no viewport — os outros continuam
+   * visíveis, mas o clique os atravessa, e a troca de boneco passa a ser pela
+   * lista do painel. É o que o módulo de poses faz de nascença (item 44).
+   * Mesmo regime da régua: estado de ferramenta, fora do undo e do arquivo.
+   */
+  isolateSelection: boolean
+  toggleIsolateSelection: () => void
 }
 
 /**
@@ -176,6 +189,9 @@ export const useUIStore = create<UIState>()((set) => ({
   },
 
   rulerVisible: INITIAL_UI_PREFERENCES.rulerVisible,
+  gestureLinesVisible: INITIAL_UI_PREFERENCES.gestureLinesVisible,
+  toggleGestureLines: () =>
+    set((state) => persist(state, { gestureLinesVisible: !state.gestureLinesVisible })),
   toggleRuler: () => set((state) => persist(state, { rulerVisible: !state.rulerVisible })),
 
   frameMaskSource: INITIAL_UI_PREFERENCES.frameMaskSource,
@@ -199,6 +215,10 @@ export const useUIStore = create<UIState>()((set) => ({
   figureSilhouette: INITIAL_UI_PREFERENCES.figureSilhouette,
   toggleFigureSilhouette: () =>
     set((state) => persist(state, { figureSilhouette: !state.figureSilhouette })),
+
+  isolateSelection: INITIAL_UI_PREFERENCES.isolateSelection,
+  toggleIsolateSelection: () =>
+    set((state) => persist(state, { isolateSelection: !state.isolateSelection })),
 }))
 
 /**
@@ -211,10 +231,12 @@ function persist<T extends Partial<UIPreferences>>(state: UIState, change: T): T
     collapsedPanels: state.collapsedPanels,
     collapsedSections: state.collapsedSections,
     rulerVisible: state.rulerVisible,
+    gestureLinesVisible: state.gestureLinesVisible,
     frameMaskSource: state.frameMaskSource,
     pairPoseEnabled: state.pairPoseEnabled,
     figureStyle: state.figureStyle,
     figureSilhouette: state.figureSilhouette,
+    isolateSelection: state.isolateSelection,
     ...change,
   })
   return change

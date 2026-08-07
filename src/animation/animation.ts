@@ -1,4 +1,5 @@
 import { asRecord, sanitizeFigure, toVec3 } from '../figure/figureFormat'
+import { withExportTimestamp } from '../persistence/exportTimestamp'
 import type { CameraViewState } from '../scene/cameraMove'
 import { DEPTH_FILENAME_SUFFIX, slugifySceneName } from '../snapshot/snapshotNaming'
 import type { Figure } from '../store/figuresStore'
@@ -209,10 +210,49 @@ export function animationOutputDurationMs(animation: Animation): number {
  */
 export function formatAnimationFilename(
   animationName: string,
-  options: { depth?: boolean } = {},
+  options: { depth?: boolean; now?: Date } = {},
 ): string {
   const suffix = options.depth ? DEPTH_FILENAME_SUFFIX : ''
-  return `${slugifySceneName(animationName)}${suffix}.mp4`
+  // Carimbo de hora por último, antes da extensão (ver `exportTimestamp.ts`) —
+  // sem ele, reexportar a mesma animação sobrescreve o arquivo anterior.
+  return withExportTimestamp(`${slugifySceneName(animationName)}${suffix}.mp4`, options.now)
+}
+
+/**
+ * Os bonecos que existem nos DOIS keyframes — os únicos que uma cópia parcial
+ * entre vizinhos consegue afetar (pedido do usuário, 2026-08-06): quem não está
+ * na origem não tem retrato de onde vir, e quem não está no destino não tem
+ * onde entrar.
+ *
+ * Devolve os bonecos do keyframe de DESTINO, na ordem dele: é o card que se
+ * está editando, e é de lá que saem os nomes mostrados nas caixas.
+ */
+export function sharedKeyframeFigures(
+  target: AnimationKeyframe,
+  source: AnimationKeyframe,
+): Figure[] {
+  return target.figures.filter((figure) =>
+    source.figures.some((candidate) => candidate.id === figure.id),
+  )
+}
+
+/**
+ * Os bonecos que a POSE MÉDIA consegue estimar (pedido do usuário, 2026-08-07):
+ * quem está nos TRÊS keyframes. É o `sharedKeyframeFigures` com uma ponta a
+ * mais — a estimativa é um caminho entre dois vizinhos, e sem uma das pontas
+ * não há o que dividir.
+ *
+ * É esta lista que vira as caixas do diálogo: marcar quem a estimativa não
+ * alcança seria uma caixa que não faz nada.
+ */
+export function estimableKeyframeFigures(
+  target: AnimationKeyframe,
+  previous: AnimationKeyframe,
+  next: AnimationKeyframe,
+): Figure[] {
+  return sharedKeyframeFigures(target, previous).filter((figure) =>
+    next.figures.some((candidate) => candidate.id === figure.id),
+  )
 }
 
 /** Instante de cada keyframe na linha do tempo, começando em zero. */
@@ -376,13 +416,22 @@ export function moveKeyframeBlock(
 
 /**
  * O rótulo que o keyframe `index` pode de fato receber (item 38): o desejado,
- * ou ele com um sufixo numérico quando já existe em OUTRO trecho da linha do
+ * ou ele com um sufixo numérico quando já existe em outro lugar da linha do
  * tempo — dois trechos de caminhada viram "Andando 1" e "Andando 2".
  *
- * Repetir o mesmo nome não remonta um grupo partido: o que sairia são dois
- * blocos separados com o mesmo título. Estender o grupo vizinho, sim, é
- * legítimo — por isso o rótulo é aceito quando os keyframes que já o usam
- * ficam grudados neste.
+ * **Quem decide é o VIZINHO** (correção pedida pelo usuário, 2026-08-07):
+ * rotular um keyframe com o nome do grupo que está colado nele é *entrar
+ * naquele grupo*, e isso vale sempre. O sufixo só entra quando o nome existe
+ * longe — aí seriam mesmo dois blocos com o mesmo título, e o número é o que os
+ * distingue.
+ *
+ * A regra anterior pedia mais: além de encostar, os keyframes que já usavam o
+ * rótulo tinham de formar um bloco ÚNICO. Bastava o nome estar em dois blocos
+ * separados para toda tentativa de usá-lo virar "Andando 2" — inclusive a
+ * tentativa de EMENDAR os dois, que é o gesto óbvio para desfazer a separação.
+ * E cair nesse estado é fácil: mover um keyframe sem rótulo para dentro de um
+ * grupo pelas setas ↑↓ já parte o grupo em dois. A condição que existia para
+ * evitar títulos repetidos estava impedindo justamente o conserto deles.
  */
 export function uniqueKeyframeLabel(
   keyframes: readonly AnimationKeyframe[],
@@ -392,28 +441,28 @@ export function uniqueKeyframeLabel(
   const wanted = desired.trim()
   if (wanted === '') return ''
 
-  const contiguousWith = (label: string): boolean => {
-    const used = keyframes
-      .map((keyframe, position) => ({ position, label: keyframe.label?.trim() ?? '' }))
-      .filter((entry) => entry.label === label && entry.position !== index)
-      .map((entry) => entry.position)
-    if (used.length === 0) return true
+  const labelAt = (position: number) => keyframes[position]?.label?.trim() ?? ''
 
-    const min = Math.min(...used)
-    const max = Math.max(...used)
-    // Os que já usam o rótulo têm de ser um bloco só, e este keyframe tem de
-    // encostar nele (antes, depois ou dentro).
-    const usedIsContiguous = max - min + 1 === used.length
-    return usedIsContiguous && index >= min - 1 && index <= max + 1
+  const canUse = (label: string): boolean => {
+    // Ninguém mais usa o nome: não há título a repetir.
+    const usedElsewhere = keyframes.some(
+      (keyframe, position) => position !== index && (keyframe.label?.trim() ?? '') === label,
+    )
+    if (!usedElsewhere) return true
+    // Usa alguém — mas se um dos vizinhos é justamente ele, este keyframe está
+    // ENTRANDO naquele grupo (estendendo pela ponta, ou emendando dois blocos
+    // ao cair no meio deles).
+    return labelAt(index - 1) === label || labelAt(index + 1) === label
   }
 
-  if (contiguousWith(wanted)) return wanted
+  if (canUse(wanted)) return wanted
 
-  // "Andando 2" repetido vira "Andando 3", e não "Andando 2 2".
+  // "Andando 2" repetido vira "Andando 3", e não "Andando 2 2". O candidato
+  // passa pela MESMA regra: se o vizinho for "Andando 2", é nele que se entra.
   const base = wanted.replace(/\s+\d+$/, '')
   for (let suffix = 2; suffix < 1000; suffix += 1) {
     const candidate = `${base} ${suffix}`
-    if (contiguousWith(candidate)) return candidate
+    if (canUse(candidate)) return candidate
   }
   return wanted
 }
@@ -483,6 +532,38 @@ export function keyframeIndexAtTimeMs(animation: Animation | null, timeMs: numbe
   if (!animation) return -1
   const now = Math.round(timeMs)
   return keyframeStartTimesMs(animation).findIndex((start) => Math.round(start) === now)
+}
+
+/**
+ * Índice do keyframe que o instante `timeMs` **ocupa** — o ÂNCORA, isto é, o
+ * ÚLTIMO keyframe por onde a linha do tempo passou.
+ *
+ * Com o playhead exatamente sobre um keyframe, o âncora é ele. Entre dois, é o
+ * de trás: o trecho em curso é o que sai dele, então quem está "sendo
+ * trabalhado" é o de onde se saiu. Devolve -1 sem keyframe nenhum, e nunca sai
+ * da lista — antes do começo é o primeiro, depois do fim é o último.
+ *
+ * Dois lugares dependem dele, e pela mesma razão: o papel-cebola (item 31)
+ * desenha os VIZINHOS do âncora, e o painel de Animação marca o âncora como "a
+ * linha do tempo está aqui" (pedido do usuário, 2026-08-06). Andando de quadro
+ * em quadro no meio de um trecho, o `keyframeIndexAtTimeMs` acima não acende
+ * card nenhum — e ficar sem referência nenhuma no painel era justamente a
+ * queixa.
+ *
+ * Morava no `onionSkin.ts` até 2026-08-06, quando o painel passou a precisar
+ * dele: um conceito da linha do tempo importado do módulo do papel-cebola
+ * inverteria a dependência (`onionSkin` é quem lê `animation`, não o contrário).
+ */
+export function anchorKeyframeIndex(animation: Animation, timeMs: number): number {
+  const startTimes = keyframeStartTimesMs(animation)
+  if (startTimes.length === 0) return -1
+
+  let anchor = 0
+  for (let index = 0; index < startTimes.length; index += 1) {
+    if (startTimes[index] <= timeMs) anchor = index
+    else break
+  }
+  return anchor
 }
 
 /**

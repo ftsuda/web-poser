@@ -178,7 +178,7 @@ describe('CameraPanel', () => {
     expect(vi.mocked(writeFileToDirectoryOrDownload)).toHaveBeenCalledTimes(1)
     const [directoryHandle, filename] = vi.mocked(writeFileToDirectoryOrDownload).mock.calls[0]
     expect(directoryHandle).toBeNull()
-    expect(filename).toMatch(/\.json$/)
+    expect(filename).toMatch(/^camera-bookmarks_\d{4}-\d{2}-\d{2}-\d{4}\.json$/)
   })
 
   it('imports camera bookmarks from a picked .json file, adding them to the existing list', async () => {
@@ -697,5 +697,75 @@ describe('CameraPanel — ordem e seções', () => {
       expect(screen.getByRole('button', { name: titulo })).toHaveAttribute('aria-expanded', 'false')
     }
     expect(screen.queryByRole('button', { name: 'Voltar à perspectiva' })).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Apontar a câmera de cena para o assunto (pedido do usuário, 2026-08-06): gira
+ * no lugar, sem mexer na posição escolhida.
+ */
+describe('CameraPanel — apontar para o boneco', () => {
+  beforeEach(() => {
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    abrirSecoes()
+  })
+
+  const camera = () => useFiguresStore.getState().sceneCamera
+
+  it('sem boneco em cena, os dois botões ficam desabilitados', async () => {
+    await renderCameraPanel()
+
+    expect(screen.getByRole('button', { name: 'Apontar para o boneco' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Apontar para todos' })).toBeDisabled()
+  })
+
+  it('sem seleção, só o de todos funciona', async () => {
+    act(() => {
+      useFiguresStore.getState().addFigure()
+    })
+    await renderCameraPanel()
+
+    expect(screen.getByRole('button', { name: 'Apontar para o boneco' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Apontar para todos' })).toBeEnabled()
+  })
+
+  it('aponta para o boneco selecionado sem mexer na posição da câmera', async () => {
+    const user = userEvent.setup()
+    act(() => {
+      const id = useFiguresStore.getState().addFigure()!
+      useFiguresStore.getState().setPosition(id, [3, 0, -2])
+      useFiguresStore.getState().selectFigure(id)
+    })
+    const antes = camera()
+    await renderCameraPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Apontar para o boneco' }))
+
+    expect(camera().position).toEqual(antes.position)
+    // O alvo foi para o meio do corpo do boneco, que está em (3, ?, -2).
+    expect(camera().target[0]).toBeCloseTo(3)
+    expect(camera().target[2]).toBeCloseTo(-2)
+    expect(camera().target[1]).toBeGreaterThan(1)
+  })
+
+  it('aponta para a média dos bonecos visíveis', async () => {
+    const user = userEvent.setup()
+    act(() => {
+      const a = useFiguresStore.getState().addFigure()!
+      const b = useFiguresStore.getState().addFigure()!
+      const c = useFiguresStore.getState().addFigure()!
+      useFiguresStore.getState().setPosition(a, [0, 0, 0])
+      useFiguresStore.getState().setPosition(b, [4, 0, 0])
+      useFiguresStore.getState().setPosition(c, [100, 0, 0])
+      useFiguresStore.getState().toggleVisibility(c)
+    })
+    await renderCameraPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Apontar para todos' }))
+
+    // O oculto fica de fora: a média é a de (0) e (4), e não a dos três.
+    expect(camera().target[0]).toBeCloseTo(2)
   })
 })

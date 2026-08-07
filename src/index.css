@@ -7,6 +7,13 @@
   --muted: #8b8494;
   --danger: #c0392b;
   --ok: #2e7d32;
+  /* Onde a LINHA DO TEMPO parou — o keyframe que o viewport está mostrando
+     enquanto se navega (pedido do usuário, 2026-08-06). Azul de propósito: a
+     outra marca do card, a da bancada ("Ir para"), é `--text-h`, e as duas
+     precisam se distinguir quando caem em cards diferentes. É a mesma família
+     do fantasma "seguinte" do papel-cebola, que também significa "o tempo à
+     frente". */
+  --playhead: #1f76c4;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
@@ -38,6 +45,7 @@
     --muted: #7c8290;
     --danger: #e05252;
     --ok: #6bbf6e;
+    --playhead: #5cb0f0;
   }
 }
 
@@ -579,11 +587,19 @@ fieldset > .panel-action + .panel-actions {
   font-family: var(--mono);
 }
 
+/* O `min-inline-size: 0` desfaz o `min-content` que o navegador põe em todo
+   `<fieldset>` — sem ele o grupo de rotação media 256 px numa coluna de 235 e
+   o painel inteiro ganhava barra de rolagem HORIZONTAL. O mínimo dessa linha é
+   a largura INTRÍNSECA do `<input type=range>` (129 px no Chrome), que o
+   `min-width: 0` da linha não reduz: aquele só age depois que a largura do
+   contêiner já está resolvida, e este é o cálculo que a define. Ver o teste
+   `panelFieldset.test.ts`. */
 .panel--properties fieldset {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.5rem 0.6rem;
   margin: 0 0 0.6rem;
+  min-inline-size: 0;
 }
 
 .panel--properties legend {
@@ -643,11 +659,47 @@ fieldset > .panel-action + .panel-actions {
   margin: 0 0 0.6rem;
 }
 
+/* Vão de 0.3rem, e não 0.4: numa coluna de 214 px úteis os três vãos da linha
+   custam ao slider quase 5 px, e o que sobra dele é o alvo de arrasto (#126). */
 .properties-panel__axis-row {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.3rem;
   margin-bottom: 0.35rem;
+}
+
+/* Slider + a linha de ajuste fino do mesmo eixo formam um bloco só. */
+.properties-panel__axis-block {
+  margin-bottom: 0.5rem;
+}
+
+/* [−5°, −1°, ⟲, +1°, +5°] embaixo do slider — a mesma grade de cinco colunas
+   do módulo de poses (`poses.css`), em botões menores porque aqui o alvo é o
+   ponteiro do mouse e a coluna é estreita.
+
+   Ocupa a LARGURA INTEIRA do grupo (#126). Havia aqui uma `margin-left: 2rem`
+   para alinhar com o começo do slider, saltando o quadradinho do eixo — só que
+   na raiz o eixo não é quadradinho, é a letra solta (9 px), então o alinhamento
+   já não valia, e a margem só encolhia cinco botões que o ponteiro tem de
+   acertar. De ponta a ponta eles passam de 33,8 para 40,2 px. */
+.properties-panel__fine {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.2rem;
+}
+
+.properties-panel__fine > button {
+  min-height: 1.5rem;
+  padding: 0 0.15rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.properties-panel__fine > button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .properties-panel__axis-button {
@@ -666,21 +718,39 @@ fieldset > .panel-action + .panel-actions {
 .properties-panel__axis-row input[type='range'] {
   flex: 1 1 auto;
   min-width: 0;
+  /* O Chrome põe `margin: 2px` em todo `<input type=range>`; aqui os 4 px
+     horizontais são 4 px a menos de curso para o polegar (#126). O vão da
+     linha já separa o slider dos vizinhos. */
+  margin: 0;
 }
 
+/* A caixa reserva o MAIOR valor possível, "-180°", e nada além — cada pixel a
+   mais aqui é um pixel a menos de slider, e aparecia como um vazio entre o
+   slider e o número (#126). Eram 3 rem (48 px) para um texto de 33.
+
+   `5ch` e não uma medida em rem: `ch` é o avanço do "0" na fonte DO PRÓPRIO
+   elemento, e numa fonte mono todo caractere avança igual — cinco deles são
+   exatamente "-180°". A conta se refaz sozinha onde a `--mono` cair em outra
+   fonte (Consolas avança 0,55 em; a de macOS e a de Linux, 0,60), coisa que um
+   número fixo em rem erraria numa direção ou na outra.
+
+   Continua alinhada à direita: os três eixos formam coluna, encostada no
+   cadeado. */
 .properties-panel__value {
   flex: 0 0 auto;
   font-size: 0.75rem;
   font-family: var(--mono);
-  width: 3rem;
+  width: 5ch;
   text-align: right;
 }
 
-/* Cadeado do eixo da raiz (item 64) — na linha do slider que ele trava. */
+/* Cadeado do eixo da raiz (item 64) — na linha do slider que ele trava. Um
+   pouco menor que o botão de eixo (1.6rem): aquele se aperta a toda hora para
+   escolher o eixo das setas, este é uma trava que se põe e se esquece (#126). */
 .properties-panel__axis-lock {
   flex: 0 0 auto;
-  width: 1.6rem;
-  height: 1.6rem;
+  width: 1.4rem;
+  height: 1.4rem;
   padding: 0;
   border-radius: 4px;
   font-size: 0.8rem;
@@ -713,11 +783,15 @@ fieldset > .panel-action + .panel-actions {
   text-overflow: ellipsis;
 }
 
+/* Mesmo destravamento do painel de Propriedades, e pelo mesmo motivo — a
+   coluna da câmera é ainda mais estreita (215 px úteis contra os 224 do
+   grupo de rotação). */
 .panel--camera fieldset {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.5rem 0.6rem;
   margin: 0 0 0.6rem;
+  min-inline-size: 0;
 }
 
 .panel--camera legend {
@@ -759,7 +833,7 @@ fieldset > .panel-action + .panel-actions {
 }
 
 .properties-panel__mix .properties-panel__axis-row {
-  gap: 0.4rem;
+  gap: 0.3rem;
 }
 
 .properties-panel__save-pose-form {
@@ -783,6 +857,14 @@ fieldset > .panel-action + .panel-actions {
 .properties-panel__locked-summary button {
   padding: 0.3rem;
   cursor: pointer;
+}
+
+/* O "Destravar todas" fica sempre à vista na visão da raiz (2026-08-07) e
+   desabilita quando não há nada a soltar — mesmo tratamento do "Recuperar cena
+   guardada" e do "Resetar esta junta". */
+.properties-panel__locked-summary button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .properties-panel__axis-row input[type='range']:disabled,
@@ -1136,7 +1218,8 @@ code {
    de importação, a caixa larga ficaria com uma linha de aviso perdida no meio
    de espaço vazio. */
 .confirm-dialog,
-.apply-camera {
+.apply-camera,
+.copy-figures {
   max-width: 22rem;
 }
 
@@ -1144,13 +1227,29 @@ code {
    mesmo no tema escuro — a zona de sossego do QR faz parte do código, e um QR
    invertido não escaneia em todo leitor. */
 .session-qr {
-  max-width: 24rem;
+  /* Mais largo que os 26rem do modal comum: aqui a caixa existe para caber o
+     quadro, e não o contrário — quem manda na largura é o QR. */
+  max-width: 41rem;
+  /* E mais alto que os 80vh do modal comum. Aquele teto existe para uma caixa
+     de diálogo não parecer tela cheia; esta caixa não é para ler, é para
+     APONTAR a câmera — quanto mais viewport ela tomar, melhor cumpre o papel.
+     Os 92vh só guardam a borda, para continuar lendo como caixa. */
+  max-height: 92vh;
 }
 
 .session-qr__frame {
   background: #fff;
   padding: 0.5rem;
-  width: min(64vmin, 20rem);
+  /* Quanto maior o quadro, mais longe e mais depressa a câmera do celular
+     engata — e o ciclo tem várias voltas, então cada segundo economizado por
+     quadro conta. Os três tetos, cada um por um motivo: `vmin` para o quadro
+     não passar da tela estreita (o modal do desktop também abre no celular, e
+     ali o `<dialog>` já tem margem própria do navegador), `vh` para o diálogo
+     INTEIRO caber nos 92vh acima — barra de rolagem aqui esconderia o contador
+     e o botão de fechar, e ninguém rola uma tela que está fotografando —, e o
+     valor fixo para o QR parar de crescer numa tela grande, onde ele já engata
+     de sobra. */
+  width: min(80vmin, 66vh, 38rem);
   margin: 0 auto;
 }
 
@@ -1479,8 +1578,53 @@ code {
   font-weight: 700;
 }
 
+/* O "Regravar" com algo por gravar (pedido do usuário, 2026-08-07): ou a
+   bancada mudou depois de carregar o keyframe, ou o card acabou de receber uma
+   cópia do vizinho. Ver `updateHighlight.ts`.
+
+   PISCA em vez de só mudar de cor porque o card já tem duas marcas estáticas (a
+   da bancada e a do playhead) e um terceiro contorno parado viraria ruído; o
+   movimento é o que distingue "há algo a fazer" de "você está aqui". A pulsação
+   é lenta e no FUNDO, não na borda: borda mexeria na caixa e faria a lista
+   inteira tremer.
+
+   E para de piscar sob `prefers-reduced-motion`, deixando o destaque estático —
+   animação infinita é justamente o que a preferência existe para desligar. */
+.animation-panel__update--pending {
+  border-color: var(--text-h);
+  animation: animation-panel-pending 1.6s ease-in-out infinite;
+}
+
+@keyframes animation-panel-pending {
+  50% {
+    background: var(--border);
+    color: var(--text-h);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animation-panel__update--pending {
+    animation: none;
+    background: var(--border);
+    color: var(--text-h);
+  }
+}
+
 .animation-panel__capture-hint {
   margin: 0.4rem 0 0;
+}
+
+/* Recuperar a cena guardada pelo "Ir para" (2026-08-06). Fica na barra grudada,
+   logo abaixo do "Capturar", mas SEM o peso dele: capturar é a ação repetida do
+   painel, recuperar é a rede de segurança — dois botões cheios disputariam a
+   mesma atenção no topo. */
+.animation-panel__restore {
+  margin-top: 0.4rem;
+}
+
+.animation-panel__restore:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 /* Trechos prontos (DECISOES.md #60) — mesmo visual dos fieldsets dos outros painéis. */
@@ -1546,20 +1690,26 @@ code {
    propósito mais fraca que a da bancada: uma tarja na borda esquerda e o ▶ no
    título, sem contornar o card. As duas coisas convivem — depois de um "Ir
    para" elas caem no mesmo card — e precisam continuar distinguíveis, porque só
-   a da bancada diz o que "Regravar" vai reescrever. */
+   a da bancada diz o que "Regravar" vai reescrever.
+
+   E AZUL (pedido do usuário, 2026-08-06): forma diferente não bastava enquanto
+   se navega pela linha do tempo, com as duas marcas em cards diferentes e na
+   mesma cor. Esta diz qual keyframe o viewport está mostrando; a outra, qual
+   está na bancada. Ver `keyframeMarks.test.ts`. */
 .animation-panel__keyframe--playhead {
-  box-shadow: inset 3px 0 0 var(--text-h);
+  box-shadow: inset 3px 0 0 var(--playhead);
 }
 
 .animation-panel__keyframe--visited.animation-panel__keyframe--playhead {
   box-shadow:
     inset 0 0 0 1px var(--text-h),
-    inset 3px 0 0 var(--text-h);
+    inset 3px 0 0 var(--playhead);
 }
 
 .animation-panel__playhead {
   margin-right: 0.25rem;
   font-size: 0.7rem;
+  color: var(--playhead);
 }
 
 .animation-panel__keyframe-index {
@@ -1786,10 +1936,14 @@ code {
   width: 6.5rem;
 }
 
+/* `min-inline-size: 0` porque é `fieldset` em painel estreito (#125): a folha
+   do navegador o faz nascer em `min-content`, e o nome de um boneco comprido
+   bastaria para o painel ganhar rolagem horizontal. */
 .animation-panel__clip-figures {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  min-inline-size: 0;
 }
 
 .animation-panel__clip-figure {

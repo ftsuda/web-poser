@@ -2,6 +2,27 @@ import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+/** O que os dois projetos da suíte descartam por igual (os specs do Playwright moram em `e2e/`). */
+const FORA_DA_SUITE = [...configDefaults.exclude, 'e2e/**']
+
+/**
+ * Testes de LÓGICA que mesmo assim precisam do navegador (PLANO.md item 23):
+ * mexem em `localStorage`, `document` ou APIs de janela, então rodam no projeto
+ * `interface` apesar de não montarem UI nenhuma. São a exceção — a regra é a
+ * extensão: `.tsx` monta componente e vai para o jsdom, `.ts` é puro e vai
+ * para o node.
+ */
+const PUROS_QUE_PRECISAM_DE_NAVEGADOR = [
+  'src/persistence/__tests__/autosave.test.ts',
+  'src/persistence/__tests__/autosaveKey.test.ts',
+  'src/persistence/__tests__/uiPreferences.test.ts',
+  'src/poses/__tests__/qrFrameReader.test.ts',
+  'src/poses/__tests__/shellChoice.test.ts',
+  'src/store/__tests__/sessionTransfer.test.ts',
+  'src/store/__tests__/uiStore.test.ts',
+  'src/store/__tests__/undoBatch.test.ts',
+]
+
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
@@ -44,19 +65,49 @@ export default defineConfig({
       },
     }),
   ],
+  /**
+   * A suíte em DOIS projetos (PLANO.md item 23, DECISOES.md #120). Antes era um
+   * só, com `environment: 'jsdom'` para todo mundo — e montar um jsdom custa
+   * uns 6 s por ARQUIVO, antes do primeiro teste. Como 3 em cada 4 arquivos são
+   * lógica pura, a maior parte desse custo era desperdício puro.
+   *
+   * `npx vitest run` continua rodando os dois; `npm run test:rapido` roda só o
+   * `unidade`, que é o que se quer durante o desenvolvimento de lógica.
+   */
   test: {
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
-    globals: true,
-    css: true,
-    // Os specs de `e2e/` são do Playwright (item 57) e rodam por
-    // `npm run test:e2e` — o vitest não pode tentar coletá-los.
-    exclude: [...configDefaults.exclude, 'e2e/**'],
-    // Acima dos 5 s padrão (DECISOES.md #46): com a suíte já em ~1250 testes
-    // rodando em paralelo, os casos legitimamente pesados — os 200 sorteios de
-    // `randomPose` e os arquivos de painel que montam a UI inteira a cada
-    // interação — passam dos 5 s por disputa de CPU, não por regressão. Cada
-    // um deles roda em ~4 s isolado.
-    testTimeout: 20000,
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unidade',
+          environment: 'node',
+          include: ['src/**/*.test.ts'],
+          exclude: [...FORA_DA_SUITE, ...PUROS_QUE_PRECISAM_DE_NAVEGADOR],
+          setupFiles: ['./src/test/setup-comum.ts'],
+          globals: true,
+          // Mesmo sem jsdom há casos legitimamente pesados — os 200 sorteios de
+          // `randomPose` e a conferência de todos os trechos prontos passam dos
+          // 5 s padrão por disputa de CPU, não por regressão (DECISOES.md #46).
+          testTimeout: 20000,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'interface',
+          environment: 'jsdom',
+          include: ['src/**/*.test.tsx', ...PUROS_QUE_PRECISAM_DE_NAVEGADOR],
+          exclude: FORA_DA_SUITE,
+          setupFiles: ['./src/test/setup.ts'],
+          globals: true,
+          css: true,
+          // Acima dos 5 s padrão (DECISOES.md #46): os arquivos de painel
+          // montam a UI inteira a cada interação e passam dos 5 s por disputa
+          // de CPU, não por regressão. Vale só aqui — o projeto `unidade` não
+          // tem nenhum caso perto disso.
+          testTimeout: 20000,
+        },
+      },
+    ],
   },
 })

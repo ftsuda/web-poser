@@ -169,6 +169,7 @@ function PosesCameraRig() {
 function PosesOnionSkin() {
   const onionSkin = useAnimationStore((state) => state.onionSkin)
   const mode = useAnimationStore((state) => state.onionSkinMode)
+  const hiddenFigureIds = useAnimationStore((state) => state.onionSkinHiddenFigureIds)
   const animations = useFiguresStore((state) => state.animations)
   const currentKeyframeId = usePosesShellStore((state) => state.currentKeyframeId)
 
@@ -179,12 +180,12 @@ function PosesOnionSkin() {
   const foundIndex = working.keyframes.findIndex((keyframe) => keyframe.id === currentKeyframeId)
   const index = foundIndex >= 0 ? foundIndex : working.keyframes.length - 1
   const timeMs = keyframeStartTimesMs(working)[index]
-  const frames = onionSkinFrames(working, timeMs, mode)
+  const frames = onionSkinFrames(working, timeMs, mode, hiddenFigureIds)
 
   return (
     <>
       {frames.flatMap((frame) =>
-        frame.keyframe.figures.map((figure) => (
+        frame.figures.map((figure) => (
           <Figure
             key={`${frame.role}-${frame.index}-${figure.id}`}
             figure={figure}

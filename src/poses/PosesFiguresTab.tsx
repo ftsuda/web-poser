@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MAX_FIGURES, useFiguresStore } from '../store/figuresStore'
+import { isPlacementPinned } from '../figure/jointPins'
 import { MAX_HEIGHT_M, MIN_HEIGHT_M } from '../figure/skeleton'
 import { POSE_PRESET_GROUPS, type PosePresetKey } from '../figure/posePresets'
 import {
@@ -29,6 +30,8 @@ export function PosesFiguresTab() {
   const selectFigure = useFiguresStore((state) => state.selectFigure)
   const setHeight = useFiguresStore((state) => state.setHeight)
   const applyPosePreset = useFiguresStore((state) => state.applyPosePreset)
+  const seatFigureOnGround = useFiguresStore((state) => state.seatFigureOnGround)
+  const jointPins = useFiguresStore((state) => state.jointPins)
   const showOnlyEditing = usePosesShellStore((state) => state.showOnlyEditing)
   const toggleShowOnlyEditing = usePosesShellStore((state) => state.toggleShowOnlyEditing)
   /** Preset escolhido no combo — aplicar é um passo à parte, como no desktop. */
@@ -121,6 +124,21 @@ export function PosesFiguresTab() {
             onClick={() => applyPosePreset(selected.id, presetKey)}
           >
             {t('poses.figures.applyPose')}
+          </button>
+
+          {/* Assentar no chão (item 33 do desktop, trazido a pedido do usuário
+              em 2026-08-04): depois de dobrar um joelho o boneco flutua ou
+              afunda, e acertar isso à mão no celular é pior ainda. Mora aqui, e
+              não na aba Junta, porque é propriedade do boneco INTEIRO, como a
+              altura e a pose de partida ao lado. Mexe só na ALTURA — X/Z são
+              encenação — e a colocação ancorada (item 62) desabilita. */}
+          <button
+            type="button"
+            className="panel-action"
+            disabled={isPlacementPinned(jointPins, selected.id)}
+            onClick={() => seatFigureOnGround(selected.id)}
+          >
+            {t('poses.figures.seatOnGround')}
           </button>
         </>
       )}

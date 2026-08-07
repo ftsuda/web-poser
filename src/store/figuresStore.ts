@@ -64,6 +64,7 @@ import {
   type ResolvedClipFigure,
 } from '../animation/animationClips'
 import { DEFAULT_SCENE_CAMERA, type CameraViewState } from '../scene/cameraMove'
+import { DEFAULT_LIGHT, clampLightSettings, type LightSettings } from '../scene/sceneLight'
 import { alignRootRotation, blendPoses, type BlendablePose } from '../figure/poseBlend'
 import { captureFigurePose, type SavedPose } from '../figure/poseLibrary'
 import {
@@ -124,7 +125,13 @@ export type AnimationImportMode = 'replace' | 'append' | 'substitute'
 
 export type BackgroundTone = 'light' | 'medium' | 'dark'
 
-export interface EnvironmentSettings {
+/**
+ * O ambiente da cena: o que vale para a cena inteira e viaja com ela no
+ * arquivo. A luz (item 16) entrou aqui, e não no `uiStore`, porque de onde a
+ * sombra cai é decisão de desenho — a mesma cena reaberta amanhã tem de
+ * iluminar igual, senão o keyframe deixa de ser reproduzível.
+ */
+export interface EnvironmentSettings extends LightSettings {
   background: BackgroundTone
   grid: boolean
 }
@@ -383,12 +390,30 @@ export interface FiguresState {
    * pose EM PÉ, não zeros literais, e junta travada não se mexe.
    */
   resetJointGroup: (id: string, group: JointGroupKey) => void
+  /**
+   * Devolve o BONECO INTEIRO ao estado inicial, num passo só de undo (pedido do
+   * usuário, 2026-08-04): todas as juntas na pose EM PÉ — a mesma referência
+   * dos resets por grupo e por junta, senão zerar tudo daria uma pose diferente
+   * de zerar grupo a grupo —, a rotação de colocação zerada e o boneco de volta
+   * à origem. Trava, trava de eixo da raiz e âncora valem, como em todo o
+   * resto: junta travada não muda por NADA automático (DECISOES.md #42), e
+   * colocação ancorada não sai do lugar (item 62).
+   */
+  resetFigure: (id: string) => void
   addCameraBookmark: (bookmark: Omit<CameraBookmark, 'id'>) => string
   removeCameraBookmark: (id: string) => void
   /** Move a câmera de cena — chamado pelo gizmo, pelos comandos do painel e pelo animador. */
   setSceneCamera: (view: CameraViewState) => void
   setBackground: (background: BackgroundTone) => void
   toggleGrid: () => void
+  /**
+   * Ajusta a luz da cena, campo a campo (item 16). Cada valor é grampeado na
+   * faixa do slider; campo ausente fica como está. É controle CONTÍNUO — quem
+   * arrasta tem de abrir lote de undo (#118), senão empilha um passo por pixel.
+   */
+  setLight: (light: Partial<LightSettings>) => void
+  /** Devolve a luz ao padrão de fábrica — a saída de quem se perdeu nos ângulos. */
+  resetLight: () => void
   renameScene: (name: string) => void
   /** Consome (lê e avança) o próximo número de instantâneo — ver PLANO.md > "Exportação de imagem". */
   consumeSnapshotNumber: () => number
@@ -580,7 +605,41 @@ export interface FiguresState {
    * BONECOS do vizinho, sem tocar na câmera nem na duração — é o gesto de
    * segurar a pose e deixar só a câmera se mover. Nas pontas não faz nada.
    */
-  copyAnimationKeyframeFigures: (animationId: string, keyframeId: string, offset: -1 | 1) => void
+  /**
+   * Traz o retrato dos bonecos do keyframe vizinho (item 28) — câmera e duração
+   * ficam intactas.
+   *
+   * `figureIds` é a escolha do diálogo de caixas (2026-08-06): sem ele vem o
+   * retrato INTEIRO do vizinho, elenco incluído, que é o que esta ação sempre
+   * fez; com ele a troca é boneco a boneco e o elenco do keyframe não se mexe.
+   * Lista vazia é a escolha de não copiar nada — e não a de copiar tudo.
+   */
+  copyAnimationKeyframeFigures: (
+    animationId: string,
+    keyframeId: string,
+    offset: -1 | 1,
+    figureIds?: readonly string[],
+  ) => void
+  /**
+   * Traz a COLOCAÇÃO NO PLANO — só X e Z, onde o boneco pisa — do keyframe
+   * vizinho (pedido do usuário, 2026-08-06). O terceiro par de setas do card,
+   * ao lado de "Câm ↑↓" e "Pose ↑↓", e o mais fino dos três: a pose, o giro da
+   * raiz, o Y (a altura de um salto), a câmera e a duração ficam como estão.
+   *
+   * É o gesto de tirar a deriva — o boneco que escorrega alguns centímetros
+   * entre dois keyframes volta a pisar no mesmo lugar. Os bonecos casam por
+   * **id**; quem não tem par no vizinho fica exatamente onde está. Sem nenhuma
+   * diferença de colocação, nada é reescrito e o undo não ganha passo.
+   *
+   * `figureIds` é a escolha do diálogo de caixas, como no irmão acima: sem ele,
+   * todos os bonecos.
+   */
+  copyAnimationKeyframePlacement: (
+    animationId: string,
+    keyframeId: string,
+    offset: -1 | 1,
+    figureIds?: readonly string[],
+  ) => void
   /**
    * Carimba a câmera de cena ATUAL numa faixa de keyframes, de `fromIndex` a
    * `toIndex` inclusive (pedido do usuário, 2026-07-31). É o gesto de "achei o
@@ -628,8 +687,9 @@ export interface FiguresState {
   setAnimationKeyframeEasing: (animationId: string, keyframeId: string, easing: KeyframeEasing) => void
   /**
    * Rótulo do grupo do keyframe (item 38). Texto vazio tira o keyframe do
-   * grupo; um rótulo que já existe em OUTRO trecho ganha sufixo numérico, para
-   * não haver dois blocos com o mesmo título (ver `uniqueKeyframeLabel`).
+   * grupo; o nome do grupo COLADO neste keyframe entra como está (é assim que
+   * se entra num grupo, e que se emendam dois blocos partidos), e um nome que
+   * só existe longe ganha sufixo numérico — ver `uniqueKeyframeLabel`.
    */
   setAnimationKeyframeLabel: (animationId: string, keyframeId: string, label: string) => void
   /**
@@ -895,6 +955,7 @@ const ZERO_ROTATION: JointRotation = { x: 0, y: 0, z: 0 }
 const INITIAL_ENVIRONMENT: EnvironmentSettings = {
   background: 'medium',
   grid: true,
+  ...DEFAULT_LIGHT,
 }
 
 /** Espaçamento padrão em X entre bonecos recém-criados, para que não fiquem sobrepostos. */
@@ -1767,6 +1828,43 @@ export const useFiguresStore = create<FiguresState>()(
         })
       },
 
+      resetFigure: (id) => {
+        const neutral = resolvePosePreset('standing')
+        set((state) => {
+          const held = new Set(effectiveLockedJoints(state, id))
+          const placementPinned = isPlacementPinned(state.jointPins, id)
+          // Eixos com cadeado próprio (item 64) preservam o valor de agora; os
+          // demais zeram, exatamente como o "Zerar rotação" da raiz.
+          const lockedAxes = getLockedRootAxes(state.jointLocks, id)
+
+          const reset: Record<string, JointRotation> = {}
+          for (const group of JOINT_GROUPS) {
+            for (const jointName of group.joints) {
+              if (held.has(jointName)) continue
+              reset[jointName] = clampJointRotation(jointName, neutral[jointName] ?? ZERO_ROTATION)
+            }
+          }
+
+          // Nada a mexer (tudo preso e a colocação ancorada): devolver o mesmo
+          // estado evita empilhar um passo de undo que não desfaz nada.
+          if (Object.keys(reset).length === 0 && placementPinned) return {}
+
+          return {
+            figures: updateFigure(state.figures, id, (figure) => {
+              if (placementPinned) return { ...figure, pose: { ...figure.pose, ...reset } }
+              const rotation = { ...ZERO_ROTATION }
+              for (const axis of lockedAxes) rotation[axis] = figure.rotation[axis]
+              return {
+                ...figure,
+                pose: { ...figure.pose, ...reset },
+                rotation,
+                position: [0, 0, 0],
+              }
+            }),
+          }
+        })
+      },
+
       addCameraBookmark: (bookmark) => {
         const { cameraBookmarks, nextCameraBookmarkSeq } = get()
         const id = `camera-bookmark-${nextCameraBookmarkSeq}`
@@ -1790,6 +1888,17 @@ export const useFiguresStore = create<FiguresState>()(
 
       toggleGrid: () =>
         set((state) => ({ environment: { ...state.environment, grid: !state.environment.grid } })),
+
+      setLight: (light) => {
+        set((state) => {
+          const clamped = clampLightSettings(light)
+          if (Object.keys(clamped).length === 0) return {}
+          return { environment: { ...state.environment, ...clamped } }
+        })
+      },
+
+      resetLight: () =>
+        set((state) => ({ environment: { ...state.environment, ...DEFAULT_LIGHT } })),
 
       renameScene: (name) => set({ sceneName: name }),
 
@@ -2588,7 +2697,7 @@ export const useFiguresStore = create<FiguresState>()(
         })
       },
 
-      copyAnimationKeyframeFigures: (animationId, keyframeId, offset) => {
+      copyAnimationKeyframeFigures: (animationId, keyframeId, offset, figureIds) => {
         set((state) => {
           const animation = state.animations.find((candidate) => candidate.id === animationId)
           if (!animation) return {}
@@ -2597,13 +2706,71 @@ export const useFiguresStore = create<FiguresState>()(
           const source = animation.keyframes[index + offset]
           if (index < 0 || !source) return {}
 
+          const target = animation.keyframes[index]
+          // Sem escolha, o retrato inteiro do vizinho — inclusive o elenco dele,
+          // que é o que esta ação sempre fez. Com escolha, troca-se boneco a
+          // boneco e o elenco do keyframe não se mexe.
+          let figures: Figure[]
+          if (figureIds) {
+            const wanted = new Set(figureIds)
+            figures = target.figures.map((figure) => {
+              if (!wanted.has(figure.id)) return figure
+              const from = source.figures.find((candidate) => candidate.id === figure.id)
+              return from ?? figure
+            })
+            if (figures.every((figure, position) => figure === target.figures[position])) return {}
+          } else {
+            figures = source.figures
+          }
+
           return {
             animations: updateAnimation(state.animations, animationId, (current) => ({
               ...current,
               keyframes: current.keyframes.map((keyframe, position) =>
                 // Só os bonecos: câmera e duração ficam intactas — o oposto
                 // exato do `copyAnimationKeyframeCamera`.
-                position === index ? { ...keyframe, figures: source.figures } : keyframe,
+                position === index ? { ...keyframe, figures } : keyframe,
+              ),
+            })),
+          }
+        })
+      },
+
+      copyAnimationKeyframePlacement: (animationId, keyframeId, offset, figureIds) => {
+        set((state) => {
+          const animation = state.animations.find((candidate) => candidate.id === animationId)
+          if (!animation) return {}
+
+          const index = animation.keyframes.findIndex((keyframe) => keyframe.id === keyframeId)
+          const source = animation.keyframes[index + offset]
+          if (index < 0 || !source) return {}
+
+          const target = animation.keyframes[index]
+          // Sem escolha, todos os bonecos; com escolha (2+ bonecos em cena, o
+          // diálogo de caixas), só os marcados.
+          const wanted = figureIds ? new Set(figureIds) : null
+          const figures = target.figures.map((figure) => {
+            if (wanted && !wanted.has(figure.id)) return figure
+            const from = source.figures.find((candidate) => candidate.id === figure.id)
+            // Boneco sem par no vizinho fica onde está: o vizinho não tem o que
+            // dizer sobre onde ele pisa.
+            if (!from) return figure
+            const [x, , z] = from.position
+            const [atual, y, atualZ] = figure.position
+            if (x === atual && z === atualZ) return figure
+            return { ...figure, position: [x, y, z] as [number, number, number] }
+          })
+
+          // Vizinhos já no mesmo ponto do plano: nada a reescrever, e o undo
+          // não pode ganhar um passo que não mudou nada (`undoEquality` é
+          // referencial).
+          if (figures.every((figure, position) => figure === target.figures[position])) return {}
+
+          return {
+            animations: updateAnimation(state.animations, animationId, (current) => ({
+              ...current,
+              keyframes: current.keyframes.map((keyframe, position) =>
+                position === index ? { ...keyframe, figures } : keyframe,
               ),
             })),
           }

@@ -6,7 +6,7 @@ Registro de problemas encontrados durante a implementação, opções considerad
 
 ## Índice
 
-As **129 decisões**, na ordem em que foram tomadas. Os números **nunca são reaproveitados** — o `PLANO.md`, o `HISTORICO.md` e as próprias entradas se citam por eles. Decisão desdobrada depois ganha subnúmero (78.1, 78.2…) em vez de número novo.
+As **148 decisões**, na ordem em que foram tomadas. Os números **nunca são reaproveitados** — o `PLANO.md`, o `HISTORICO.md` e as próprias entradas se citam por eles. Decisão desdobrada depois ganha subnúmero (78.1, 78.2…) em vez de número novo.
 
 - **#1** — [Aviso "not wrapped in act(...)" nos testes do Toolbar (react-i18next)](#1-aviso-not-wrapped-in-act-nos-testes-do-toolbar-react-i18next)
 - **#2** — [Aviso "THREE.Clock: This module has been deprecated" no console](#2-aviso-threeclock-this-module-has-been-deprecated-no-console)
@@ -113,6 +113,7 @@ As **129 decisões**, na ordem em que foram tomadas. Os números **nunca são re
 - **#99** — [A raiz nunca teve trava — e ganhou três, uma por eixo (item 64)](#99-a-raiz-nunca-teve-trava--e-ganhou-três-uma-por-eixo-item-64)
 - **#100** — [A confirmação da troca de sessão vira modal — o `ConfirmDialog` que já existia](#100-a-confirmação-da-troca-de-sessão-vira-modal--o-confirmdialog-que-já-existia)
 - **#101** — [A sessão atravessa o ar: remessa por QR code, sem rede e sem arquivo (item 65)](#101-a-sessão-atravessa-o-ar-remessa-por-qr-code-sem-rede-e-sem-arquivo-item-65)
+- **#101.1** — [O QR maior — o quadro é que manda na largura do diálogo](#1011-o-qr-maior--o-quadro-é-que-manda-na-largura-do-diálogo)
 - **#102** — [O app muda de nome: Virtual Mockup vira WebPoser, com migração das chaves](#102-o-app-muda-de-nome-virtual-mockup-vira-webposer-com-migração-das-chaves)
 - **#103** — [O primeiro endereço público: GitHub Pages por workflow, com a suíte como portão](#103-o-primeiro-endereço-público-github-pages-por-workflow-com-a-suíte-como-portão)
   - **#103.1** — [O `package-lock.json` tem de ser gerado no Linux](#1031-o-package-lockjson-tem-de-ser-gerado-no-linux)
@@ -139,6 +140,29 @@ As **129 decisões**, na ordem em que foram tomadas. Os números **nunca são re
 - **#118** — [Um gesto, um passo de undo — o histórico registra o estado de quando o botão é solto](#118-um-gesto-um-passo-de-undo--o-histórico-registra-o-estado-de-quando-o-botão-é-solto)
 - **#118.1** — [A profundidade escolhida fica acesa — o `aria-pressed` que só o leitor de tela via](#1181-a-profundidade-escolhida-fica-acesa--o-aria-pressed-que-só-o-leitor-de-tela-via)
 - **#119** — [O tronco quebrado em dois e a raiz conferida pelos quadris — o que um ponto sobre o eixo pode e o que não pode dizer](#119-o-tronco-quebrado-em-dois-e-a-raiz-conferida-pelos-quadris--o-que-um-ponto-sobre-o-eixo-pode-e-o-que-não-pode-dizer)
+- **#120** — [A suíte em dois projetos — e a premissa do item 23 estava errada](#120-a-suíte-em-dois-projetos--e-a-premissa-do-item-23-estava-errada)
+- **#121** — [A luz da cena é conteúdo de cena, não preferência de tela](#121-a-luz-da-cena-é-conteúdo-de-cena-não-preferência-de-tela)
+- **#122** — [As linhas de gesto — e a armadilha de caixa do Windows](#122-as-linhas-de-gesto--e-a-armadilha-de-caixa-do-windows)
+- **#123** — ["Olhar para" — a repartição segue as amplitudes, não é meio a meio](#123-olhar-para--a-repartição-segue-as-amplitudes-não-é-meio-a-meio)
+- **#124** — [Paridade entre as cascas — o que cada uma aprendeu com a outra](#124-paridade-entre-as-cascas--o-que-cada-uma-aprendeu-com-a-outra)
+- **#125** — [O `fieldset` não encolhe sozinho — a rolagem horizontal do grupo de rotação](#125-o-fieldset-não-encolhe-sozinho--a-rolagem-horizontal-do-grupo-de-rotação)
+- **#126** — [Os 20 px que faltavam ao slider — e o Playwright como lugar de testar largura](#126-os-20-px-que-faltavam-ao-slider--e-o-playwright-como-lugar-de-testar-largura)
+- **#127** — [A guarda temporária da bancada — o que o "Ir para" atropelava](#127-a-guarda-temporária-da-bancada--o-que-o-ir-para-atropelava)
+- **#128** — [Três facilidades no card do keyframe — colocação, apagar e duplicar](#128-três-facilidades-no-card-do-keyframe--colocação-apagar-e-duplicar)
+- **#129** — [De quais bonecos sai o fantasma — o papel-cebola numa cena cheia](#129-de-quais-bonecos-sai-o-fantasma--o-papel-cebola-numa-cena-cheia)
+- **#130** — [Apontar a câmera de cena — girar sem sair do lugar](#130-apontar-a-câmera-de-cena--girar-sem-sair-do-lugar)
+- **#131** — [Duas marcas, duas cores — o playhead em azul](#131-duas-marcas-duas-cores--o-playhead-em-azul)
+- **#132** — [O `ref` que se reexecutava — o laço de re-render por trás do estouro de memória](#132-o-ref-que-se-reexecutava--o-laço-de-re-render-por-trás-do-estouro-de-memória)
+- **#133** — [Procurar o quadro e parar nele — as setas de quadro passam a editar](#133-procurar-o-quadro-e-parar-nele--as-setas-de-quadro-passam-a-editar)
+- **#134** — [Enumerar controles não fecha um buraco — a regra única da pré-visualização](#134-enumerar-controles-não-fecha-um-buraco--a-regra-única-da-pré-visualização)
+- **#135** — [O nome do arquivo diz quando — carimbo de data e hora na exportação](#135-o-nome-do-arquivo-diz-quando--carimbo-de-data-e-hora-na-exportação)
+- **#136** — [O oitavo botão do card — a cópia de câmera passa a confirmar](#136-o-oitavo-botão-do-card--a-cópia-de-câmera-passa-a-confirmar)
+- **#137** — [Três pedidos no card do keyframe — confirmar, estimar e avisar](#137-três-pedidos-no-card-do-keyframe--confirmar-estimar-e-avisar)
+- **#137.1** — [O destaque que não apagava, e a pose média com elenco](#1371-o-destaque-que-não-apagava-e-a-pose-média-com-elenco)
+- **#137.2** — [Copiar do vizinho leva a bancada junto — e mata metade do destaque](#1372-copiar-do-vizinho-leva-a-bancada-junto--e-mata-metade-do-destaque)
+- **#138** — [Quem manda no nome do grupo é o vizinho](#138-quem-manda-no-nome-do-grupo-é-o-vizinho)
+- **#138.1** — [O "Destravar todas" que só existia quando não fazia falta](#1381-o-destravar-todas-que-só-existia-quando-não-fazia-falta)
+- **#138.2** — [As travas sobem para junto do gizmo](#1382-as-travas-sobem-para-junto-do-gizmo)
 
 ---
 
@@ -3202,6 +3226,22 @@ O modelo de dados não mudou: o par `(onionSkin, onionSkinMode)` do `animationSt
 
 **Ressalva de validação:** a coleta com câmera de verdade — foco, moiré de tela, cadência do ciclo (600 ms por quadro contra varredura de 250 ms) — é conferência visual com dois aparelhos; protocolo, remontagem, corrupção, geração dos quadros e os dois modais estão cobertos por unidade. As dependências novas (`qrcode`, `jsqr`) são empacotadas no bundle — o zero-rede proíbe download em runtime, não biblioteca instalada.
 
+## 101.1. O QR maior — o quadro é que manda na largura do diálogo
+
+Pedido do usuário: aumentar o QR code da remessa da sessão para o celular.
+
+O quadro estava preso em `min(64vmin, 20rem)`, dentro de um modal de 24rem — mais estreito que os 26rem do modal comum. No desktop, o teto que pegava era sempre o fixo: 20rem, uns 320 px, dos quais o miolo branco come 1 rem de zona de sossego. Funcionava, mas obrigava a chegar perto com a câmera, e a remessa não é um QR só: são vários quadros em ciclo de 600 ms, e o que se perde em cada engate se paga em voltas inteiras do ciclo.
+
+Agora o quadro tem **três** tetos, cada um por um motivo diferente, e o diálogo cresceu para 41rem para caber o maior deles — a caixa existe para caber o QR, não o contrário:
+
+- **`80vmin`** — a tela estreita. O modal de envio mora no painel de Cenas, do desktop, mas o desktop também abre no celular, e ali quem manda é a menor dimensão. É o mais apertado dos três porque o `<dialog>` já vem com margem própria do navegador: passar de 80vmin faz o quadro esbarrar nela em vez de crescer.
+- **`66vh`** — a altura do diálogo INTEIRO. Barra de rolagem aqui seria um defeito silencioso: o contador de quadros e o botão de fechar sairiam da vista, e ninguém rola uma tela que está fotografando. Os 66vh deixam folga para o título, a dica, o contador e o botão numa tela de 768 px de altura, que é o pior caso realista.
+- **`38rem`** — o limite fixo. Num monitor grande o QR já engata de sobra; passar disso é ocupar tela à toa.
+
+Junto veio uma segunda quebra do padrão, além da largura: o `max-height` da caixa sobe de **80vh para 92vh**. O teto comum existe para uma caixa de diálogo não parecer tela cheia — mas esta caixa não é para ler, é para **apontar a câmera**, e quanto mais viewport ela tomar, melhor cumpre o papel. Os 92vh só guardam a borda, para continuar lendo como caixa e não como página.
+
+O efeito: no desktop o quadro sai dos ~320 px (20rem) para ~600 px — o teto que pega agora é o fixo de 38rem, ou os 66vh numa tela de 900 px de altura. Num celular retrato de 390 px, o `vmin` sobe de 64 para 80 e leva junto uns 25%. Nada muda no conteúdo do código: os quadros continuam nascendo como SVG (`qrcode.toString`), que escala sem perder nitidez — foi justamente para isto que o SVG foi escolhido no #101, e é o que permite a coisa toda ser CSS.
+
 ## 102. O app muda de nome: Virtual Mockup vira WebPoser, com migração das chaves
 
 **Contexto.** O levantamento de publicação (PLANO.md > "Publicação e monetização", 2026-08-02) apontou "Virtual Mockup" como nome genérico — difícil de marcar, difícil de buscar — e recomendou que um rename viesse ANTES do primeiro endereço público, porque a PWA instalada e o `localStorage` casam com a origem. O usuário decidiu no mesmo dia: o app passa a chamar **WebPoser** (identificadores `webposer`), mantendo o diretório de trabalho local como está.
@@ -3492,3 +3532,506 @@ Duas escolhas do usuário fecharam o desenho. A correção age por **botão pró
 Fecha o ciclo um **aviso** na inferência: quando a linha marcada discorda da raiz em 5° ou mais, a lista de avisos diz que há um botão para acertar aquilo antes de inferir. É o que faz a conferência ser lembrada na hora certa, em vez de ficar num botão que ninguém sabe para que serve.
 
 O teste de curvatura é de ida-e-volta, como o resto do módulo: uma pose em C (coluna +20°, peito −12°) marcada e reinferida. Sem a marca, os dois saem iguais e pequenos — a reta. Com ela, a coluna volta exata e o peito vai para o lado oposto. O peito não volta exato, e por um motivo que já existia: o prumo do frame do tronco é quadris→pescoço, um composto de três trechos que não é exatamente a orientação do peito — um viés de uns 3°, herdado da repartição meio a meio e deixado como estava, porque corrigi-lo exigiria medir um trecho de 0,08 m entre duas marcas vizinhas, ruído puro.
+
+## 120. A suíte em dois projetos — e a premissa do item 23 estava errada
+
+O item 23 do `PLANO.md` pedia separar "os testes de render 3D, os mais lentos, por montarem o `@react-three/test-renderer`". Antes de escrever qualquer coisa, medi. **Os testes de 3D não são os lentos.**
+
+| arquivo | tempo | tipo |
+|---|---|---|
+| `AnimationPanel.test.tsx` | 75 s | painel (DOM) |
+| `PropertiesPanel.test.tsx` | 63 s | painel (DOM) |
+| `CameraPanel.test.tsx` | 31 s | painel (DOM) |
+| `Figure.test.tsx` | 9,8 s | **3D** |
+| `OnionSkin.test.tsx` | 5,1 s | **3D** |
+
+O 3D mais caro custa um oitavo do painel mais caro. Quem come o relógio são os arquivos que remontam a UI inteira a cada interação — exatamente o que o comentário do `testTimeout` no `vite.config.ts` já dizia desde a fase da câmera, e que ninguém tinha cruzado com o texto do item.
+
+A alavanca real apareceu na mesma medição: **89 dos 116 arquivos eram lógica pura** e mesmo assim pagavam `environment: 'jsdom'`, porque a configuração era global. Montar um jsdom custa uns **6 segundos por ARQUIVO**, antes de o primeiro teste rodar. Três em cada quatro arquivos da suíte pagavam esse pedágio para nada.
+
+O corte, então, não é "3D × resto": é **puro × navegador**. Dois projetos do vitest 4 (`test.projects`):
+
+- **`unidade`** — `environment: 'node'`, todos os `*.test.ts`. 82 arquivos, ~2.140 testes, **~40 s**.
+- **`interface`** — `environment: 'jsdom'`, todos os `*.test.tsx` (painéis e 3D) mais uma lista nominal de oito `.test.ts` que mexem em `localStorage` ou `document` apesar de não montarem UI.
+
+A regra é a **extensão**, e a lista nominal é a exceção declarada — não uma classificação a manter à mão a cada arquivo novo. Teste novo de lógica nasce `.ts` e cai no projeto rápido sem ninguém fazer nada; teste que monte componente nasce `.tsx` e cai no outro.
+
+O `setupFiles` teve de virar dois: o reset de limites articulares (#29) é estado global do `skeleton.ts` e vale para os dois projetos (`setup-comum.ts`), enquanto os matchers do jest-dom e o `IS_REACT_ACT_ENVIRONMENT` só fazem sentido com jsdom (`setup.ts`, que carrega o comum).
+
+O `testTimeout` de 20 s ficou nos dois. Parecia coisa só dos painéis, mas o projeto puro tem casos legitimamente pesados — os 200 sorteios do `randomPose` e a conferência de todos os trechos prontos passam dos 5 s padrão por disputa de CPU. Descobriu-se do jeito honesto: rodando sem eles e vendo estourar.
+
+Junto vieram dois scripts, e com eles o `npm test` que o `CLAUDE.md` registrava como inexistente: `npm test` roda os dois projetos, `npm run test:rapido` roda só o `unidade`. O ganho de parede da suíte inteira foi de ~222 s para ~141 s; o do ciclo de desenvolvimento de lógica, de 222 s para 40 s — que é o número que importa, porque é o que se roda dezenas de vezes por sessão.
+
+## 121. A luz da cena é conteúdo de cena, não preferência de tela
+
+O item 16 pedia direção e intensidade de luz controláveis. A pergunta que precedia o código era outra: **onde mora esse estado?**
+
+Havia dois regimes prontos e incompatíveis. O `uiStore` guarda apoio de tela — régua, silhueta, máscara de enquadramento, casca do boneco —, fora do undo, fora do arquivo, gravado por aparelho no `localStorage`. O `environment` do `figuresStore` guarda fundo e grade — dentro do undo, dentro do arquivo da cena.
+
+Decisão do usuário: **conteúdo de cena**. O argumento que pesou é o do próprio item: sombra é o que comunica volume num keyframe de referência, e de onde ela cai é decisão de desenho tão relevante quanto o ângulo de câmera — que já viaja no arquivo. Uma cena reaberta amanhã com a luz de fábrica deixaria de reproduzir o keyframe de ontem. O preço é que a luz entra no undo, o que exigiu os lotes de gesto do #118 nos três sliders.
+
+**Ângulos, nunca coordenadas.** O controle é azimute e elevação em graus, com a **distância fixa** em 8 m. Girar a luz em volta do assunto é o gesto real de quem ilumina; três campos X/Y/Z obrigariam a pensar em vetores e — pior — permitiriam aproximar a luz sem querer, mudando o brilho junto com a direção. Um controle que mente sobre o que faz é pior que um controle a menos.
+
+Três detalhes que só apareceram com a luz girando:
+
+- **O padrão reproduz a luz fixa de antes** (`[4, 6, 3]`, intensidade 1,2 → azimute 53°, elevação 50°). Não é elegância: é o que faz toda cena salva antes disto abrir com a mesma sombra. A persistência é aditiva, então o arquivo antigo não tem os três campos e cai exatamente nesse padrão — `SCENE_EXTRAS_VERSION` não subiu.
+- **A elevação mínima não é zero, é 15°.** A câmera de sombra do three tem frustum padrão de ±5 m; a sombra de um boneco de 1,70 m a 15° de elevação já mede 6,3 m, e mais rasante que isso ela sai cortada ao meio — pior de olhar que uma sombra curta. O frustum foi para ±8 m para cobrir esse mínimo, e ficou nisso: alargar mais espalharia os mesmos 1024 px de mapa por uma área maior, e sombra borrada num app de referência de desenho é troca ruim.
+- **O módulo de poses não seguiu.** Ele tem `<Canvas>` e luzes próprias, e — o que decide — **não tem sombras** (`shadows` desligado). O controle que existe para escolher a sombra não tem o que fazer numa casca que não a projeta.
+
+## 122. As linhas de gesto — e a armadilha de caixa do Windows
+
+O item 9 pedia a linha de ação (cabeça → pelve → pé de apoio) e as linhas de ombro e quadril. É vocabulário direto de quem desenha figura humana: a primeira coisa que se traça numa figura é a linha de ação, e o par de transversais é o que se lê para achar o contraposto.
+
+Três decisões de desenho, e uma armadilha.
+
+**O pé de apoio é o mais baixo.** Precisa de um critério, porque a linha de ação termina no pé que sustenta o peso, não num pé qualquer. "O mais próximo do centro dos quadris em XZ" erra em poses de passada; a altura acerta sempre, porque o pé que sustenta é o que está no chão. Empate (pose simétrica) dá a mesma linha dos dois lados.
+
+**As transversais são esticadas ao mesmo vão**, 22% da altura do boneco. As juntas dos quadris distam só 18 cm num boneco de 1,70 m, contra 34 cm das dos ombros — do tamanho real, a linha do quadril apareceria como um toco ao lado da outra, e comparar as duas inclinações é justamente o ponto. Estica-se cada uma em torno do próprio meio, então a inclinação medida não muda.
+
+**Tubos, não linhas.** `lineBasicMaterial` ignora espessura no WebGL: sai sempre com 1 px, e uma linha de ação de um pixel some por cima do boneco. É o mesmo motivo pelo qual a régua vertical é feita de cilindros. E `depthTest={false}`, também como a régua — a linha de ação atravessa o tronco por definição; enterrada no volume não serviria para nada.
+
+Na exportação, decisão do usuário: entram em `OVERLAY_NAMES`, o que as faz sumir **sempre** no MP4 e nas miniaturas e obedecer, no PNG, à chave "ocultar grade/gizmos" que já existe no painel de Instantâneos. Quem quiser a folha impressa **com** a linha de ação desliga a chave; quem quiser a figura limpa não mexe em nada. O caminho do meio existia de graça porque a regra de captura já é uma só.
+
+**A armadilha:** o módulo puro chamava-se `gestureLines.ts` e o componente, `GestureLines.tsx`. No Windows o sistema de arquivos é **insensível a caixa**, e a resolução de módulos do Vite tenta `.ts` antes de `.tsx` — então `import { GestureLines } from './GestureLines'` resolvia para o **módulo puro**, que não exporta componente nenhum. O sintoma foi um "Element type is invalid: got undefined" vindo de dentro do reconciliador do react-three-fiber, que não aponta para nada parecido com a causa. Pior: no Linux do GitHub Actions isso **funcionaria**, então a diferença de plataforma poderia ter passado despercebida na direção contrária. O componente virou `GestureLinesOverlay.tsx`, no par que o projeto já usava sem saber que era regra — `frameMask.ts` / `FrameMaskOverlay.tsx`, `depthMap.ts` / `DepthPreview.tsx`.
+
+## 123. "Olhar para" — a repartição segue as amplitudes, não é meio a meio
+
+O item 32 chamava isto de "o gesto mais repetido ao montar cena com dois bonecos", e até aqui ele só existia como dois pares de sliders ajustados por tentativa — o ângulo certo depende de onde o outro boneco está, coisa que não se estima a olho.
+
+O solver reaproveita inteiro o miolo da inferência de pose (`poseSolver.ts`): monta um `Solve` com o quaternion de mundo do `upperChest` vindo da FK atual e usa `commitQuaternion`, que grampeia pelos limites e propaga o mundo — de modo que a **cabeça resolve contra o que sobrou depois do grampo do pescoço** e compensa o que ele não alcançou. Nada acima do pescoço é tocado: quem posou o corpo não quer que mirar o olhar o desmanche.
+
+O que não era óbvio foi **como repartir o giro**. Meio a meio, o idioma do `solveTorso`, parecia o caminho — e o teste de ida-e-volta reprovou: mirando num alvo a uns 72° de guinada, o olhar errava por 5,8°. A causa é que as duas juntas não têm a mesma faixa: o pescoço gira ±60° em Y e a cabeça só ±30°, e é assim em todos os eixos — o pescoço tem cerca do dobro da amplitude. Dividido ao meio, a cabeça satura primeiro e os graus que faltam ficam faltando. **Cada junta leva a fração da própria faixa** (2/3 e 1/3), e as duas chegam juntas ao limite.
+
+Passando da soma das duas, o resultado satura: o boneco vira o quanto pode, e o olhar aponta na direção certa até onde o pescoço permite. É o comportamento honesto — o contrário seria torcer o pescoço para além do humano só para bater no alvo.
+
+Três escolhas menores: o alvo é a **câmera de cena** (a que vai tirar a foto) e não a órbita do viewport; é **ação única**, não modo ao vivo — seguir a câmera continuamente empilharia um passo de undo por quadro de órbita e brigaria com a ideia de que a colocação é do usuário; e o alvo por **ponto digitado** ficou de fora, porque exigiria saber uma coordenada que a UI não mostra em lugar nenhum.
+
+O controle aparece nos **dois ramos** do painel de Propriedades, como o "assentar no chão" e pelo mesmo motivo: é ação do boneco, e quem está posando um cotovelo não deveria ter de voltar à raiz só para virar a cabeça. Fieldset simples, e não seção recolhível — uma seção nasce recolhida (#83), e cobrar um clique a mais no gesto mais repetido do app seria o oposto do que o item pede.
+
+## 124. Paridade entre as cascas — o que cada uma aprendeu com a outra
+
+O módulo de poses (item 44) nasceu depois da bancada e, por ser desenhado para o dedo, resolveu de um jeito melhor coisas que na bancada tinham ficado como estavam. O usuário pediu quatro delas de volta — e uma de lá para cá. Não é refatoração: é reconhecer que a casca nova virou o laboratório de UX do app.
+
+**Ajuste fino por eixo, [−5°, −1°, ⟲, +1°, +5°] (itens 51 e 61).** Vieram para os sliders da raiz **e** das juntas do painel de Propriedades. O argumento que os criou — "dedo em slider é impreciso" — vale igual com o mouse no último grau: um slider de 360° numa coluna de 260 px tem menos de um pixel por grau, e acertar 12° exigia digitar em lugar nenhum, porque a rotação não tem campo numérico. O grampeamento é o do próprio slider (`min`/`max`), então o ajuste fino nunca sai da faixa que o arrasto respeita. O ⟲ usa a **mesma referência do reset da junta** — a pose "Em pé", não zero cru (DECISOES.md #25) — e zero na raiz; se usasse outra, a mesma tecla daria resultados diferentes conforme o botão apertado. Desabilita junto com o slider: junta travada, congelada por âncora e eixo travado da raiz (item 64) — a UI conta a mesma história que o store.
+
+**Enquadrar boneco.** O comando já existia (`cameraStore.frameFigure`, tecla `F`) e só o teclado o alcançava; o módulo tem o botão desde o item 49. Foi para a Toolbar, e não para o painel de Câmera: aquele painel comanda a **câmera de cena**, e a única seção dele que mexe na bancada precisou dizer isso no título para não ser confundida (as vistas ortográficas). Um botão a mais lá dentro seria o segundo caso a exigir explicação, e ainda por cima escondido — a seção nasce recolhida (#83).
+
+**Isolar seleção.** No módulo, só o boneco em edição responde ao toque — regra fixa, porque numa tela onde o alvo é o dedo ninguém quer editar quem estava passando na frente. Na bancada isso virou **chave**, não regra: aqui o mouse acerta, e trocar de boneco clicando nele é o gesto normal de quem monta cena. Com a chave ligada, os figurantes continuam **visíveis** (é o que se pediu: "não selecionável", não "escondido") e o clique os atravessa — o `SceneFigures` simplesmente não passa `onSelectJoint` a eles, e sem tratador o raio do react-three-fiber não os intercepta. Um caso de borda mereceu módulo próprio (`figureSelection.ts`) e teste: **sem ninguém selecionado a chave não isola nada**, senão o viewport ficaria morto ao clique e escolher um boneco só pela lista pareceria defeito. É estado de ferramenta, no regime da régua: fora do undo, fora do arquivo, persistido em `uiPreferences`.
+
+**"Boneco inteiro", na área de zerar por grupo.** A referência da pose é a mesma dos botões vizinhos — "Em pé" —, e não a T-pose com que um boneco nasce: zerar tudo tem de dar exatamente o mesmo que apertar os seis grupos em sequência, ou os dois caminhos passam a discordar. Além da pose, ele zera a rotação de colocação e leva o boneco à **origem**, que foi a escolha do usuário entre as três oferecidas (só a pose / pose + rotação / tudo, inclusive o lugar). Vale registrar o preço, aceito ao decidir: com vários bonecos, zerar dois deles os empilha no (0,0,0) — quem zera está desmontando a cena de propósito, e o undo é um passo só. Trava, cadeado de eixo da raiz e âncora valem, como em tudo o mais (#42, item 62); o botão só aparece desabilitado quando **nada** sobra a fazer — todas as juntas presas *e* a colocação ancorada. Com as juntas travadas mas a colocação livre ele ainda zera rotação e lugar, e apagá-lo ali seria mentir.
+
+**E, no sentido inverso, "Apoiar no chão" foi para o módulo** (item 33), na aba **Boneco** e não na aba Junta: no desktop ele aparece nos dois ramos do painel porque lá as duas vistas são exclusivas, mas no módulo as abas são o índice do que se está editando, e apoiar é propriedade do boneco inteiro — vizinho da altura e da pose de partida. O rótulo é o mesmo do desktop ("Apoiar no chão"), de propósito: duas palavras diferentes para a mesma ação em duas cascas do mesmo app é dívida de vocabulário.
+
+## 125. O `fieldset` não encolhe sozinho — a rolagem horizontal do grupo de rotação
+
+A entrega anterior (#124) fechou com uma pendência de conferência visual: "a linha de ajuste fino não espremer a coluna do painel em tela estreita". O usuário conferiu, e o defeito estava lá — só que **não era** o ajuste fino, e não dependia de tela estreita: os painéis de Propriedades e de Câmera ganhavam **barra de rolagem horizontal** por causa do grupo "Rotação (°)".
+
+A causa não se vê lendo o CSS do projeto, porque ela não está nele. Todo `<fieldset>` nasce, por folha do navegador, com **`min-inline-size: min-content`** — ele se recusa a encolher abaixo do conteúdo mínimo, comportamento que nenhum outro elemento tem. E o mínimo da linha `.properties-panel__axis-row` é dominado pela largura **intrínseca** do `<input type="range">`, que no Chrome é de 129 px fixos.
+
+O detalhe cruel é que a linha **já tinha** `min-width: 0` no slider desde sempre, e ele não ajuda aqui: `min-width` permite ao item flex encolher **depois** que a largura do contêiner está resolvida, mas não participa do cálculo intrínseco que **define** essa largura. Quem lê o arquivo vê a precaução tomada e conclui, errado, que o caso está coberto.
+
+Medido no navegador, com os painéis abertos e um boneco selecionado:
+
+| painel | largura útil | grupo "Rotação (°)" |
+|---|---|---|
+| Propriedades | 235 px | **256,4 px** (rolagem de 21 px) |
+| Câmera | 215 px | **224,4 px** (rolagem de 9 px) |
+
+A conta bate item a item na linha da raiz: marca do eixo (1,6 rem) + slider (129) + valor (3 rem) + cadeado (1,6 rem) + três vãos + o padding do próprio fieldset. E a rolagem aparece porque `.panel` tem `overflow-y: auto` — o que faz o `overflow-x` deixar de ser `visible` e virar `auto`, a mesma armadilha já anotada na régua da linha do tempo.
+
+**A correção é uma linha em cada painel: `min-inline-size: 0`.** Foi a opção escolhida entre quatro, com os números na mesa — enxugar as larguras fixas, pôr o slider em linha própria e alargar os painéis eram as outras. Nenhuma mudança de arranjo: o fieldset passa a ocupar a coluna, o slider encolhe até o que sobra (123 px em Propriedades, 120 px em Câmera; 108 e 105 quando a barra de rolagem vertical está desenhada) e a rolagem horizontal some dos dois.
+
+**Sobre testar isto.** jsdom não calcula layout — montar o componente não pega nada disso, e o Playwright do item 57 é smoke do módulo de poses, à parte da suíte. O que dá para travar é a **regra na folha de estilo**: `panelFieldset.test.ts` lê o `index.css` e cobra o `min-inline-size: 0` nos dois seletores. É um teste de fonte, não de comportamento, e assumidamente mais fraco — mas a regressão que ele impede é justamente alguém reescrever o bloco do fieldset sem saber por que aquela linha estava ali, e o comentário no CSS aponta de volta para cá. Sendo `.ts`, cai sozinho no projeto rápido (#120).
+
+## 126. Os 20 px que faltavam ao slider — e o Playwright como lugar de testar largura
+
+Corrigida a rolagem horizontal (#125), sobrou o que a rolagem escondia: numa coluna de 213,8 px úteis, o slider de rotação media **107,6**. Metade da linha ia para o resto — e o usuário viu na tela o sintoma mais visível disso, um vazio entre o fim do slider e o número.
+
+Medido item a item, o resto era: a letra do eixo (9,4), três vãos de 6,4, a caixa do valor (48), o cadeado (25,6) e mais 4 px de uma margem que ninguém tinha escrito.
+
+**A caixa do valor era o maior desperdício, e o mais invisível.** Reservava 3 rem — 48 px — para um texto que mede **33**. Os 15 px de sobra apareciam como vazio porque o número é alinhado à direita: com "0°" na tela, quase toda a caixa fica em branco, exatamente entre o slider e o número. O alinhamento à direita **fica**, e foi escolha do usuário entre as duas: os três eixos formam uma coluna encostada no cadeado, e um número que muda de lugar conforme o valor é pior de ler do que um vazio.
+
+O que mudou foi a medida: **`width: 5ch`** em vez de um número em rem. O `ch` é o avanço do "0" na fonte do próprio elemento, e numa fonte mono todo caractere avança igual — cinco deles são exatamente "-180°", o maior valor possível. A conta se refaz sozinha onde a `--mono` cair em outra fonte: Consolas avança 0,55 em (33 px), a de macOS e a de Linux avançam 0,60 (36 px). Qualquer número fixo em rem erraria numa das duas direções — apertado demais lá, folgado demais aqui. Foi o próprio erro de medição que apontou isto: a primeira medida do texto saiu 38,3 px porque o medidor copiava o estilo por `cssText`; medindo com um **clone do elemento**, saiu 33.
+
+**Os outros 5 px vieram de uma margem que não está no projeto.** O Chrome põe `margin: 2px` em todo `<input type=range>`, e os 4 px horizontais disso são 4 px a menos de curso para o polegar. O vão da linha já separa o slider dos vizinhos, então a margem só cobrava duas vezes pela mesma coisa. Mais os vãos de 0,4 para 0,3 rem e o cadeado de 1,6 para 1,4 rem — este por ser trava que se põe e se esquece, diferente do botão de eixo, que se aperta a toda hora para escolher o eixo das setas e continua em 1,6.
+
+Somando: **slider de 107,6 para 134,6 px**, de 50% para 63% da coluna.
+
+**A linha [−5°, −1°, ⟲, +1°, +5°] tinha uma `margin-left: 2rem`** para começar junto com o slider, saltando o quadradinho do eixo. O comentário dizia isso, e estava desatualizado: na raiz o eixo não é quadradinho, é a letra solta de 9,4 px — o alinhamento que a margem buscava já não existia, e ela só encolhia cinco botões que o ponteiro tem de acertar. De ponta a ponta, os botões passam de 33,8 para **40,2 px**.
+
+**E o lugar de testar isto é o Playwright.** A decisão #125 fechou com um teste que lê o `index.css` e confere a regra escrita lá — honesto sobre a própria fraqueza, porque jsdom não calcula largura nenhuma. Aqui a conta é toda de layout, e um teste de fonte não teria como dizer se o slider ficou maior. O `e2e/` deixa de ser só o smoke do módulo de poses (item 57) e ganha `paineis-largura.spec.ts`, com duas conferências que só existem em navegador: **nenhum painel rola na horizontal** — o guarda da #125, e da classe inteira de defeito, não de uma linha de CSS — e **o grupo de rotação aproveita a coluna** (o valor reserva "-180°" e nada além, o cadeado encosta na borda, os botões finos vão de ponta a ponta, o slider fica com mais da metade). É o primeiro teste de layout do projeto; continua fora da suíte do vitest, por `npm run test:e2e`, porque sobe dev server e navegador.
+
+## 127. A guarda temporária da bancada — o que o "Ir para" atropelava
+
+Pedido do usuário em 2026-08-06: clicar em "Ir para" num keyframe devia guardar em algum lugar temporário a cena que estava na tela, recuperável por um botão.
+
+O incômodo é real e antigo — está escrito na própria decisão que criou o destaque do keyframe visitado (#73/item 40), como "limite aceito": *"um Ctrl+Z depois do 'Ir para' devolve a cena anterior mas deixa o destaque parado"*. O Ctrl+Z sempre funcionou; o problema é que ele não está na cabeça de quem acabou de posar cinco bonecos e foi só conferir como estava o keyframe 7. O gesto "vou ali e volto" não tem nada na tela que o prometa, e a cena de trabalho é o único conteúdo do app que não tem cópia em lugar nenhum.
+
+**Quatro decisões foram levadas ao usuário antes de escrever código**, e ele escolheu as quatro recomendações:
+
+1. **A guarda leva os bonecos E a câmera de cena.** É exatamente o que o "Ir para" sobrescreve — `loadFiguresFromKeyframe` mais `setSceneCamera`. Guardar só metade devolveria uma bancada que nunca existiu: a pose de antes com o enquadramento do keyframe. Objetos de cena ficaram de fora porque o "Ir para" não os toca — desde o item 42 eles são cenário estático, fora do retrato do keyframe; guardá-los seria guardar algo que ninguém mexeu.
+2. **Um slot só, e recuperar TROCA.** Recuperar devolve o retrato guardado e guarda no lugar o que estava na tela, o que transforma o botão num alternador: um clique volta para a cena que se estava montando, outro clique volta para o keyframe. Uma pilha daria mais poder e cobraria UI (contador, o que fazer quando enche) e memória — 5 bonecos × 32 juntas por entrada — por um gesto que na prática é de ida e volta.
+3. **Não sobrevive a recarregar a página.** Estado de ferramenta, no regime do papel-cebola, do `visitedKeyframeId` e das travas: fora do undo e fora do arquivo. Persistir seria a primeira exceção a essa invariante, e por uma rede de segurança que dura segundos.
+4. **O "Ir para" da casca de toque guarda também.** O módulo de poses tem sessão própria (#92), mas a bancada que ele carrega é a mesma — e lá o Ctrl+Z não está ao alcance do polegar. A guarda é compartilhada pelas duas cascas, com um botão em cada.
+
+**E uma quinta, dita pelo usuário no meio da execução: o keyframe escolhido continua destacado depois de recuperar** — no painel e na régua do rodapé. Isso contraria a leitura literal do item 40, onde o destaque significa "a bancada está mostrando este keyframe": recuperada a guarda, ela não está mais. Mas com a troca o destaque ganha um sentido melhor, e o usuário viu isso antes: ele diz **contra qual keyframe o botão alterna**. Largá-lo tiraria da tela justamente a informação de para onde o segundo clique leva — e ainda daria a marca de volta na ida seguinte, piscando a cada alternância. Na prática isso simplificou o código: `restoreStash` não toca no `visitedKeyframeId` nem no `currentKeyframeId` do módulo, em vez de ter de trocá-los junto com a cena.
+
+**A repartição segue o que o projeto já faz.** `store/sceneStashStore.ts` é a caixa — um slot, `stashScene`/`swapScene`/`clearStash`, sem saber quem a enche; `animation/sceneStashActions.ts` é quem lê a bancada e a aplica de volta, no papel que o `figure/lookAtActions.ts` faz para o solver de mirada e o `store/selection.ts` para a seleção. A troca vazia devolve `null` e não guarda nada: sem retrato a devolver não há troca, e a bancada não pode virar coisa nenhuma.
+
+**O "Ir para" do painel passou a ser `goToKeyframeWithStash`**, que guarda e só então despacha o comando do `AnimationPlayer`. Guardar dentro do player seria o lugar "natural" — é lá que o retrato do keyframe é aplicado —, mas o player não tem teste automatizado (WebGL não existe em jsdom) e o caminho inteiro ficaria descoberto. Com os dois passos numa função só, o painel é testável de ponta a ponta e não sobra caminho que sobrescreva a cena sem guardá-la antes: `requestGoToKeyframe` deixou de ser chamado direto por qualquer componente.
+
+**Um passo de undo, como o próprio "Ir para".** A recuperação escreve em `figures` e em `sceneCamera`, e a câmera de cena está fora do `undoPartialize` — então o Ctrl+Z desfaz a recuperação inteira de uma vez. A guarda em si nunca entra no histórico.
+
+**Limite aceito e anotado:** a guarda não é esvaziada ao carregar outra cena, outro snapshot ou uma sessão da outra casca. O retrato guardado continua sendo bonecos válidos e recuperá-lo é um passo de undo — mas o botão fica habilitado com uma cena que veio de outro contexto. Esvaziá-la em cada um desses caminhos custaria mais linhas do que o engano vale, e ela morre sozinha ao recarregar a página.
+
+### A proteção que veio depois: guardar só o que mudou
+
+Na mesma sessão, com a funcionalidade já rodando, o usuário achou o buraco: *"se eu clicar em vários 'Ir para' ou avançar pelos keyframes, não deve gravar pois isso sobrescreve a cena original que deveria ser guardada"*. Está certo — e o defeito é da regra de um slot só, não da implementação. Percorrer o keyframe 1, o 2 e o 3 fazia três guardas: a primeira com a cena de trabalho (a que interessa) e as outras duas com retratos de keyframe, que já estão gravados no `animations.json` e não precisam de guarda nenhuma. Na terceira parada, a cena original tinha sumido.
+
+**A regra passa a ser: só guarda a bancada se ela mudou desde o último "Ir para".** E "mudou" é a **igualdade referencial do array de bonecos** — a mesma premissa que sustenta o `undoEquality` desde a fase 3: toda ação do store faz atualização imutável, então qualquer edição (junta, colocação, altura, boneco a mais ou a menos) troca o array. Comparar valor a valor 5 bonecos × 32 juntas a cada clique seria trabalho por nada.
+
+**A câmera de cena fica fora da conta**, e isso é decisão, não esquecimento. Navegar pela linha do tempo escreve nela sem que a cena tenha mudado: o `seek` do ⏮/⏭ carimba o enquadramento amostrado, e o fim de uma reprodução devolve ao store a última vista. Se a câmera contasse, "avançar pelos keyframes" — o segundo caso da fala do usuário — marcaria a bancada como suja e guardaria de novo, que é exatamente o que ele pediu para não acontecer. O preço aceito: reenquadrar a câmera sobre um retrato de keyframe intocado e ir para outro keyframe perde o enquadramento novo. É pequeno perto do que se ganha, e o ajuste de enquadramento tem caminho próprio ("Regravar", "Aplicar a câmera atual aos keyframes").
+
+**A marca viaja com a guarda.** `StashedScene` ganhou `pristine`, e a razão é um caso que só aparece quando se pensa na troca até o fim: recuperar duas vezes devolve à bancada o retrato do keyframe — intocado, porque ninguém mexeu nele — enquanto a cena original volta para a guarda. Sem carregar a marca junto na troca, o "Ir para" seguinte guardaria esse retrato por cima da cena original, e o usuário perderia o trabalho um passo mais fundo do que na queixa original. Com ela, a bancada volta ao estado em que saiu.
+
+**E a aplicação do "Ir para" saiu do `AnimationPlayer`.** Ela morava lá desde a fase 10, junto dos outros comandos, mas nada nela depende do canvas: câmera de cena, lente, pré-visualização e bonecos são tudo loja. O player não tem teste automatizado (WebGL não existe em jsdom), e a marca de "bancada intocada" — o coração desta proteção — ficaria descoberta justamente no caminho principal. `applyKeyframeToWorkbench` foi para o `sceneStashActions`, com os testes que faltavam; o player ficou com a busca do keyframe e a chamada, que é a cola que ele sempre foi. A casca de toque ganhou o par dela, `goToKeyframeFigures`, sem câmera — o módulo não tem uma para oferecer.
+
+## 128. Três facilidades no card do keyframe — colocação, apagar e duplicar
+
+Pedido do usuário em 2026-08-06, logo depois da guarda temporária (#127). Três coisas pequenas no mesmo lugar — o card de cada keyframe do painel de Animação —, e as três com uma decisão dentro.
+
+### O terceiro par de setas: copiar a colocação no plano
+
+O card já tinha "Câm ↑↓" (segura o enquadramento e deixa a cena andar, #55) e "Pose ↑↓" (o simétrico exato, item 28). Faltava o mais fino dos três: trazer do vizinho **só onde o boneco pisa**.
+
+**Só X e Z** — decisão do usuário entre três alternativas. "Plano" é o plano horizontal, no mesmo vocabulário que o arquivo de pose avulsa já usa desde o #81 ("o boneco é considerado no (0,0) do plano horizontal; o Y é preservado"). Ficam de fora, de propósito:
+
+- **o Y**, que é altura de salto — movimento, não colocação; levá-lo junto faria um boneco no meio de um pulo voltar ao chão do vizinho;
+- **o giro da raiz**, que é para onde o boneco está virado — outra propriedade, que o app trata em separado desde sempre.
+
+O que isso compra é o gesto de **tirar a deriva**: o boneco que escorrega alguns centímetros entre dois keyframes volta a pisar exatamente no mesmo ponto, sem perder a pose que se ajustou nem o enquadramento. Antes, a única saída era regravar o keyframe — e regravar troca pose e câmera junto.
+
+Os bonecos casam por **id**, e quem não tem par no vizinho fica onde está: o vizinho não tem o que dizer sobre um boneco que não estava lá. E se nenhuma colocação difere, **nada é reescrito** — sem esse cuidado o botão empilharia um passo de undo que não muda nada, porque o `undoEquality` é referencial e o `map` criaria um array novo de qualquer jeito.
+
+### Apagar confirma em modal
+
+O "×" era a única ação do card que **joga fora conteúdo gravado** — a pose e a câmera daquele keyframe — sem perguntar nada, num painel em que "Regravar" pede confirmação desde o #69. E ele mora na linha de quatro botões pequenos, encostado no "Duplicar": é o clique que erra.
+
+Vai pelo caminho que o projeto já tem (#100): `ConfirmDialog` em `<dialog>` nativo, renderizado fora da lista, com o número e o instante do keyframe repetidos no corpo — o card que originou o clique sai de vista. Um id em confirmação por vez, como no "Regravar": abrir a de outro card fecha a anterior sozinho.
+
+**Nas duas cascas** (decisão do usuário). Na aba Keyframes do módulo de poses o ✕ é um alvo de dedo entre outros quatro, e lá o Ctrl+Z não está ao alcance do polegar — o argumento vale ainda mais. O `ConfirmDialog` de `src/layout/` já era usado no módulo (a aba Arquivos, #98), então não houve nada a construir.
+
+### Duplicar leva a bancada para a cópia
+
+Duplicar punha a cópia logo depois do original e não mexia em mais nada: os indicadores do painel e da régua continuavam apontando para outro card, ou para nenhum, e a bancada continuava mostrando o que mostrava. Quem duplicava para **ajustar a cópia** — que é o uso principal, "criar o próximo keyframe partindo deste" — tinha de clicar "Ir para" logo em seguida.
+
+Agora duplicar simula esse "Ir para", **na cópia** (decisão do usuário, entre ela e o original). Os retratos são idênticos, então o que muda de fato é qual card fica marcado — e marcar o card novo é o que explica visualmente o que acabou de acontecer, além de deixar o `visitedKeyframeId` e o playhead sobre o keyframe que se vai editar.
+
+**O instante da cópia é lido da lista já atualizada**, não somado à mão. O `set` do zustand é síncrono, então `getState()` logo depois do `duplicateAnimationKeyframe` já tem a lista nova, e `keyframeStartTimesMs` refaz a conta de "duração do trecho que chega" sem que ninguém precise reproduzi-la no painel — inclusive o caso do primeiro keyframe, cuja duração é ignorada até ele deixar de ser o primeiro.
+
+**São dois passos de undo, e é o certo.** Duplicar é edição da linha do tempo; carregar o retrato na bancada é edição da cena. O primeiro Ctrl+Z devolve a bancada, o segundo tira a cópia. Juntá-los num lote (`beginUndoBatch`, #118) seria errado além de inútil: quem aplica o retrato é o `AnimationPlayer`, num efeito posterior, e o lote síncrono não o alcançaria. O invariante do #118 é sobre controle CONTÍNUO — gizmo, slider —, não sobre um clique que faz duas edições distintas.
+
+E, de quebra, a duplicação passou a **guardar a bancada** sem código próprio: ela usa o mesmo `goToKeyframeWithStash` do botão "Ir para", com a proteção de "só guarda o que mudou" (#127) inclusive.
+
+### Quem recebe a cópia — as caixas do keyframe vizinho
+
+Complemento pedido pelo usuário no mesmo dia: "Pose ↑↓" e "Pos ↑↓" copiavam sempre o elenco inteiro. Numa cena de duas ou mais pessoas isso é grosso demais — acertar a deriva de UMA arrastava as outras junto, e a única saída era copiar, desfazer o que não se queria e regravar. Três decisões, todas levadas a ele antes do código:
+
+**O diálogo só aparece com dois bonecos ou mais em cena.** Com um só não há o que escolher, e obrigar a confirmar um modal por cópia seria cobrar um clique para não decidir nada. É a mesma régua do resto do painel: a UI de escolha aparece quando existe escolha. Consequência técnica: `figureIds` é **opcional** nas duas ações do store — sem ele, o comportamento é literalmente o de antes, e nenhum teste existente mudou.
+
+**A lista é o elenco COMUM aos dois keyframes** (`sharedKeyframeFigures`, puro). Um boneco que não está na origem não tem retrato de onde vir; um que não está no destino não tem onde entrar. Marcar qualquer um dos dois seria uma caixa que não faz nada — pior que caixa nenhuma. Os nomes saem do keyframe de **destino**, que é o card que se está editando.
+
+**As caixas nascem todas marcadas e a escolha é lembrada na sessão.** Confirmar sem mexer em nada reproduz exatamente o que o botão fazia antes; desmarcar um figurante vale para as cópias seguintes, que é o gesto de quem está acertando um boneco de cada vez ao longo da linha do tempo. O painel guarda **quem ficou de fora**, e não quem ficou dentro — assim um boneco que entra em cena depois nasce marcado, que é o que "todas marcadas" quer dizer. Estado de ferramenta: fora do undo e do arquivo.
+
+**Uma assimetria que ficou, e é de propósito.** A cópia SEM escolha continua trazendo o retrato inteiro do vizinho, elenco incluído — é o que `copyAnimationKeyframeFigures` sempre fez, e mudar isso alteraria o comportamento de quem nunca vê o diálogo. A cópia COM escolha nunca mexe no elenco: ela troca o retrato de quem foi marcado, e mais nada. As duas só divergem quando os keyframes têm elencos diferentes — e nesse caso o diálogo, que lista só o elenco comum, está justamente dizendo que o resto não é assunto dele.
+
+E a lista vazia é a escolha de **não copiar nada**, não a de copiar tudo: o botão de confirmar desabilita antes disso, mas o store trata o caso, porque um `[]` que virasse "todos" seria a pior surpresa possível numa ação que reescreve pose.
+
+## 129. De quais bonecos sai o fantasma — o papel-cebola numa cena cheia
+
+Pedido do usuário em 2026-08-06: escolher, ao lado das opções anterior/seguinte/ambas, de qual boneco da cena saem os fantasmas.
+
+O papel-cebola (#67, item 31) sempre desenhou o **keyframe inteiro** — todos os bonecos dele. Com uma pessoa em cena isso é exatamente o certo. Com três, cada fantasma vira três corpos translúcidos, e o efeito é o mesmo que a decisão #74 já tinha descrito para os dois lados do tempo: *"uma pose parada no meio do movimento fica cercada de corpo por todos os lados e some no meio deles"*. A saída de lá foi escolher o lado; a de agora é escolher **quem**.
+
+**Caixas, não combo** (decisão do usuário, contra a recomendação, que era um combo "Todos / Boneco 1 / …" por causa do espaço). O combo custaria uma linha e o conjunto de caixas custa uma por boneco — até cinco — logo acima da lista de keyframes, que é o espaço mais disputado do painel. O que as caixas compram é o caso do meio: ver **dois** de três bonecos, que o combo não alcança. Mitigação do custo: o bloco só existe com o papel-cebola **ligado** e com **dois bonecos ou mais**. Numa cena de um boneco — o caso comum — nada muda na tela.
+
+**Guarda quem está de FORA.** `onionSkinHiddenFigureIds`, e não uma lista de marcados, pelo mesmo motivo do diálogo de cópia (#128): um boneco acrescentado depois nunca esteve na lista, então nasce marcado — que é o que "todas marcadas" quer dizer. Uma lista de incluídos faria o boneco novo nascer invisível ao papel-cebola, sem nada na tela explicando por quê.
+
+**A filtragem entrou no módulo puro, não nos componentes.** `onionSkinFrames` ganhou um quarto parâmetro e passou a devolver `figures` já filtrados em cada quadro — antes, os dois desenhistas liam `frame.keyframe.figures` direto. Fazer o filtro em cada componente seria duplicar a regra em dois lugares que ninguém compara (`OnionSkin.tsx` na bancada, `PosesOnionSkin` no módulo de poses), e é exatamente o tipo de regra que se corrige num e se esquece no outro. De quebra, **um quadro que não desenharia ninguém some da lista**: fantasma vazio não é fantasma, e sem isso um `<group>` vazio ficaria sendo montado por nada.
+
+**A escolha não mexe em quem é vizinho de quem.** Modo, papéis e cores seguem intactos: o fantasma quente continua sendo o passado, o frio o futuro, e desmarcar um boneco não muda qual keyframe é o âncora. É a mesma separação de responsabilidades que o modo já tinha — ele escolhe **quais keyframes**, a lista escolhe **quais bonecos**, e as duas coisas se compõem sem se conhecer.
+
+**Vale nas duas cascas, com controle nas duas** (decisão do usuário). O módulo de poses já lia o mesmo `animationStore` para o liga/desliga e para o modo; a escolha de bonecos entra pelo mesmo caminho, e a aba Keyframes ganhou as caixas ao lado das de anterior/posterior. As duas telas contam a mesma história sobre o que o papel-cebola mostra — que era a alternativa a manter dois comportamentos para o mesmo estado.
+
+Estado de FERRAMENTA, como todo o resto do papel-cebola: fora do undo, fora do arquivo, esvaziado ao recarregar.
+
+## 130. Apontar a câmera de cena — girar sem sair do lugar
+
+Pedido do usuário em 2026-08-06: um botão no painel de Câmera para enquadrar automaticamente a **rotação** para apontar para o boneco selecionado, ou para a média da posição de todos os bonecos em cena.
+
+O painel já tinha enquadramento cinematográfico desde a fase 11 — plano, ângulo, altura, orientação, composição —, e ele **recoloca a câmera inteira**: escolher "plano médio, contra-plongée" põe a câmera onde aquele plano exige. É o que se quer quando se está montando o quadro do zero, e é exatamente o que atrapalha quando o ponto de vista já foi escolhido a dedo e o que falta é virar a lente. Era o buraco: dava para girar a câmera de cena pelos três sliders de rotação, mas acertar guinada e inclinação no olho até o boneco cair no meio do quadro é trabalho manual repetido a cada vez que alguém anda pela cena.
+
+**Só gira** (decisão do usuário, entre isso e "gira e aproxima até caber"). A posição fica onde está e o alvo passa a ser o assunto — com isso a distância guardada no estado vira a distância real até ele, que é o número que os planos e o modo visão-câmera leem depois. Enquadrar no sentido pleno já existe duas vezes no app (a tecla `F` na câmera de trabalho, os planos na de cena); um terceiro caminho que move a câmera de cena competiria com os dois.
+
+**Mira a base do tórax** (junta `chest`), e não a cabeça nem a caixa envolvente. A cabeça é o alvo certo para um retrato e o errado para um plano aberto — deixa o corpo inteiro na metade de baixo do quadro; a pelve faz o contrário. O tórax é o centro de massa visível do boneco. A caixa envolvente da pose seria mais fiel (um boneco deitado tem centro bem diferente do de pé) e foi descartada por custo: ela se mede na malha, dentro do canvas, e viraria comando do `CameraRig` — sem teste automatizado, porque é WebGL. Pela junta, a conta é pura: `buildJointFrames` reconstrói o esqueleto fora da árvore React, o mesmo caminho que o "olhar para" (#123) já usa para achar a cabeça de outro boneco.
+
+**A média conta só os bonecos visíveis** (decisão do usuário). Apontar para o meio de um grupo levando em conta quem está oculto puxaria a câmera para um lado sem nada na tela — e a visibilidade é justamente como um figurante entra e sai de cena.
+
+**O topo da tela é preservado, inclusive inclinado.** O ângulo holandês tem controle próprio no painel e é escolha de composição; apontar não é motivo para desfazê-la. A consequência é uma borda que a função declara: com o alvo exatamente sobre o eixo do topo — a câmera a pino sobre o boneco —, direção de visão e topo ficam paralelos e a rolagem resultante seria arbitrária. Nesse caso a vista volta **intacta**, o mesmo objeto, e o `set` do store não muda nada. Melhor não fazer nada do que girar para um lado sorteado.
+
+**Fora do undo**, como todo o resto da câmera de cena (`undoPartialize` não a inclui): é enquadramento, não conteúdo.
+
+**Onde o código mora.** `scene/cameraAim.ts`, puro, com as três funções — o ponto de um boneco, a média dos visíveis e a vista girada — e o painel só grava o resultado. Foi o que permitiu cobrir a regra inteira sem GPU: que a mira acompanha a colocação e a altura do boneco, que o oculto não entra na média, que a posição não se move e que a vista impossível volta intacta.
+
+## 131. Duas marcas, duas cores — o playhead em azul
+
+Pedido do usuário em 2026-08-06: a marca do keyframe que o viewport está mostrando enquanto se navega pela linha do tempo passa a ser **azul**, para se distinguir do keyframe carregado pelo "Ir para".
+
+O card de keyframe carrega duas marcas desde o #75, e elas dizem coisas diferentes: a da **bancada** (item 40) responde "qual keyframe o 'Ir para' carregou na cena editável" — é ela que diz o que "Regravar" vai reescrever —, e a do **playhead** responde "qual keyframe o viewport está mostrando agora". A distinção é a razão de o #73 ter recusado derivar o destaque do instante.
+
+O que faltou lá foi a cor. As duas nasceram em `--text-h`, distinguidas só pela **forma**: contorno no card para a bancada, tarja de 3 px na borda esquerda mais o ▶ no título para o playhead. Isso funciona no caso em que elas caem no mesmo card — logo depois de um "Ir para", que leva o playhead junto — porque ali é uma marca sobre a outra e o que importa é somar. Falha justamente no caso em que a distinção existe para servir: navegando com o ⏮/⏭, as duas se separam, e o que se vê são dois cards marcados na mesma cor, com a diferença inteira apoiada em qual desenho é qual.
+
+**Azul, e não outra cor qualquer:** é a mesma família do fantasma "seguinte" do papel-cebola (`#4a9ee0`), onde já significa "o tempo à frente" — e é o oposto natural do `--text-h`, que no projeto quer dizer "isto está em foco". A variável `--playhead` entra nos dois temas, com o tom escurecido no claro (`#1f76c4`) para manter contraste sobre o fundo branco. Nenhuma outra regra passou a depender dela: a marca da bancada continua em `--text-h`, no painel e na régua do rodapé.
+
+**Sobre testar cor.** jsdom não resolve variável de CSS nenhuma, e o resultado é conferência visual como qualquer outra. O que dá para travar é a **regra na folha de estilo**, e é o que `keyframeMarks.test.ts` faz — mesmo expediente do `panelFieldset.test.ts` (#125) e pela mesma razão: o risco real não é a cor sair errada, é alguém unificar as duas marcas mais adiante sem saber por que elas eram diferentes. O teste cobra a variável nos dois temas, cobra que a marca da bancada NÃO a use, e cobra que no card com as duas cada uma mantenha a sua.
+
+## 132. O `ref` que se reexecutava — o laço de re-render por trás do estouro de memória
+
+Relato do usuário em 2026-08-06: o app estourava a memória, e o gesto que mais provocava era **clicar nas setas de quadro** da régua para andar pela animação.
+
+**O que a suspeita óbvia não era.** Uma cena 3D que come memória cheira a geometria não descartada, e o animador tem candidatos de sobra — a amostra publica bonecos novos a cada seek, o papel-cebola monta e desmonta fantasmas, o mapa de profundidade troca materiais. Nenhum deles era. A medição no navegador (Playwright com o CDP: `Performance.getMetrics`, `Profiler` e `HeapProfiler`) mostrou outra coisa: com o `HeapProfiler.collectGarbage` forçado antes de cada leitura, o heap **não crescia** — nem com o defeito. O que crescia era o TRABALHO. Perfil de CPU: 42% em `jsxDEV`, isto é, a árvore React inteira sendo recriada dezenas de vezes por clique.
+
+**O mecanismo.** O React reexecuta um callback de `ref` sempre que a **identidade da função** muda: chama o anterior com `null` e o novo com o objeto. Havia três setas inline no caminho do `ref` de cada junta — no `map` do `SceneFigures`, no `JointNode` e no grupo externo do `Figure` —, e o `handleJointRef` do `Viewport` era recriado a cada render e fazia `setJointObjects(new Map(previous))` a cada chamada. Fecha o ciclo: um seek re-renderiza o viewport → os `ref` das 32 juntas de cada boneco se desregistram e se registram → 64 `setState` por boneco → o viewport re-renderiza → e de novo. Instrumentado, com **um único boneco e três keyframes**, cada clique na seta ▶ custava **~740 chamadas de `ref` e 17 renders do viewport**, ~1 s de script — o suficiente para a página parar de responder ao Playwright. É a multiplicação por boneco que termina em estouro: a cena de trabalho de verdade tem vários, e o que cada clique aloca de lixo cresce com o produto bonecos × juntas × voltas do laço.
+
+**A correção é o `ref` estável**, nos três lugares: `useCallback` no `JointNode` e no `Figure`, `useCallback` sem dependências no `Viewport` (com o `setJointObjects` saindo fora quando a entrada não mudou) e, no `SceneFigures`, um componente `SceneFigure` por boneco — que existe **só** para ter um `useCallback` próprio, já que hook não se chama dentro de `map`. Um cache de adaptadores em `useMemo` seria menos código e foi recusado pelo lint (`react-hooks/immutability`: a função escreveria no cache durante o render), o que é justo. Depois: **zero** chamadas de `ref` e **zero** renders do viewport por clique.
+
+**Onde o teste ficou, e por que não no Playwright.** A tentação era travar isso como o #126 travou largura — no navegador, medindo. Foi tentado e **descartado**: a métrica disponível de fora (`ScriptDuration` do CDP) inclui o JS que o próprio Playwright roda na página, e recalcular o nome acessível do botão a cada clique custa mais que o defeito; o código são media 18–21 s onde o doente media 19 s. Pior, um `element.click()` sintético dispara um terço dos registros que um clique de mouse dispara, e clicar sem folga faz o clique seguinte interromper a cascata do anterior — três maneiras diferentes de o teste dizer "está bom" com o defeito de volta. Um teste de tempo que não distingue os dois estados é pior que nenhum.
+
+O que se trava, então, é a **invariante**, e ela é determinística: *uma pose nova não pode reexecutar o `ref` de junta nenhuma*. `Figure.test.tsx` e o novo `SceneFigures.test.tsx` contam os registros ao montar, publicam uma pose nova (no segundo, pela pré-visualização do animador — exatamente o que a seta de quadro faz) e exigem que a contagem **não mude**. Sem relógio, sem GPU, sem variação de máquina. O `useCallback` do `Viewport` é o único dos três sem teste próprio: montar o `Viewport` em jsdom é montar um `<Canvas>` inteiro. Ele fica pelo comentário no lugar — e, se voltar a ser instável, os testes dos outros dois caem junto, porque a dependência atravessa os três.
+
+**E um vazamento de verdade, achado no caminho.** As linhas de gesto (item 9) criam três `TubeGeometry` num `useMemo` e nunca as descartavam. Geometria é recurso de GPU: o coletor de lixo não a devolve, e os três tubos são refeitos a cada pose nova — num arrasto de gizmo, dezenas por segundo. Este sim acumulava, invisível a qualquer medição de heap JS. A cura é a mesma que o objeto de cena já usava (`SceneProps.tsx`): um `useEffect` cuja limpeza chama `dispose()`, o que cobre tanto a troca de pose quanto a saída de cena.
+
+## 133. Procurar o quadro e parar nele — as setas de quadro passam a editar
+
+Relato do usuário em 2026-08-06, logo depois do #132: as setas de quadro (◀ ▶ da régua) "habilitam o modo de tocar a animação e travam a edição no quadro desejado".
+
+**O `playing` nunca era ligado** — nada nas setas o liga, e o `requestSeek` até o desliga de propósito. O que "trava" é a **pré-visualização**: navegar publica a amostra do instante em `animationStore.preview`, e o `SceneFigures` desenha ELA no lugar da bancada enquanto ela existir. Quem então mexia numa junta continuava editando a cena de verdade — invisível, atrás do retrato da animação. E a única saída era "Parar", que devolve a régua ao zero: não havia como largar a pré-visualização **ficando no instante**. Do lado de quem usa, isso é indistinguível de "o app entrou num modo e não sai".
+
+Isso é o #52 funcionando como projetado — navegar mostra sem tocar na cena de trabalho, e quem quer editar usa "Ir para" —, e o projeto estava certo enquanto a régua era o único jeito de andar. Com as setas de quadro (item 29) apareceu um gesto que aquela divisão não previa: **parar num quadro específico para trabalhar nele**, que não é keyframe nenhum e portanto não tem "Ir para".
+
+**A regra nova separa PROCURAR de PARAR** (decisão do usuário, entre três opções). A régua e o ⏮/⏭ continuam só mostrando: arrastar é procurar, é contínuo, e escrever a bancada a cada pixel seria absurdo. As **setas de quadro** passam a levar o instante inteiro — pose e câmera — para a bancada. São discretas, uma por clique, e o gesto de quem as usa é justamente "cheguei onde queria".
+
+As três proteções do "Ir para" valem iguais, e são elas que tornam isso seguro: a **guarda** (#127) segura a cena que se estava montando; a marca de "bancada intocada" impede que o quadro seguinte guarde o anterior por cima dela — andar trinta quadros continua com a cena original na guarda, não com o quadro 29; e a escrita fica **fora do undo**.
+
+**Fora do undo, e isso é a parte que exige justificativa.** Navegar não é editar (`PLANO.md` > "Interação de pose", item 5), mas aqui a navegação MEXE na cena — a tentação é registrá-la. O motivo de não registrar é aritmético: as setas são clicadas às dezenas, e cada clique empilharia um passo. Com `UNDO_LIMIT` em 100, meio minuto de navegação empurraria o trabalho de verdade para fora do histórico — o Ctrl+Z passaria a desfazer cliques de seta enquanto a pose que o usuário construiu sumia sem aviso. Um remédio pior que a doença. O `withoutUndo` do `undoBatch.ts` faz a escrita com o rastreio do `zundo` pausado (e respeita um lote já aberto, para não brigar com o #118); quem devolve a cena original continua sendo a guarda, que é o mecanismo desenhado para isso.
+
+**A marca de "está na bancada" (item 40) só acende em cima de keyframe.** Ela é o que o "Regravar" reescreve: acendê-la parada no meio de um trecho faria "Regravar" gravar uma pose interpolada no keyframe, que é a última coisa que alguém quer sem ter pedido. Caindo exatamente no instante de um keyframe ela acende nele — aí a bancada é mesmo o retrato dele —, e no meio do trecho apaga.
+
+**A marca do playhead (#131) passa a seguir o ÂNCORA**, o último keyframe por onde a linha do tempo passou — o segundo pedido do usuário, no mesmo relato. Ela lia `keyframeIndexAtTimeMs`, que só acende o card quando o playhead cai exatamente em cima de um keyframe; andando de quadro em quadro no meio de um trecho, o painel ficava sem marca nenhuma e perdia-se a referência de onde se estava. O âncora é o mesmo conceito que o papel-cebola usa para saber de quem desenhar os vizinhos, e por isso `anchorKeyframeIndex` mudou-se do `onionSkin.ts` para o `animation.ts`: um conceito da linha do tempo importado do módulo do papel-cebola inverteria a dependência. As duas leituras continuam existindo, e continuam sendo coisas diferentes — "em cima de qual keyframe" e "em qual trecho".
+
+**O que ficou de fora, de propósito:** o ⏮/⏭ continua na pré-visualização. Eles param em cima de um keyframe, e para keyframe já existe o "Ir para", que é explícito, guarda a bancada e acende a marca certa. Duplicar esse caminho num botão de navegação só criaria duas maneiras de fazer a mesma coisa com efeitos colaterais diferentes.
+
+**Efeito colateral que vale saber:** a bancada agora muda ao andar de quadro, e o autosave (com o atraso dele) grava o que estiver nela. Quem navegar e fechar a aba reabre no quadro em que parou, não na cena que estava montando — que continua recuperável só enquanto a sessão viver, porque a guarda é estado de ferramenta. É o mesmo que o "Ir para" já fazia desde o #127.
+
+## 134. Enumerar controles não fecha um buraco — a regra única da pré-visualização
+
+O usuário voltou no mesmo dia: "não resolveu — depois de navegar pelas setas, a edição fica travada e as mudanças de pose não aparecem até clicar em Parar".
+
+**Ele estava certo, e o #133 tinha consertado só uma porta de cinco.** Medido no navegador, comparando os pixels do viewport antes e depois de uma edição de pose:
+
+| controle | pré-visualização | a edição aparece? |
+|---|---|---|
+| setas de quadro ◀▶ | não | **sim** |
+| ⏭ próximo keyframe | **sim** | não |
+| arrastar a régua | **sim** | não |
+| pausar no meio | **sim** | não |
+| inserir keyframe aqui | **sim** | não |
+| tocar até o fim | não | sim |
+
+O ⏮/⏭ eu tinha deixado de fora **de propósito**, com o argumento de que "para keyframe já existe o 'Ir para'". O argumento é bom no papel e péssimo na mão: os dois botões ficam na MESMA fileira, colados, e nada na tela diz que um deixa editar e o outro não. Dois controles vizinhos com efeitos opostos sobre a cena não é uma distinção — é uma armadilha. E o "Pausar" era pior ainda: parar no meio da reprodução é exatamente o gesto de "quero mexer neste quadro", e era o que deixava a cena mais presa.
+
+**As cinco portas se fecham pela mesma regra do #133**, agora aplicada até o fim: ⏮/⏭ e "Inserir keyframe aqui" levam o instante para a bancada; "Pausar" leva o quadro em que a reprodução parou; e a régua ganha o par que faltava — arrastar continua sendo PROCURAR (pré-visualização, que é barata e não toca na cena), **soltar é PARAR** (`pointerup`, `pointercancel` e `keyup`, porque a régua também anda pelo teclado). Só a reprodução em curso e a exportação continuam donas da pré-visualização, que é quando ela é o que se está olhando.
+
+**E uma rede por cima de tudo, que é a lição de verdade.** Eu já tinha enumerado controles uma vez e errado; enumerar de novo, com mais cuidado, seria repetir o método que falhou. O `animation/previewGuard.ts` assina o `figuresStore` e larga a pré-visualização assim que a cena de trabalho muda, fora de reprodução e de exportação:
+
+> **Mexeu na cena de trabalho, a pré-visualização sai da frente.**
+
+Vale para todo controle de navegação de uma vez, inclusive os que ainda não existem. Compara `figures` por referência — toda ação do store faz atualização imutável, a mesma premissa do `undoEquality` e da marca de bancada intocada. Instalada num `useEffect` do `AppShell`, que é onde o autosave e os atalhos já moram.
+
+**Onde o teste ficou.** Em jsdom dá para afirmar que `preview` ficou nulo, e é o que os testes de unidade passaram a cobrir controle por controle. Mas o sintoma que o usuário relatou — "a mudança de pose não aparece" — é uma pergunta sobre PIXELS, e foi comparando o viewport antes e depois de uma edição que os controles esquecidos apareceram. Por isso `e2e/edicao-apos-navegar.spec.ts`, um teste por controle: o interessante não é que "algum" travou, é QUAL. É o mesmo raciocínio do #126 (largura só se confere em navegador) e o oposto do que tentei no #132, onde a medida de navegador era de tempo e não distinguia os dois estados; aqui a medida é uma imagem, e é binária.
+
+**De quebra, uma fragilidade antiga do `poses.spec.ts`.** Ele começou a falhar sempre no arrasto da raiz, e não era regressão: o `<canvas>` nasce no tamanho padrão do elemento (300×150) e só depois o R3F o redimensiona ao contêiner. Os dois `requestAnimationFrame` do teste garantem um quadro pintado, não o redimensionamento — e medindo os 300×150 o ponto calculado cai no vazio, o arrasto não pega junta nenhuma, e o teste falha por um motivo que não tem nada a ver com o que ele testa. Passou a esperar a largura crescer antes de medir.
+
+## 135. O nome do arquivo diz quando — carimbo de data e hora na exportação
+
+Pedido do usuário, curto: "ao exportar arquivos JSON, incluir um sufixo com timestamp no formato `_AAAA-MM-DD-HHmm`".
+
+**O problema que ele resolve.** Exportar duas vezes a mesma cena dava dois arquivos de nome idêntico. Com pasta escolhida, o segundo sobrescreve o primeiro sem perguntar; sem pasta, o navegador salva em downloads como `minha-cena (1).json`, `minha-cena (2).json` — e aí o nome nem ordena direito nem diz de quando é. Numa pasta de referências que cresce por sessão de desenho, o "qual é o mais recente" passava a depender de olhar a coluna de data no explorador, uma informação que some assim que o arquivo é copiado ou mandado para outra máquina.
+
+**Onde o carimbo entra.** Perguntei o escopo antes de escrever teste, porque "arquivos JSON" tem duas leituras. O usuário estendeu para **PNG e MP4 também** — as sete saídas que o app produz:
+
+| saída | antes | depois |
+|---|---|---|
+| cena (painel de Cenas) | `minha-cena.json` | `minha-cena_2026-08-07-1432.json` |
+| pose de boneco (Propriedades) | `heroi-pose.json` | `heroi-pose_2026-08-07-1432.json` |
+| animação (painel de Animação) | `Corrida.json` | `Corrida_2026-08-07-1432.json` |
+| animação (casca de toque, aba Arquivo) | `Corrida.json` | `Corrida_2026-08-07-1432.json` |
+| bookmarks de câmera | `camera-bookmarks.json` | `camera-bookmarks_2026-08-07-1432.json` |
+| instantâneo PNG | `Cena-1_snap002.png` | `Cena-1_snap002_2026-08-07-1432.png` |
+| vídeo MP4 | `Corrida.mp4` | `Corrida_2026-08-07-1432.mp4` |
+
+**O que fica de fora, e não é esquecimento:** os arquivos da pasta do workspace (`workspace.json`, `poses.json`, `animations.json`, `clips.json`, `joint-limits.json`). São **nomes reservados** (#85) — o app tem de reencontrá-los ao reabrir a pasta, e o autosave grava por cima de propósito. Carimbá-los transformaria a pasta num cemitério de versões que ninguém sabe reabrir. A regra é clara: **exportar é tirar uma cópia para fora; salvar o workspace é manter um estado**, e só o primeiro precisa dizer quando.
+
+**Hora local, não UTC** (escolha do usuário, entre as duas). O app é offline e de uso pessoal, não há nada para conciliar entre máquinas, e um nome em UTC mentiria sobre a hora em que o arquivo saiu — quem exporta às 14h32 procura por `1432`.
+
+**Resolução de minuto, e o contador do PNG continua.** Segundos no nome não ajudam ninguém a se localizar e só alongam o nome; mas dentro do mesmo minuto duas capturas teriam data igual, e é aí que o `_snap003` do instantâneo (que eu poderia ter sido tentado a aposentar) segue fazendo o trabalho dele. **A data diz quando; o contador diz qual veio antes.** Os dois convivem, e o teste que fixa isso é explícito.
+
+**O carimbo é sempre o ÚLTIMO sufixo antes da extensão** — `Cena-1_snap002_depth_2026-08-07-1432.png`, não `..._2026-08-07-1432_depth.png`. Dois motivos: a extensão tem de continuar no fim, onde o sistema operacional a procura; e os sufixos de conteúdo (`_depth` do mapa de profundidade, `_snapNNN` da sequência) descrevem *o que* o arquivo é, então ficam colados no nome a que pertencem, enquanto a data descreve *o evento* de exportar, que é a última coisa que acontece.
+
+**A implementação é um módulo puro de sete linhas úteis**, `src/persistence/exportTimestamp.ts`, com `formatExportTimestamp` e `withExportTimestamp`. O segundo recebe o nome já pronto e insere o carimbo antes do último ponto — foi o que permitiu tocar em sete pontos de exportação sem reescrever nenhuma regra de nomenclatura existente: `formatSnapshotFilename` e `formatAnimationFilename` continuam montando o nome como sempre e só passam o resultado pela função. Os dois ganharam um `now?: Date` opcional nas opções, **injetável**: sem isso o teste de nome de arquivo passaria a depender do relógio da máquina, e um teste que muda de resultado à meia-noite não é teste. Nos componentes de painel não há injeção — lá a asserção é por regex (`/_\d{4}-\d{2}-\d{2}-\d{4}\.json$/`), que é o que de fato importa verificar naquele nível: que o carimbo *está lá*.
+
+## 136. O oitavo botão do card — a cópia de câmera passa a confirmar
+
+Pedido do usuário: "nos cards dos keyframes no painel de animação, incluir confirmação com o `<dialog>` ao copiar as câmeras dos keyframes adjacentes".
+
+**O card do keyframe tem oito botões pequenos em quatro fileiras**, e a proteção estava distribuída de um jeito que não se sustentava mais. "Regravar" pedia confirmação desde o #69; o "×" ganhou a dele em 2026-08-06; a cópia de pose e de colocação passa pelo diálogo de caixas quando há dois bonecos ou mais. As duas de câmera — **Câm ↑** e **Câm ↓** — eram as únicas que agiam no clique, e são exatamente as que jogam fora o enquadramento guardado no keyframe sem deixar rastro na tela: quem clica errado só descobre ao voltar naquele instante, provavelmente minutos depois, quando o Ctrl+Z já não alcança.
+
+**E os dois botões são vizinhos na mesma fileira.** "Copiar do anterior" e "copiar do seguinte" são ações opostas separadas por três pixels e por uma seta que aponta para cima ou para baixo. Não é uma distinção que a mão respeite; é a mesma armadilha que o #134 descreveu para o ⏮/⏭.
+
+**O diálogo é o `ConfirmDialog`, não o de caixas.** A cópia de pose e a de colocação usam `CopyFiguresDialog` porque elas *têm* uma escolha a fazer — quais bonecos recebem. A câmera do keyframe é **uma só**: não há elenco, não há o que marcar, e um diálogo de caixas com uma caixa só seria um botão disfarçado. O que o modal precisa dizer é o mesmo do "Regravar": qual keyframe recebe (o card sai de vista quando o modal abre) e o que vai ser substituído. Por isso a mensagem é **por lado** — `copyCameraPrevConfirmHint` e `copyCameraNextConfirmHint`, com ANTERIOR e SEGUINTE em caixa alta —, em vez de um texto genérico: se o engano que se quer pegar é trocar um botão pelo outro, a confirmação tem de dizer qual dos dois foi clicado.
+
+**A guarda tem uma condição a mais que as irmãs.** O "Regravar" e o "×" caem fora sozinhos quando o keyframe some da lista enquanto o diálogo espera. A cópia de câmera depende de DOIS keyframes: se o vizinho de onde a câmera viria desaparece, confirmar não faria nada — e um diálogo que promete uma cópia impossível é pior que nenhum. Por isso `confirmingCamera` só existe quando o alvo **e** a origem estão na lista.
+
+**O que não mudou, de propósito:** a cópia de pose com um boneco só em cena continua direta, sem confirmação. É assimétrico com a câmera, e é intencional — aquele caminho já tem um diálogo quando há o que escolher, e transformar o caso de um boneco em duas telas para uma ação que o Ctrl+Z desfaz à vista (a pose muda na bancada, dá para ver) seria proteger o que não precisa. A câmera é o oposto: o efeito é invisível até se voltar naquele keyframe.
+
+## 137. Três pedidos no card do keyframe — confirmar, estimar e avisar
+
+Pedido do usuário, em três partes: a mesma confirmação da câmera (#136) na cópia de pose; um botão que gera a pose média entre os vizinhos, com confirmação e com a pose anterior recuperável; e um destaque no "Regravar" quando há mudança por gravar. Cada uma acabou tocando numa pergunta diferente sobre o card.
+
+### A confirmação da cópia, e por que ela NÃO vale sempre
+
+A pose e a colocação já tinham um diálogo — o de caixas (2026-08-06), que escolhe quais bonecos recebem. Mas ele só aparece com **dois bonecos ou mais**: com um só não há o que marcar, e o clique agia direto. Era esse caminho, e só ele, que faltava proteger.
+
+A decisão foi manter os dois caminhos e não empilhá-los: **o diálogo de caixas já é a confirmação**. Quem marca as caixas e clica em "Copiar" não precisa de um aviso antes dizendo que vai copiar; pôr um `ConfirmDialog` na frente dele seriam duas telas para uma cópia, e a segunda tela ensinaria a clicar sem ler — que é o oposto do que uma confirmação existe para fazer. A regra que ficou, no `requestCopy`:
+
+> **Tem elenco a escolher? Diálogo de caixas. Não tem? Confirmação.**
+
+A câmera cai sempre no segundo caso (a câmera do keyframe é uma só), e pose/colocação caem nele quando há um boneco em cena. E a **colocação entrou junto** com a pose, embora o pedido só falasse em pose: as duas dividem o mesmo caminho e a mesma fileira de botões, e deixar "Pos ↑/↓" como o único par do card que age no clique reproduziria exatamente a inconsistência que o pedido veio corrigir.
+
+### A pose estimada: ela vai para a BANCADA, não para o keyframe
+
+O pedido — "gerar uma pose estimada baseada na posição média entre o keyframe anterior e posterior… se aplicada, manter a pose anterior para ser recuperada (botão Recuperar cena guardada)" — tinha duas leituras, e a diferença entre elas é grande. Perguntei, e o usuário escolheu a segunda:
+
+1. escrever a média direto no keyframe, mandando a pose antiga dele para a guarda;
+2. **pôr a média na bancada**, guardando a cena que estava na tela, e deixar o "Regravar" gravar.
+
+A segunda é melhor por um motivo que só aparece quando se pensa no gesto inteiro: **uma estimativa é um chute que se confere**. A média entre dois keyframes acerta o braço e erra o pé com frequência — é interpolação, não animação —, e o valor dela está em ser um ponto de partida para ajustar, não um resultado. Pondo-a na bancada, ela nasce em 3D, editável, com o gizmo à mão; e o keyframe fica intacto até alguém decidir. A alternativa escreveria no keyframe uma pose que ninguém viu.
+
+De quebra, ela **reaproveita a máquina inteira do "Ir para"**: a guarda (#127) já é o lugar certo da cena que estava na tela, e "Recuperar cena guardada" já é o botão que a traz de volta — que é literalmente o que o usuário pediu, sem inventar um segundo mecanismo de desfazer ao lado do que existe.
+
+Duas diferenças em relação ao "Ir para", e as duas foram decididas, não herdadas:
+
+- **a bancada não fica marcada como intocada.** Ela não é o retrato de keyframe nenhum: é uma proposta que ainda não está gravada em lugar algum. Marcá-la faria o "Ir para" seguinte engoli-la sem guardar (a guarda só segura o que mudou, #127) e deixaria o destaque do "Regravar" apagado justamente quando há mais o que gravar;
+- **a câmera não entra na média** (decisão do usuário), mas a bancada recebe a câmera DESTE keyframe. Não é contradição: o card já tem dois botões só para câmera, e misturar as duas coisas num terceiro tiraria a escolha; carregar o enquadramento do próprio keyframe é o que faz um "Regravar" logo depois não trocar a câmera dele por acidente.
+
+E o elenco da média é o do keyframe ALVO, não o do vizinho anterior — que é a regra do `sampleAnimation`, onde o trecho pertence à partida. A diferença tem consequência aqui: a estimativa pode acabar regravada por cima do keyframe, e com o elenco do vizinho isso **apagaria** dele um boneco que só ele tem. Quem falta em qualquer uma das pontas volta como está: sem as duas, não há caminho a dividir.
+
+### O destaque: o card e a cena podem discordar de dois jeitos
+
+O "Regravar" grava na cena o card em que se está, e nada na tela dizia que os dois tinham se separado. Quem ajusta uma junta depois de carregar um keyframe vê a cena mudar e o card continuar igual — e descobre que esqueceu de gravar ao tocar a animação, quando o boneco volta à pose antiga.
+
+São **duas origens** para a mesma separação, e é por isso que a regra virou uma função pura (`updateHighlight.ts`) em vez de um booleano solto no componente:
+
+1. **a bancada mudou** desde que aquele keyframe foi carregado nela. Quem responde isso já existia: a marca de "intocado" da guarda, comparação por referência do array de bonecos (a mesma premissa do `undoEquality`). Nenhum estado novo;
+2. **o card recebeu uma cópia** de câmera, pose ou colocação. Aqui é o contrário — o keyframe mudou e a bancada ficou como estava.
+
+Só o card **da bancada** acende pela primeira origem. Acender todos diria que todos estão dessincronizados: verdade, e inútil — "Regravar" grava a cena em UM card, e um destaque espalhado pela lista não aponta para lugar nenhum.
+
+**Por que piscar, e não só mudar de cor.** O card já carrega duas marcas estáticas (a da bancada e a do playhead, #131), e um terceiro contorno parado seria mais ruído na mesma gramática. O movimento é o que distingue "há algo a fazer" de "você está aqui". A pulsação é lenta, e é no **fundo**: animar a borda mexeria na caixa do botão e faria a lista inteira tremer — o mesmo cuidado que a marca da bancada teve ao escolher `box-shadow` em vez de borda mais grossa. E ela **para sob `prefers-reduced-motion`**, virando destaque estático: animação infinita é o caso exemplar da preferência, mas desligar o movimento não pode desligar o aviso.
+
+## 137.1. O destaque que não apagava, e a pose média com elenco
+
+Dois ajustes pedidos pelo usuário depois de ver o card do #137 funcionando. São desdobramentos daquela entrega, e por isso subnúmero.
+
+**O "Regravar" continuava piscando depois de gravar.** Eu tinha fechado só metade do ciclo: a origem "recebeu cópia" apagava no `onConfirm`, mas a origem "a bancada mudou" não — e ela é a comum. O erro foi de raciocínio sobre quem responde a pergunta: quem diz se a bancada mudou é a marca de "intocado" da guarda (#127), e ninguém a reescrevia ao gravar. Regravar é justamente o momento em que **a bancada volta a ser o retrato de um keyframe** — o keyframe passa a guardar exatamente o que está na tela —, então a marca tem de voltar a valer. Daí o `markWorkbenchRecorded`, que fecha o ciclo: carregar marca, editar desmarca, gravar marca de novo. E o destaque, que só lê essa marca, se apaga sozinho.
+
+Um detalhe de tempo que parece frágil e não é: a marca é escrita no `onConfirm` do painel, enquanto a gravação em si acontece no `AnimationPlayer`, no comando `updateKeyframe`. Marcar antes é correto porque a marca guarda a REFERÊNCIA do array de bonecos, e regravar não mexe nele — escreve em `animations`, não em `figures`. As duas coisas continuam apontando para o mesmo array, que é o que "intocado" significa. Cancelar, claro, não marca nada: o destaque fica, e há teste para os dois lados.
+
+**A pose média passou a perguntar em quem se aplica.** No #137 ela era um `ConfirmDialog` e mexia em todo mundo — o mesmo defeito que a cópia entre vizinhos teve até 2026-08-06, e pela mesma razão: numa cena de duas pessoas, estimar o quadro do meio de UMA arrastava a outra junto.
+
+A regra que já valia no card decidiu a forma sozinha: **tem elenco a escolher, é o diálogo de caixas; não tem, é a confirmação.** E é a MESMA caixa da cópia — a pergunta é idêntica, "em quais bonecos?", e escrever um segundo componente de caixas seria a mesma tela duas vezes. O `CopyFiguresDialog` ganhou `title` e `confirmLabel` opcionais, com o texto da cópia como padrão.
+
+Duas escolhas dentro disso:
+
+- **quem entra nas caixas** é quem está nos TRÊS keyframes (`estimableKeyframeFigures`, o `sharedKeyframeFigures` com uma ponta a mais). Sem uma das pontas não há caminho a dividir, e listar quem a estimativa não alcança seria uma caixa que não faz nada — o mesmo argumento do elenco comum da cópia;
+- **o que decide entre os dois diálogos é a contagem de ESTIMÁVEIS**, e não a de bonecos da cena. Uma cena de três com um só presente nos três keyframes não tem nada a escolher, e cairia numa caixa de checkbox única e obrigatória. De quebra, o botão "Pose média" agora desabilita quando não há ninguém estimável: um botão que abre um diálogo que não faz nada é pior que um botão apagado.
+
+**A memória de quem ficou de fora é compartilhada com as cópias**, de propósito. É a mesma pergunta sobre o mesmo elenco no mesmo card — "quem eu estou acertando agora" —, e duas memórias independentes para botões vizinhos seriam duas respostas para uma pergunta só. Nada fica escondido: as caixas estão à vista na hora de confirmar.
+
+## 137.2. Copiar do vizinho leva a bancada junto — e mata metade do destaque
+
+Pedido do usuário: "ao clicar nos botões de copiar câmera/pose/posição, atualizar a bancada para já trazer o keyframe atualizado — equivale ao clicar o botão 'Ir para'".
+
+**O que estava errado.** A cópia escrevia no keyframe e a tela não mudava nada. O resultado só aparecia ao tocar a animação ou ao clicar "Ir para" logo depois — que era o que o usuário vinha fazendo à mão, toda vez. Copiar a câmera do vizinho **é um ajuste daquele keyframe**, e ver o ajuste é parte do gesto, não um passo seguinte.
+
+A implementação é literalmente o botão "Ir para", disparado depois da cópia — e por isso herda tudo dele de graça: a cena que se estava montando vai para a guarda (#127), a marca do item 40 passa a este card, a régua anda para o instante dele. A ordem é o que importa: **copiar escreve no keyframe ANTES do carregamento**, senão a bancada receberia o retrato velho.
+
+São **dois passos de undo**, e é o certo — o mesmo contrato do "duplicar e ir para a cópia" (#128): copiar é uma edição da linha do tempo, carregar o retrato é uma edição da cena. O primeiro Ctrl+Z devolve a bancada, o segundo desfaz a cópia.
+
+**A consequência interessante: isto mata metade do destaque do #137.** O "Regravar" tinha duas origens, e a segunda era exatamente "o card recebeu uma cópia e a bancada ficou como estava". Agora a bancada não fica como estava — ela vai junto, e o card e a cena passam a dizer a mesma coisa. Manter aquele destaque seria avisar sobre uma divergência que não existe mais; um aviso que aparece quando não há nada de errado é pior do que aviso nenhum, porque ensina a ignorá-lo.
+
+Então o `copiedKeyframeIds` saiu inteiro — o estado, a limpeza no "Ir para", a limpeza na estimativa e a limpeza ao regravar — e `shouldHighlightUpdate` voltou a ter uma regra só: **o card da bancada acende quando a bancada mudou**. Ela era a origem que valia a pena desde o começo; a outra existia para cobrir um buraco que este pedido fechou de outro jeito, melhor.
+
+Vale registrar o padrão, porque ele se repetiu duas vezes em dois dias: **quando um pedido do usuário faz um aviso perder o objeto, o aviso sai junto.** No #137.1 foi o ciclo do "intocado" que passou a se fechar sozinho; aqui foi a divergência que deixou de acontecer. Um destaque não é uma funcionalidade a preservar — é a resposta a uma pergunta, e sem a pergunta ele vira ruído.
+
+## 138. Quem manda no nome do grupo é o vizinho
+
+Relato do usuário: "se eu tento agrupar keyframes sob o mesmo nome, ele automaticamente cria um novo nome com um contador. A ideia é que, se renomear o keyframe e ele tiver o mesmo nome do grupo de um keyframe adjacente, eles devem ser agrupados sob o mesmo nome, e não renomeado".
+
+**A regra antiga pedia duas coisas**, e só uma delas era necessária. Para aceitar o nome desejado, `uniqueKeyframeLabel` exigia que este keyframe encostasse em quem já usava o rótulo **e** que todos os que já o usavam formassem **um bloco único**. A segunda condição existia para evitar dois blocos com o mesmo título — e é ela que produzia o defeito:
+
+> Bastava o nome estar em dois blocos separados para TODA tentativa de usá-lo virar "Andando 2" — inclusive a tentativa de emendar os dois, que é exatamente o gesto que desfaria a separação.
+
+**E cair nesse estado é fácil**, o que torna a armadilha pior: mover um keyframe sem rótulo para dentro de um grupo pelas setas ↑↓ já parte o grupo em dois blocos com o mesmo nome. O conserto óbvio — rotular o keyframe do meio — era justamente o que a regra recusava. A condição que existia para proteger a lista estava impedindo o reparo dela.
+
+**A regra nova é local: quem manda é o vizinho.** Rotular um keyframe com o nome do grupo que está colado nele é *entrar naquele grupo*, e isso vale sempre — encostando pela ponta ou caindo entre dois blocos, que aí os emenda. O sufixo continua existindo para o caso que ele de fato resolve: o nome existe **longe**, e repeti-lo criaria mesmo dois títulos iguais sem relação um com o outro. O candidato numerado passa pela mesma regra — se o vizinho é "Andando 2", é nele que se entra.
+
+O que se perde: agora dá para acabar com dois blocos de mesmo título quando o nome já existia longe **e** o vizinho o carrega. É um preço pequeno e já pago — `keyframeGroups` sempre soube lidar com isso (só emenda keyframes IMEDIATAMENTE consecutivos, então dois blocos separados aparecem como dois grupos), e a lista já podia chegar nesse estado pelas setas, por importação e por trecho pronto. Entre um título repetido que o usuário escolheu e um renomeio silencioso que ele não pediu, o segundo é pior: ele desfaz o gesto sem explicar por quê.
+
+`freeKeyframeLabel` não muda. Ela é de outro assunto — acrescentar um trecho pronto à linha do tempo, onde repetir "Andando" tem de dar dois grupos mesmo, porque ninguém está estendendo nada à mão.
+
+## 138.1. O "Destravar todas" que só existia quando não fazia falta
+
+Pedido do usuário: "trazer para a tela completa o botão de destravar e soltar todas as juntas travadas quando a junta root estiver selecionado".
+
+O botão já existia na tela completa, na visão da raiz — mas **atrelado à contagem**: `{lockedJointCount > 0 && (…)}` desenhava o resumo e o botão juntos. Parecia econômico e escondia um buraco, porque `lockedJointCount` **desconta os cadeados por eixo da raiz** (item 64): eles são tokens no mesmo mapa de travas, e a contagem fala de *juntas*, não de eixos.
+
+O resultado: com só os eixos da raiz travados, a contagem dava zero, o bloco inteiro sumia — e não havia como soltar tudo de uma vez. Restava destravar cadeado por cadeado, e três cliques num painel que tem um botão exatamente para isso. **A casca de toque nunca teve esse problema**: lá o botão é incondicional na raiz (`PosesJointTab`), e o comentário até registra que "Destravar todas solta também esses". As duas cascas discordavam sobre a mesma ação.
+
+**A separação certa é: o botão sempre, a contagem quando houver o que contar.** São coisas diferentes — o botão é uma AÇÃO disponível, a contagem é uma INFORMAÇÃO que só existe com alguma junta travada ("0 juntas travadas neste boneco" é uma linha que não informa nada). Sem trava nenhuma o botão fica desabilitado, como o "Recuperar cena guardada" e o "Resetar esta junta": presente, encontrável, obviamente sem efeito agora.
+
+E ganhou dica própria, porque o rótulo sozinho não diz o alcance: ele solta as juntas travadas **e** os cadeados por eixo da raiz. Era justamente essa parte invisível que faltava.
+
+Fica de padrão: **botão que existe só quando o contador é maior que zero é candidato a buraco** — basta o contador não contar tudo o que o botão faz.
+
+## 138.2. As travas sobem para junto do gizmo
+
+Pedido do usuário, logo depois do #138.1: "mover o botão de destravar para deixar mais próximo da seção do gizmo".
+
+**O lugar novo se justifica pelo vizinho de baixo.** O bloco de travas ficava cinco blocos de pose abaixo, e o que está logo depois do gizmo W/E são os sliders de colocação e rotação — que trazem os **cadeados por eixo da raiz** (item 64), metade do que o botão solta. O gizmo é a versão arrastável desses mesmos números. Travar um eixo, arrastar o gizmo e destravar tudo passaram a ser uma vizinhança só, em vez de duas pontas do painel.
+
+**A contagem veio junto** (decisão do usuário, entre três arranjos que levantei). Ela e o botão foram desenhados como par — ela diz o que há, ele desfaz —, e separá-los deixaria uma linha sem ação de um lado do painel e uma ação sem contexto do outro. O que se perde está registrado: no #42 a contagem foi posta perto das poses de propósito, para explicar pose que não se aplicou inteira. Ela continua no mesmo painel, a uma rolagem de distância, e ganha uma adjacência que não tinha — a das travas de que fala.
+
+O comentário do #83 sobre "restaurar a MESMA ordem nas duas vistas" continua valendo e não é contrariado: o bloco de travas só existe na visão da raiz (na de uma junta, quem responde é o "Destravar junta" da própria junta), então não há par a inverter entre as duas.
+
+**A ordem virou teste**, e não comentário: `compareDocumentPosition` entre o grupo do gizmo, a contagem, o botão e o grupo de colocação. Ordem de painel é decisão de desenho que já foi refeita mais de uma vez neste projeto (#83, #88, a própria #42) — deixá-la só na prosa é convidar a próxima mudança a desfazê-la sem saber.
+
+**Adendo, no mesmo dia: as âncoras foram junto.** O usuário pediu em seguida que o resumo de âncoras (item 62) subisse para perto do de travas, e ele tem a mesma razão de ser — cadeado congela os **ÂNGULOS** da junta, âncora congela a **POSIÇÃO** dela. São o par que congela o boneco, e liam-se juntos muito antes de estarem juntos: quem procura um está a um passo de precisar do outro. A ordem final da visão da raiz ficou **gizmo → travas → âncoras → colocação → rotação**, com os dois resumos entre a ferramenta e os números que ela move.
+
+O bloco de âncoras continua **condicional inteiro**, diferente do de travas, e a assimetria é deliberada: a contagem de âncoras cobre tudo o que o botão dela solta — não existe âncora por eixo —, então ele nunca fica inalcançável. Foi exatamente essa lacuna que obrigou o botão de travas a ficar sempre visível (#138.1); sem a lacuna, um botão desabilitado a mais seria só ruído.
+
+**Segundo adendo: o "Olhar para" desce para depois da simetria.** Terceiro pedido de ordem no mesmo painel, e o que fecha o desenho: mirar é o **acabamento** da pose — o que se faz quando o corpo já está montado —, e não uma etapa entre os números da colocação (era ali que ele estava na raiz) nem logo depois do assentar (na junta). Ele passou a compor a dupla final do painel, que virou trio: **simetria → olhar para → zerar por grupo**.
+
+**Nas DUAS vistas, e isso não é detalhe.** O bloco existe nos dois ramos de propósito (item 32: quem posa um cotovelo não deveria voltar à raiz só para virar a cabeça), e movê-lo em uma só reordenaria o painel ao trocar de junta — exatamente o defeito que o #83 consertou. A regra que sobrevive às três mudanças de hoje é essa: **bloco que existe nas duas vistas ocupa a mesma posição relativa nas duas**, e o teste de ordem cobre as duas.
+
+O painel da raiz, ao fim do dia: gizmo → travas → âncoras → colocação → rotação → poses → simetria → olhar para → zerar → guardar e copiar. As três mudanças foram na mesma direção — **ferramenta e o que ela desfaz no topo, acabamento no fim** —, e nenhuma delas mexeu em comportamento: só em ordem de leitura.

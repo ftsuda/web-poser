@@ -61,6 +61,14 @@ async function addAndSelectFigure(page: Page): Promise<void> {
  */
 async function frontViewRootPosition(page: Page): Promise<{ x: number; y: number }> {
   const canvas = page.locator('canvas')
+  // O `<canvas>` nasce no tamanho PADRÃO DO ELEMENTO (300×150) e só depois o
+  // R3F o redimensiona ao contêiner. Os dois rAF do `addAndSelectFigure`
+  // garantem um quadro pintado, mas não que o redimensionamento já tenha
+  // acontecido — e medindo os 300×150 o ponto calculado cai no vazio, o
+  // arrasto não pega junta nenhuma e o teste falha sem nada a ver com o que
+  // ele testa. Esperar a largura crescer é o que torna a medida confiável.
+  await expect.poll(async () => (await canvas.boundingBox())?.width ?? 0).toBeGreaterThan(300)
+
   const box = await canvas.boundingBox()
   if (!box) throw new Error('canvas sem bounding box')
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 + box.height / 24 }

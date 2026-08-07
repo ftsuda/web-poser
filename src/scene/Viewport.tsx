@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
@@ -24,6 +24,7 @@ import { GridAlignmentIndicator } from './GridAlignmentIndicator'
 import { frozenJointsByPins, isPlacementPinned } from '../figure/jointPins'
 import { JointDragGizmo } from './JointDragGizmo'
 import { SnapshotCapture } from './SnapshotCapture'
+import { GestureLinesOverlay } from './GestureLinesOverlay'
 import { SceneContent } from './SceneContent'
 import { getViewportOrthographicCamera, getViewportPerspectiveCamera } from './viewportCameras'
 import { OnionSkin } from './OnionSkin'
@@ -43,6 +44,7 @@ export function Viewport() {
   const selectedJointName = useFiguresStore((state) => state.selectedJointName)
   const gizmoMode = useUIStore((state) => state.gizmoMode)
   const rulerVisible = useUIStore((state) => state.rulerVisible)
+  const gestureLinesVisible = useUIStore((state) => state.gestureLinesVisible)
   const depthPreview = useDepthStore((state) => state.previewEnabled)
   const viewMode = useCameraStore((state) => state.viewMode)
   const projection = useCameraStore((state) => state.projection)
@@ -60,15 +62,26 @@ export function Viewport() {
     if (selectedFigureId || selectedPropId) setCameraSelected(false)
   }, [selectedFigureId, selectedPropId, setCameraSelected])
 
-  const handleJointRef = (figureId: string, jointName: string, object: THREE.Group | null) => {
-    const key = `${figureId}:${jointName}`
-    setJointObjects((previous) => {
-      const next = new Map(previous)
-      if (object) next.set(key, object)
-      else next.delete(key)
-      return next
-    })
-  }
+  // ESTÁVEL (`useCallback` sem dependências) por necessidade, não por gosto: o
+  // React chama o `ref` anterior com `null` e o novo com o objeto sempre que a
+  // IDENTIDADE da função de `ref` muda. Com uma função nova a cada render, cada
+  // re-render do viewport desregistrava e registrava as 32 juntas de cada
+  // boneco, e cada registro é um `setState` aqui — que re-renderiza o viewport.
+  // O `setJointObjects` também sai fora quando nada mudou, para o registro de
+  // uma junta que já estava lá não custar um render.
+  const handleJointRef = useCallback(
+    (figureId: string, jointName: string, object: THREE.Group | null) => {
+      const key = `${figureId}:${jointName}`
+      setJointObjects((previous) => {
+        if ((previous.get(key) ?? null) === object) return previous
+        const next = new Map(previous)
+        if (object) next.set(key, object)
+        else next.delete(key)
+        return next
+      })
+    },
+    [],
+  )
 
   // Girar a raiz precisa do grupo INTERNO (o que carrega `figure.rotation`);
   // mover precisa do externo (que carrega `figure.position`) — ver
@@ -144,10 +157,13 @@ export function Viewport() {
           attach="background"
           args={[depthPreview ? DEPTH_BACKGROUND : BACKGROUND_COLORS[environment.background]]}
         />
-        <SceneContent grid={environment.grid} />
+        <SceneContent grid={environment.grid} light={environment} />
         {/* Ancorada no boneco selecionado, no mesmo ponto do gizmo de
             translação; sem seleção não há o que medir (DECISOES.md #33). */}
         {rulerVisible && <VerticalRuler position={selectedFigure?.position ?? null} />}
+        {/* Linhas de gesto (item 9): ancoradas no boneco selecionado, como a
+            régua — sem seleção não há gesto a ler. */}
+        {gestureLinesVisible && <GestureLinesOverlay figure={selectedFigure ?? null} />}
         {/* Só enquanto se arrasta: fora do arrasto o destaque seria ruído
             permanente na tela (fase 9, item 10). */}
         {isGizmoDragging && draggedPosition && <GridAlignmentIndicator position={draggedPosition} />}

@@ -3,7 +3,6 @@ import {
   ONION_SKIN_COLORS,
   ONION_SKIN_MODES,
   ONION_SKIN_OPACITY,
-  anchorKeyframeIndex,
   onionSkinFrames,
 } from '../onionSkin'
 import type { Animation, AnimationKeyframe } from '../animation'
@@ -45,33 +44,8 @@ function animation(count: number): Animation {
   }
 }
 
-describe('anchorKeyframeIndex', () => {
-  it('points at the keyframe sitting exactly on the playhead', () => {
-    const anim = animation(4)
-
-    expect(anchorKeyframeIndex(anim, 0)).toBe(0)
-    expect(anchorKeyframeIndex(anim, 1000)).toBe(1)
-    expect(anchorKeyframeIndex(anim, 3000)).toBe(3)
-  })
-
-  it('falls back to the keyframe BEFORE the playhead when it sits between two', () => {
-    const anim = animation(4)
-
-    expect(anchorKeyframeIndex(anim, 1500)).toBe(1)
-    expect(anchorKeyframeIndex(anim, 999)).toBe(0)
-  })
-
-  it('clamps past the end and before the start', () => {
-    const anim = animation(3)
-
-    expect(anchorKeyframeIndex(anim, 99_999)).toBe(2)
-    expect(anchorKeyframeIndex(anim, -100)).toBe(0)
-  })
-
-  it('returns -1 with no keyframes', () => {
-    expect(anchorKeyframeIndex({ id: 'working', name: 'A', speed: 1, keyframes: [] }, 0)).toBe(-1)
-  })
-})
+// `anchorKeyframeIndex` mudou-se para o `animation.ts` em 2026-08-06, quando o
+// painel de Animação passou a marcar o âncora — os testes dele foram junto.
 
 describe('onionSkinFrames', () => {
   it('returns the previous and the next keyframe around the playhead', () => {
@@ -167,5 +141,62 @@ describe('onionSkinFrames — modes', () => {
 
   it('lists the three modes, in the order the panel offers them', () => {
     expect(ONION_SKIN_MODES).toEqual(['both', 'previous', 'next'])
+  })
+})
+
+/**
+ * Escolha de quais bonecos ganham fantasma (pedido do usuário, 2026-08-06):
+ * numa cena de várias pessoas, os fantasmas de todo mundo em volta lavam a tela
+ * e escondem justamente o movimento que se está lendo.
+ */
+describe('onionSkinFrames — bonecos escolhidos', () => {
+  /** Dois bonecos em cada keyframe, os mesmos ids nos três. */
+  function dupla(count: number): Animation {
+    return {
+      id: 'a1',
+      name: 'Corrida',
+      speed: 1,
+      keyframes: Array.from({ length: count }, (_, index) => ({
+        id: `k${index + 1}`,
+        durationMs: 1000,
+        figures: [figure({ id: 'f1', position: [index, 0, 0] }), figure({ id: 'f2' })],
+        camera: CAMERA,
+      })),
+    }
+  }
+
+  it('sem escolha, o fantasma leva todos os bonecos do keyframe', () => {
+    const frames = onionSkinFrames(dupla(3), 1000, 'both')
+
+    expect(frames.map((frame) => frame.figures.map((f) => f.id))).toEqual([
+      ['f1', 'f2'],
+      ['f1', 'f2'],
+    ])
+  })
+
+  it('o boneco desmarcado não ganha fantasma', () => {
+    const frames = onionSkinFrames(dupla(3), 1000, 'both', ['f2'])
+
+    expect(frames.map((frame) => frame.figures.map((f) => f.id))).toEqual([['f1'], ['f1']])
+  })
+
+  /** Fantasma que não desenha ninguém não é fantasma. */
+  it('com todos desmarcados, não sobra fantasma nenhum', () => {
+    expect(onionSkinFrames(dupla(3), 1000, 'both', ['f1', 'f2'])).toEqual([])
+  })
+
+  /** A escolha não mexe em QUEM é vizinho de quem: modo e papéis seguem iguais. */
+  it('a escolha não muda os papéis nem o modo', () => {
+    const frames = onionSkinFrames(dupla(3), 1000, 'previous', ['f2'])
+
+    expect(frames.map((frame) => frame.role)).toEqual(['previous'])
+    expect(frames[0].keyframe.id).toBe('k1')
+  })
+
+  /** Id que não está em cena nenhuma não esconde ninguém. */
+  it('id desconhecido não tira fantasma de ninguém', () => {
+    const frames = onionSkinFrames(dupla(3), 1000, 'both', ['f9'])
+
+    expect(frames[0].figures.map((f) => f.id)).toEqual(['f1', 'f2'])
   })
 })

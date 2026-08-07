@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import * as THREE from 'three'
 import type { ThreeEvent } from '@react-three/fiber'
 import type { Figure as FigureData } from '../store/figuresStore'
@@ -492,6 +492,16 @@ function JointNode({
   // PLANO.md > fase 9, item 14).
   const interactive = figure.visible
 
+  // O callback de `ref` precisa ser ESTÁVEL. React chama o ref anterior com
+  // `null` e o novo com o objeto sempre que a IDENTIDADE da função muda — com
+  // uma seta inline aqui, cada re-render do boneco desregistrava e registrava
+  // as 32 juntas de novo, e cada registro é um `setState` no `Viewport`, que
+  // re-renderiza o boneco… (ver DECISOES.md — laço de re-render).
+  const registerRef = useCallback(
+    (object: THREE.Group | null) => onJointRef?.(isRoot ? ROOT_PIVOT_REF_NAME : name, object),
+    [onJointRef, isRoot, name],
+  )
+
   // Ressalva: o grupo interno da root não é registrado
   // como alvo do gizmo — o grupo externo (`Figure`, abaixo) é quem carrega
   // `figure.position` de fato.
@@ -500,11 +510,7 @@ function JointNode({
       name={ghost ? undefined : `joint-${name}`}
       position={joint.position}
       rotation={degToRadTriple(rotation)}
-      ref={
-        onJointRef
-          ? (object) => onJointRef(isRoot ? ROOT_PIVOT_REF_NAME : name, object)
-          : undefined
-      }
+      ref={onJointRef ? registerRef : undefined}
     >
       <JointBody
         name={name}
@@ -609,6 +615,12 @@ export function Figure({
   const handleJointPointerDown = ghost ? undefined : onJointPointerDown
   const touchRadius = ghost ? undefined : touchTargetRadius
 
+  // Estável pelo mesmo motivo do `registerRef` do `JointNode`.
+  const registerRootRef = useCallback(
+    (object: THREE.Group | null) => handleJointRef?.(ROOT_JOINT_NAME, object),
+    [handleJointRef],
+  )
+
   return (
     <>
       {/* Fantasma NÃO carrega os nomes da cena (`figure-`, `joint-`,
@@ -621,7 +633,7 @@ export function Figure({
         position={figure.position}
         scale={scale}
         visible={figure.visible}
-        ref={handleJointRef ? (object) => handleJointRef(ROOT_JOINT_NAME, object) : undefined}
+        ref={handleJointRef ? registerRootRef : undefined}
       >
         <JointNode
           name={ROOT_JOINT_NAME}

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
+import { DEFAULT_LIGHT } from '../../scene/sceneLight'
 import { writeShellOverride } from '../../poses/shellChoice'
 import {
   POSES_AUTOSAVE_KEY,
@@ -16,7 +17,7 @@ function emptyWorkspace(sceneName: string): WorkspaceState {
     nextFigureSeq: 1,
     props: [],
     nextPropSeq: 1,
-    environment: { background: 'medium', grid: true },
+    environment: { background: 'medium', grid: true, ...DEFAULT_LIGHT },
     cameraBookmarks: [],
     nextCameraBookmarkSeq: 1,
     sceneCamera: DEFAULT_SCENE_CAMERA,

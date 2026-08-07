@@ -11,6 +11,7 @@ import {
 } from '../persistence/autosave'
 import { ConfirmDialog } from '../layout/ConfirmDialog'
 import { PosesQrReceiveDialog } from './PosesQrReceiveDialog'
+import { withExportTimestamp } from '../persistence/exportTimestamp'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { parseFigurePoseFile } from '../persistence/figurePoseFile'
 import { slugifySceneName } from '../snapshot/snapshotNaming'
@@ -47,7 +48,8 @@ export function PosesFileTab() {
     return new Blob([serializeAnimationFile(working)], { type: 'application/json' })
   }
 
-  const exportFilename = () => `${slugifySceneName(working?.name ?? 'animacao')}.json`
+  const exportFilename = () =>
+    withExportTimestamp(`${slugifySceneName(working?.name ?? 'animacao')}.json`)
 
   const handleExport = async () => {
     setErrorKey(null)

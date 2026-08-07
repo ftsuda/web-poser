@@ -1,9 +1,10 @@
 import '../../i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { POSES_AUTOSAVE_KEY, saveWorkspaceToLocalStorage } from '../../persistence/autosave'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
+import { DEFAULT_LIGHT } from '../../scene/sceneLight'
 import { useAnimationStore } from '../../store/animationStore'
 import { useDepthStore } from '../../store/depthStore'
 import { useFiguresStore } from '../../store/figuresStore'
@@ -126,7 +127,9 @@ describe('ScenesPanel', () => {
     expect(vi.mocked(writeFileToDirectoryOrDownload)).toHaveBeenCalledTimes(1)
     const [directoryHandle, filename] = vi.mocked(writeFileToDirectoryOrDownload).mock.calls[0]
     expect(directoryHandle).toBeNull()
-    expect(filename).toMatch(/\.json$/)
+    // Carimbo `_AAAA-MM-DD-HHmm` antes da extensão (ver `exportTimestamp.ts`):
+    // exportar a mesma cena duas vezes não pode dar dois arquivos de nome igual.
+    expect(filename).toMatch(/_\d{4}-\d{2}-\d{2}-\d{4}\.json$/)
   })
 
   it('imports a scene from a picked .json file and replaces the working scene', async () => {
@@ -137,7 +140,7 @@ describe('ScenesPanel', () => {
       nextFigureSeq: 1,
       props: [],
       nextPropSeq: 1,
-      environment: { background: 'medium', grid: true },
+      environment: { background: 'medium', grid: true, ...DEFAULT_LIGHT },
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
       nextSnapshotNumber: 1,
@@ -187,7 +190,7 @@ describe('ScenesPanel', () => {
       nextFigureSeq: 1,
       props: [],
       nextPropSeq: 1,
-      environment: { background: 'medium', grid: true },
+      environment: { background: 'medium', grid: true, ...DEFAULT_LIGHT },
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
       nextSnapshotNumber: 1,
@@ -238,7 +241,7 @@ describe('ScenesPanel', () => {
               nextFigureSeq: 1,
               props: [],
               nextPropSeq: 1,
-              environment: { background: 'medium', grid: true },
+              environment: { background: 'medium', grid: true, ...DEFAULT_LIGHT },
               cameraBookmarks: [],
               nextCameraBookmarkSeq: 1,
               nextSnapshotNumber: 1,
@@ -340,7 +343,7 @@ describe('ScenesPanel', () => {
               nextFigureSeq: 1,
               props: [],
               nextPropSeq: 1,
-              environment: { background: 'medium', grid: true },
+              environment: { background: 'medium', grid: true, ...DEFAULT_LIGHT },
               cameraBookmarks: [],
               nextCameraBookmarkSeq: 1,
               nextSnapshotNumber: 1,
@@ -590,5 +593,62 @@ describe('ScenesPanel — Configurações', () => {
     await user.tab()
 
     expect(useDepthStore.getState().nearM).toBe(3)
+  })
+})
+
+/**
+ * A luz da cena controlável (PLANO.md item 16, `DECISOES.md` #121): mora na
+ * mesma seção "Configurações", junto do que vale para o ambiente inteiro. É
+ * conteúdo de CENA — entra no undo e viaja no arquivo, ao contrário da régua e
+ * da silhueta, que são preferência de tela.
+ */
+describe('ScenesPanel — luz da cena (item 16)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useUIStore.setState((state) => ({
+      collapsedSections: { ...state.collapsedSections, sceneSettings: false },
+    }))
+  })
+
+  it('os três sliders escrevem no ambiente da cena', async () => {
+    await renderScenesPanel()
+
+    fireEvent.change(screen.getByLabelText(/Direção da luz/), { target: { value: '-120' } })
+    expect(useFiguresStore.getState().environment.lightAzimuth).toBe(-120)
+
+    fireEvent.change(screen.getByLabelText(/Altura da luz/), { target: { value: '30' } })
+    expect(useFiguresStore.getState().environment.lightElevation).toBe(30)
+
+    fireEvent.change(screen.getByLabelText(/Intensidade da luz/), { target: { value: '0.4' } })
+    expect(useFiguresStore.getState().environment.lightIntensity).toBeCloseTo(0.4, 6)
+  })
+
+  it('arrastar um slider é UM passo de undo, e ele volta ao valor de antes (#118)', async () => {
+    await renderScenesPanel()
+    const direcao = screen.getByLabelText(/Direção da luz/)
+
+    fireEvent.pointerDown(direcao)
+    for (const valor of ['10', '20', '30', '40']) {
+      fireEvent.change(direcao, { target: { value: valor } })
+    }
+    expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
+
+    fireEvent.pointerUp(direcao)
+    expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(1)
+    expect(useFiguresStore.getState().environment.lightAzimuth).toBe(40)
+
+    act(() => useFiguresStore.temporal.getState().undo())
+    expect(useFiguresStore.getState().environment.lightAzimuth).toBe(DEFAULT_LIGHT.lightAzimuth)
+  })
+
+  it('o botão devolve a luz ao padrão — a saída de quem se perdeu nos ângulos', async () => {
+    const user = userEvent.setup()
+    await renderScenesPanel()
+
+    act(() => useFiguresStore.getState().setLight({ lightAzimuth: -170, lightIntensity: 0.1 }))
+    await user.click(screen.getByRole('button', { name: 'Luz padrão' }))
+
+    expect(useFiguresStore.getState().environment).toMatchObject(DEFAULT_LIGHT)
   })
 })

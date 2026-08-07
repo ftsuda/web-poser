@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+import { installPreviewGuard } from '../animation/previewGuard'
 import { useWorkspaceAutosave } from '../persistence/useWorkspaceAutosave'
 import { Viewport } from '../scene/Viewport'
 import { useKeyboardShortcuts } from '../shortcuts/useKeyboardShortcuts'
@@ -14,6 +16,10 @@ import { Toolbar } from './Toolbar'
 export function AppShell() {
   useKeyboardShortcuts()
   useWorkspaceAutosave()
+  // Mexeu na cena de trabalho, a pré-visualização do animador sai da frente
+  // (DECISOES.md #134). Vale para todo controle de navegação de uma vez —
+  // enumerá-los um a um já deixou a bancada travada duas vezes.
+  useEffect(() => installPreviewGuard(), [])
 
   return (
     <div className="app-shell">

@@ -34,17 +34,26 @@ describe('slugifySceneName', () => {
 })
 
 describe('formatSnapshotFilename', () => {
+  /**
+   * Data injetada em todo teste: o nome carrega o carimbo `_AAAA-MM-DD-HHmm`
+   * (pedido do usuário, 2026-08-07, ver `exportTimestamp.ts`), e sem injetar o
+   * instante o teste passaria a depender do relógio da máquina.
+   */
+  const quando = new Date(2026, 7, 7, 14, 32)
+
   it('zero-pads the sequence number to 3 digits', () => {
-    expect(formatSnapshotFilename('Cena 1', 1)).toBe('Cena-1_snap001.png')
-    expect(formatSnapshotFilename('Cena 1', 42)).toBe('Cena-1_snap042.png')
+    expect(formatSnapshotFilename('Cena 1', 1, { now: quando })).toBe('Cena-1_snap001_2026-08-07-1432.png')
+    expect(formatSnapshotFilename('Cena 1', 42, { now: quando })).toBe('Cena-1_snap042_2026-08-07-1432.png')
   })
 
   it('extends the padding instead of truncating once the sequence reaches 4 digits', () => {
-    expect(formatSnapshotFilename('Cena 1', 1000)).toBe('Cena-1_snap1000.png')
+    expect(formatSnapshotFilename('Cena 1', 1000, { now: quando })).toBe('Cena-1_snap1000_2026-08-07-1432.png')
   })
 
   it('slugifies the scene name as part of the filename', () => {
-    expect(formatSnapshotFilename('Minha Cena Legal', 1)).toBe('Minha-Cena-Legal_snap001.png')
+    expect(formatSnapshotFilename('Minha Cena Legal', 1, { now: quando })).toBe(
+      'Minha-Cena-Legal_snap001_2026-08-07-1432.png',
+    )
   })
 
   /**
@@ -52,11 +61,23 @@ describe('formatSnapshotFilename', () => {
    * captura duas vezes, e os números da sequência ficam diferentes. O sufixo é
    * o que permite reconhecer qual arquivo é qual na pasta.
    */
-  it('marca o mapa de profundidade com o sufixo `_depth`', () => {
-    expect(formatSnapshotFilename('Cena 1', 2, { depth: true })).toBe('Cena-1_snap002_depth.png')
+  it('marca o mapa de profundidade com o sufixo `_depth`, antes do carimbo de hora', () => {
+    expect(formatSnapshotFilename('Cena 1', 2, { depth: true, now: quando })).toBe(
+      'Cena-1_snap002_depth_2026-08-07-1432.png',
+    )
   })
 
-  it('sem a opção, o nome é exatamente o de sempre', () => {
-    expect(formatSnapshotFilename('Cena 1', 2, { depth: false })).toBe('Cena-1_snap002.png')
+  it('sem a opção, o nome é o de sempre mais o carimbo', () => {
+    expect(formatSnapshotFilename('Cena 1', 2, { depth: false, now: quando })).toBe(
+      'Cena-1_snap002_2026-08-07-1432.png',
+    )
+  })
+
+  /**
+   * O contador NÃO some com a chegada do carimbo: duas capturas no mesmo minuto
+   * têm a mesma data, e é a sequência que impede uma sobrescrever a outra.
+   */
+  it('sem instante injetado, carimba a hora corrente e mantém a sequência', () => {
+    expect(formatSnapshotFilename('Cena 1', 7)).toMatch(/^Cena-1_snap007_\d{4}-\d{2}-\d{2}-\d{4}\.png$/)
   })
 })

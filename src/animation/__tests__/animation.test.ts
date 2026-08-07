@@ -15,10 +15,12 @@ import {
   clampAnimationSpeed,
   clampKeyframeDuration,
   createWorkingAnimation,
+  estimableKeyframeFigures,
   findWorkingAnimation,
   formatAnimationFilename,
   freeKeyframeLabel,
   keyframeGroups,
+  anchorKeyframeIndex,
   keyframeIndexAtTimeMs,
   keyframeStartTimesMs,
   moveKeyframeBlock,
@@ -27,6 +29,7 @@ import {
   planKeyframeSplit,
   sanitizeAnimations,
   savedAnimations,
+  sharedKeyframeFigures,
   uniqueKeyframeLabel,
   WORKING_ANIMATION_ID,
   type Animation,
@@ -445,6 +448,36 @@ describe('keyframeIndexAtTimeMs', () => {
   })
 })
 
+/**
+ * O ÚLTIMO keyframe por onde a linha do tempo passou — o que o painel marca
+ * enquanto se anda de quadro em quadro, e de quem o papel-cebola desenha os
+ * vizinhos. Morava no `onionSkin.ts` até 2026-08-06.
+ */
+describe('anchorKeyframeIndex', () => {
+  /** Quatro keyframes, começando em 0, 1000, 2000 e 3000. */
+  const quatro = animation([1000, 1000, 1000, 1000])
+
+  it('em cima de um keyframe, o âncora é ele', () => {
+    expect(anchorKeyframeIndex(quatro, 0)).toBe(0)
+    expect(anchorKeyframeIndex(quatro, 1000)).toBe(1)
+    expect(anchorKeyframeIndex(quatro, 3000)).toBe(3)
+  })
+
+  it('no meio de um trecho, é o keyframe DE TRÁS', () => {
+    expect(anchorKeyframeIndex(quatro, 1500)).toBe(1)
+    expect(anchorKeyframeIndex(quatro, 999)).toBe(0)
+  })
+
+  it('nunca sai da lista, antes do começo ou depois do fim', () => {
+    expect(anchorKeyframeIndex(quatro, 99_999)).toBe(3)
+    expect(anchorKeyframeIndex(quatro, -100)).toBe(0)
+  })
+
+  it('devolve -1 sem keyframe nenhum', () => {
+    expect(anchorKeyframeIndex({ id: 'working', name: 'A', speed: 1, keyframes: [] }, 0)).toBe(-1)
+  })
+})
+
 describe('stepFrameMs', () => {
   it('em cima da grade, anda exatamente um quadro para cada lado', () => {
     expect(stepFrameMs(480, 25, 1, 10_000)).toBe(520)
@@ -629,6 +662,39 @@ describe('uniqueKeyframeLabel', () => {
     const keyframes = comRotulos(['Andando'])
     expect(uniqueKeyframeLabel(keyframes, 0, 'Andando')).toBe('Andando')
   })
+
+  /**
+   * O defeito relatado pelo usuário em 2026-08-07: **o vizinho é que manda.**
+   * Bastava o rótulo existir em dois blocos separados para toda tentativa de
+   * usá-lo virar "Andando 2" — inclusive a tentativa de EMENDAR os dois, que é
+   * o gesto óbvio para consertar a separação.
+   *
+   * O caso mais fácil de cair nele: mover um keyframe sem rótulo para dentro de
+   * um grupo pelas setas ↑↓. O grupo vira dois blocos, e rotular o keyframe do
+   * meio — exatamente o conserto — era recusado.
+   */
+  it('keyframe ENTRE dois do mesmo grupo assume o rótulo e emenda os três', () => {
+    const keyframes = comRotulos(['Andando', undefined, 'Andando'])
+    expect(uniqueKeyframeLabel(keyframes, 1, 'Andando')).toBe('Andando')
+  })
+
+  it('encostar num grupo vale mesmo que o rótulo exista em outro bloco', () => {
+    const keyframes = comRotulos(['Andando', undefined, undefined, 'Andando', undefined])
+    expect(uniqueKeyframeLabel(keyframes, 4, 'Andando')).toBe('Andando')
+    expect(uniqueKeyframeLabel(keyframes, 2, 'Andando')).toBe('Andando')
+  })
+
+  /** Longe de qualquer vizinho com aquele nome, o sufixo continua valendo. */
+  it('sem vizinho com o rótulo, o sufixo continua', () => {
+    const keyframes = comRotulos(['Andando', undefined, undefined, undefined])
+    expect(uniqueKeyframeLabel(keyframes, 3, 'Andando')).toBe('Andando 2')
+  })
+
+  /** O candidato numerado passa pela MESMA regra: ele também pode emendar. */
+  it('o sufixo escolhido é o que encosta num vizinho', () => {
+    const keyframes = comRotulos(['Andando', 'Andando 2', undefined])
+    expect(uniqueKeyframeLabel(keyframes, 2, 'Andando')).toBe('Andando 2')
+  })
 })
 
 describe('freeKeyframeLabel', () => {
@@ -664,11 +730,100 @@ describe('freeKeyframeLabel', () => {
  * normal da mesma animação, que tem exatamente o mesmo nome.
  */
 describe('formatAnimationFilename', () => {
+  const quando = new Date(2026, 7, 7, 14, 32)
+
   it('sanitiza o nome da animação, como o instantâneo faz com o da cena', () => {
-    expect(formatAnimationFilename('Minha Animação')).toBe('Minha-Animação.mp4')
+    expect(formatAnimationFilename('Minha Animação', { now: quando })).toBe(
+      'Minha-Animação_2026-08-07-1432.mp4',
+    )
   })
 
-  it('marca o mapa de profundidade com o sufixo `_depth`', () => {
-    expect(formatAnimationFilename('Minha Animação', { depth: true })).toBe('Minha-Animação_depth.mp4')
+  it('marca o mapa de profundidade com o sufixo `_depth`, antes do carimbo de hora', () => {
+    expect(formatAnimationFilename('Minha Animação', { depth: true, now: quando })).toBe(
+      'Minha-Animação_depth_2026-08-07-1432.mp4',
+    )
+  })
+
+  it('sem instante injetado, carimba a hora corrente', () => {
+    expect(formatAnimationFilename('Corrida')).toMatch(/^Corrida_\d{4}-\d{2}-\d{2}-\d{4}\.mp4$/)
+  })
+})
+
+/**
+ * Cópia parcial entre keyframes (pedido do usuário, 2026-08-06): o diálogo de
+ * caixas só pode listar quem a cópia consegue afetar — quem está nos DOIS
+ * keyframes. Uma caixa que não faz nada é pior que caixa nenhuma.
+ */
+describe('sharedKeyframeFigures', () => {
+  const boneco = (id: string, name: string) => ({ id, name }) as never
+
+  const keyframe = (...figures: ReturnType<typeof boneco>[]) =>
+    ({ id: 'k', durationMs: 500, figures, camera: {} }) as never
+
+  it('devolve só os bonecos presentes nos dois', () => {
+    const destino = keyframe(boneco('f1', 'Boneco 1'), boneco('f2', 'Boneco 2'))
+    const origem = keyframe(boneco('f2', 'Boneco 2'), boneco('f3', 'Boneco 3'))
+
+    expect(sharedKeyframeFigures(destino, origem).map((figure) => figure.id)).toEqual(['f2'])
+  })
+
+  /** Os nomes saem do keyframe de DESTINO — é o card que se está editando. */
+  it('mantém a ordem e os nomes do keyframe de destino', () => {
+    const destino = keyframe(boneco('f2', 'Rival'), boneco('f1', 'Herói'))
+    const origem = keyframe(boneco('f1', 'Boneco 1'), boneco('f2', 'Boneco 2'))
+
+    expect(sharedKeyframeFigures(destino, origem).map((figure) => figure.name)).toEqual([
+      'Rival',
+      'Herói',
+    ])
+  })
+
+  it('sem elenco em comum, devolve lista vazia', () => {
+    expect(sharedKeyframeFigures(keyframe(boneco('f1', 'A')), keyframe(boneco('f9', 'B')))).toEqual([])
+  })
+})
+
+/**
+ * Quem a pose média consegue estimar (pedido do usuário, 2026-08-07): tem de
+ * estar nos TRÊS keyframes. É o `sharedKeyframeFigures` com uma ponta a mais —
+ * a estimativa é um caminho entre dois vizinhos, e sem uma das pontas não há o
+ * que dividir. Caixa que não faz nada é pior que caixa nenhuma.
+ */
+describe('estimableKeyframeFigures', () => {
+  const boneco = (id: string, name: string) => ({ id, name }) as never
+
+  const keyframe = (...figures: ReturnType<typeof boneco>[]) =>
+    ({ id: 'k', durationMs: 500, figures, camera: {} }) as never
+
+  it('lista quem está nos três keyframes, na ordem do alvo', () => {
+    const alvo = keyframe(boneco('a', 'A'), boneco('b', 'B'))
+    const anterior = keyframe(boneco('b', 'B'), boneco('a', 'A'))
+    const seguinte = keyframe(boneco('a', 'A'), boneco('b', 'B'))
+
+    expect(estimableKeyframeFigures(alvo, anterior, seguinte).map((f) => f.id)).toEqual(['a', 'b'])
+  })
+
+  it('quem falta no anterior fica de fora', () => {
+    const alvo = keyframe(boneco('a', 'A'), boneco('b', 'B'))
+    const anterior = keyframe(boneco('a', 'A'))
+    const seguinte = keyframe(boneco('a', 'A'), boneco('b', 'B'))
+
+    expect(estimableKeyframeFigures(alvo, anterior, seguinte).map((f) => f.id)).toEqual(['a'])
+  })
+
+  it('quem falta no seguinte também', () => {
+    const alvo = keyframe(boneco('a', 'A'), boneco('b', 'B'))
+    const anterior = keyframe(boneco('a', 'A'), boneco('b', 'B'))
+    const seguinte = keyframe(boneco('b', 'B'))
+
+    expect(estimableKeyframeFigures(alvo, anterior, seguinte).map((f) => f.id)).toEqual(['b'])
+  })
+
+  it('sem ninguém em comum, não há o que estimar', () => {
+    const alvo = keyframe(boneco('a', 'A'))
+    const anterior = keyframe(boneco('b', 'B'))
+    const seguinte = keyframe(boneco('a', 'A'))
+
+    expect(estimableKeyframeFigures(alvo, anterior, seguinte)).toEqual([])
   })
 })

@@ -9,12 +9,14 @@ import {
   setJointLimitOverrides,
 } from '../../figure/skeleton'
 import { resolveHandPreset } from '../../figure/handPresets'
+import { rootAxisLockToken } from '../../figure/jointLocks'
 import { figureBlendState, resolveBlendTarget } from '../../figure/poseBlend'
 import { mirrorRotation } from '../../figure/poseMirror'
 import { resolvePosePreset, resolvePosePresetPlacement } from '../../figure/posePresets'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import { findWorkingAnimation, savedAnimations } from '../../animation/animation'
 import { COLOR_PALETTE, MAX_FIGURES, useFiguresStore } from '../figuresStore'
+import { DEFAULT_LIGHT } from '../../scene/sceneLight'
 
 describe('figuresStore', () => {
   beforeEach(() => {
@@ -936,7 +938,7 @@ describe('figuresStore — importação de arquivo (.json)', () => {
       nextFigureSeq: 5,
       props: [],
       nextPropSeq: 1,
-      environment: { background: 'light', grid: false },
+      environment: { background: 'light', grid: false, ...DEFAULT_LIGHT },
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
       nextSnapshotNumber: 9,
@@ -947,7 +949,7 @@ describe('figuresStore — importação de arquivo (.json)', () => {
     expect(state.sceneName).toBe('Cena importada')
     expect(state.figures).toHaveLength(0)
     expect(state.nextFigureSeq).toBe(5)
-    expect(state.environment).toEqual({ background: 'light', grid: false })
+    expect(state.environment).toEqual({ background: 'light', grid: false, ...DEFAULT_LIGHT })
     expect(state.nextSnapshotNumber).toBe(9)
     expect(state.activeSceneId).toBeNull() // não é um snapshot salvo do catálogo
     expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(1)
@@ -1021,7 +1023,7 @@ describe('figuresStore — importação de arquivo (.json)', () => {
           nextFigureSeq: 1,
           props: [],
           nextPropSeq: 1,
-          environment: { background: 'dark' as const, grid: false },
+          environment: { background: 'dark' as const, grid: false, ...DEFAULT_LIGHT },
           cameraBookmarks: [],
           nextCameraBookmarkSeq: 1,
           nextSnapshotNumber: 1,
@@ -1596,7 +1598,7 @@ describe('figuresStore — novo workspace (fase 9, item 7)', () => {
     expect(after.nextCameraBookmarkSeq).toBe(1)
     expect(after.nextSceneSnapshotSeq).toBe(1)
     expect(after.nextSnapshotNumber).toBe(1)
-    expect(after.environment).toEqual({ background: 'medium', grid: true })
+    expect(after.environment).toEqual({ background: 'medium', grid: true, ...DEFAULT_LIGHT })
     expect(after.jointLimits).toEqual({})
   })
 
@@ -1666,6 +1668,86 @@ describe('figuresStore — resetar uma junta (fase 9, item 6)', () => {
     const figure = useFiguresStore.getState().figures.find((f) => f.id === id)
     expect(figure?.rotation).toEqual({ x: 0, y: 0, z: 0 })
     expect(figure?.position).toEqual([1, 0.5, 2])
+  })
+})
+
+describe('figuresStore — voltar o boneco inteiro à posição inicial', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    setJointLimitOverrides({})
+  })
+
+  const figureById = (id: string) => useFiguresStore.getState().figures.find((f) => f.id === id)!
+
+  it('devolve TODAS as juntas à pose "Em pé", zera a rotação e leva o boneco à origem', () => {
+    const store = useFiguresStore.getState()
+    const id = store.addFigure() as string
+    store.setJointRotation(id, 'elbow.L', { x: -120 })
+    store.setJointRotation(id, 'knee.R', { x: 60 })
+    store.setRootRotation(id, { x: 20, y: 45, z: -10 })
+    store.setPosition(id, [1.5, 0.4, -2])
+
+    useFiguresStore.getState().resetFigure(id)
+
+    const figure = figureById(id)
+    const standing = resolvePosePreset('standing')
+    // A MESMA referência dos botões vizinhos de "Zerar por grupo": zerar tudo
+    // não pode dar uma pose diferente de zerar grupo por grupo.
+    expect(figure.pose['elbow.L']).toEqual(standing['elbow.L'])
+    expect(figure.pose['knee.R']).toEqual(standing['knee.R'])
+    expect(figure.rotation).toEqual({ x: 0, y: 0, z: 0 })
+    expect(figure.position).toEqual([0, 0, 0])
+  })
+
+  it('não mexe no que está travado: junta travada, eixo travado da raiz e âncora', () => {
+    const store = useFiguresStore.getState()
+    const id = store.addFigure() as string
+    store.setJointRotation(id, 'elbow.L', { x: -120 })
+    store.toggleJointLock(id, 'elbow.L')
+    store.setRootRotation(id, { y: 45 })
+    store.toggleJointLock(id, rootAxisLockToken('y'))
+
+    useFiguresStore.getState().resetFigure(id)
+
+    const figure = figureById(id)
+    expect(figure.pose['elbow.L'].x).toBe(-120)
+    expect(figure.rotation.y).toBe(45)
+    expect(figure.rotation.x).toBe(0)
+  })
+
+  it('com âncora, a colocação (posição e rotação) fica onde está — só a pose volta', () => {
+    const store = useFiguresStore.getState()
+    const id = store.addFigure() as string
+    store.setJointRotation(id, 'knee.L', { x: 60 })
+    store.setJointRotation(id, 'shoulder.L', { x: -25 })
+    store.setRootRotation(id, { y: 30 })
+    store.setPosition(id, [1, 0, 1])
+    store.toggleJointPin(id, 'wrist.L')
+
+    useFiguresStore.getState().resetFigure(id)
+
+    const figure = figureById(id)
+    expect(figure.position).toEqual([1, 0, 1])
+    expect(figure.rotation.y).toBe(30)
+    // O joelho não é ancestral do punho ancorado: volta ao inicial.
+    expect(figure.pose['knee.L']).toEqual(resolvePosePreset('standing')['knee.L'])
+    // O ombro é ancestral do punho: congelado pela âncora, fica como estava.
+    expect(figure.pose['shoulder.L'].x).toBe(-25)
+  })
+
+  it('é UM passo de undo, e o desfazer devolve pose, rotação e posição', () => {
+    const store = useFiguresStore.getState()
+    const id = store.addFigure() as string
+    store.setJointRotation(id, 'elbow.L', { x: -120 })
+    store.setPosition(id, [2, 0, 0])
+
+    useFiguresStore.getState().resetFigure(id)
+    useFiguresStore.temporal.getState().undo()
+
+    const figure = figureById(id)
+    expect(figure.pose['elbow.L'].x).toBe(-120)
+    expect(figure.position).toEqual([2, 0, 0])
   })
 })
 
@@ -2110,7 +2192,7 @@ describe('figuresStore — abrir workspace traz a biblioteca de poses da pasta',
         nextFigureSeq: 1,
         props: [],
         nextPropSeq: 1,
-        environment: { background: 'medium', grid: true },
+        environment: { background: 'medium', grid: true, ...DEFAULT_LIGHT },
         cameraBookmarks: [],
         nextCameraBookmarkSeq: 1,
         nextSnapshotNumber: 1,

@@ -85,6 +85,31 @@ function closeBatch(): void {
 }
 
 /**
+ * Escreve no store **sem deixar passo de undo** — nem agora, nem agrupado
+ * depois.
+ *
+ * É para escrita que não é EDIÇÃO: andar de quadro em quadro pela linha do tempo
+ * troca a cena de trabalho inteira (DECISOES.md #133), e navegar não é conteúdo
+ * (PLANO.md > "Interação de pose", item 5). Sem isto, sessenta cliques na seta
+ * empurrariam o trabalho de verdade para fora do teto de `UNDO_LIMIT` passos —
+ * o Ctrl+Z passaria a desfazer cliques de navegação, e a cena que se estava
+ * montando sairia do histórico sem aviso. Quem a devolve é a guarda (#127).
+ *
+ * Respeita um lote já aberto: se o rastreio já estava pausado por um
+ * `beginUndoBatch`, não o religa no fim — quem religa é o `endUndoBatch`.
+ */
+export function withoutUndo(run: () => void): void {
+  const temporal = useFiguresStore.temporal.getState()
+  const rastreando = temporal.isTracking
+  if (rastreando) temporal.pause()
+  try {
+    run()
+  } finally {
+    if (rastreando) useFiguresStore.temporal.getState().resume()
+  }
+}
+
+/**
  * Props de ponteiro para um controle CONTÍNUO de painel (`<input
  * type="range">`): arrastar o slider vira um passo de undo só, como arrastar um
  * gizmo — antes disso, cada pixel do trajeto era um passo.

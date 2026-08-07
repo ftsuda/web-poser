@@ -8,13 +8,14 @@ import { POSES_FILENAME, buildPosesFile } from '../posesFile'
 import { serializeSceneFile } from '../sceneFile'
 import { WORKSPACE_MANIFEST_FILENAME, buildWorkspaceManifest } from '../workspaceManifest'
 import { loadWorkspaceFromDirectory, loadWorkspaceFromFiles, saveWorkspaceToDirectory } from '../workspaceFolder'
+import { DEFAULT_LIGHT } from '../../scene/sceneLight'
 
 const emptyData = {
   figures: [],
   nextFigureSeq: 1,
   props: [],
   nextPropSeq: 1,
-  environment: { background: 'medium' as const, grid: true },
+  environment: { background: 'medium' as const, grid: true, ...DEFAULT_LIGHT },
   cameraBookmarks: [],
   nextCameraBookmarkSeq: 1,
   nextSnapshotNumber: 1,

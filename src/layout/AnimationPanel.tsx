@@ -6,19 +6,30 @@ import {
   KEYFRAME_EASINGS,
   MAX_ANIMATION_SPEED,
   MIN_ANIMATION_SPEED,
+  anchorKeyframeIndex,
   animationDurationMs,
   animationOutputDurationMs,
   findWorkingAnimation,
   keyframeGroups,
-  keyframeIndexAtTimeMs,
   keyframeStartTimesMs,
   savedAnimations,
+  estimableKeyframeFigures,
+  sharedKeyframeFigures,
   type KeyframeEasing,
 } from '../animation/animation'
 import { ANIMATION_CLIPS, ANIMATION_CLIP_KEYS, type AnimationClipKey } from '../animation/animationClips'
 import { clipRoleCount } from '../animation/clipLibrary'
 import { FPS_OPTIONS } from '../animation/frameTimeline'
 import { ONION_SKIN_MODES, type OnionSkinMode } from '../animation/onionSkin'
+import {
+  applyEstimatedPoseToWorkbench,
+  goToKeyframeWithStash,
+  markWorkbenchRecorded,
+  restoreStash,
+} from '../animation/sceneStashActions'
+import { averageKeyframeFigures } from '../animation/animationSampler'
+import { shouldHighlightUpdate } from './updateHighlight'
+import { withExportTimestamp } from '../persistence/exportTimestamp'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import {
   parseImportedAnimation,
@@ -39,12 +50,14 @@ import { useCameraStore } from '../store/cameraStore'
 import { useDepthStore } from '../store/depthStore'
 import { useFiguresStore } from '../store/figuresStore'
 import { useKeyframeThumbnailStore } from '../store/keyframeThumbnailStore'
+import { useSceneStashStore } from '../store/sceneStashStore'
 import type { AnimationImportMode } from '../store/figuresStore'
 import { AnimationImportDialog, type SubstituteChoice } from './AnimationImportDialog'
 import { ApplyCameraDialog } from './ApplyCameraDialog'
 import { CollapsiblePanel } from './CollapsiblePanel'
 import { CollapsibleSection } from './CollapsibleSection'
 import { ConfirmDialog } from './ConfirmDialog'
+import { CopyFiguresDialog } from './CopyFiguresDialog'
 
 /** Rótulo de cada curva de suavização (item 26) — mapa explícito, para o typecheck acusar curva nova sem tradução. */
 const EASING_LABEL_KEYS: Record<KeyframeEasing, string> = {
@@ -104,6 +117,71 @@ const CLIP_LABEL_KEYS: Record<AnimationClipKey, { label: string; hint: string }>
   rearChokeGround: {
     label: 'panels.animation.clipRearChokeGround',
     hint: 'panels.animation.clipHintRearChokeGround',
+  },
+}
+
+/**
+ * Cópia vinda do keyframe vizinho esperando a escolha de quem recebe
+ * (2026-08-06). `kind` diz o que se copia — o retrato inteiro ou só a colocação
+ * no plano —, e `offset` de qual vizinho.
+ */
+interface PendingCopy {
+  kind: 'pose' | 'placement'
+  keyframeId: string
+  offset: -1 | 1
+}
+
+/** A dica do botão que originou o clique vira o resumo do diálogo. */
+const COPY_HINT_KEYS: Record<PendingCopy['kind'], { previous: string; next: string }> = {
+  pose: { previous: 'panels.animation.copyPosePrevHint', next: 'panels.animation.copyPoseNextHint' },
+  placement: {
+    previous: 'panels.animation.copyPlacementPrevHint',
+    next: 'panels.animation.copyPlacementNextHint',
+  },
+}
+
+/**
+ * Cópia vinda do vizinho esperando CONFIRMAÇÃO (pedido do usuário, 2026-08-07).
+ *
+ * É o caminho de quem não tem elenco a escolher: a câmera do keyframe é uma só,
+ * e a pose/colocação com um boneco em cena também não tem o que marcar. Aí o
+ * diálogo é o `ConfirmDialog` do "Regravar", e não o de caixas — que, com dois
+ * bonecos ou mais, JÁ é a confirmação (empilhar as duas seriam duas telas para
+ * uma cópia).
+ */
+interface PendingCopyConfirm {
+  kind: 'camera' | 'pose' | 'placement'
+  keyframeId: string
+  offset: -1 | 1
+}
+
+/**
+ * O que cada cópia vai fazer, dito POR LADO: os botões de um par ficam colados
+ * na mesma fileira e a única diferença entre eles é a seta — trocar um pelo
+ * outro é exatamente o engano que a confirmação existe para pegar, e um texto
+ * genérico não o pegaria.
+ */
+const COPY_CONFIRM_KEYS: Record<
+  PendingCopyConfirm['kind'],
+  { title: string; confirm: string; previous: string; next: string }
+> = {
+  camera: {
+    title: 'panels.animation.copyCameraTitle',
+    confirm: 'panels.animation.copyCameraConfirm',
+    previous: 'panels.animation.copyCameraPrevConfirmHint',
+    next: 'panels.animation.copyCameraNextConfirmHint',
+  },
+  pose: {
+    title: 'panels.animation.copyFiguresTitle',
+    confirm: 'panels.animation.copyFiguresConfirm',
+    previous: 'panels.animation.copyPosePrevConfirmHint',
+    next: 'panels.animation.copyPoseNextConfirmHint',
+  },
+  placement: {
+    title: 'panels.animation.copyFiguresTitle',
+    confirm: 'panels.animation.copyFiguresConfirm',
+    previous: 'panels.animation.copyPlacementPrevConfirmHint',
+    next: 'panels.animation.copyPlacementNextConfirmHint',
   },
 }
 
@@ -294,6 +372,7 @@ export function AnimationPanel() {
   const setAnimationKeyframeLabel = useFiguresStore((state) => state.setAnimationKeyframeLabel)
   const copyAnimationKeyframeCamera = useFiguresStore((state) => state.copyAnimationKeyframeCamera)
   const copyAnimationKeyframeFigures = useFiguresStore((state) => state.copyAnimationKeyframeFigures)
+  const copyAnimationKeyframePlacement = useFiguresStore((state) => state.copyAnimationKeyframePlacement)
   const applySceneCameraToKeyframes = useFiguresStore((state) => state.applySceneCameraToKeyframes)
   const duplicateAnimationKeyframe = useFiguresStore((state) => state.duplicateAnimationKeyframe)
   const closeAnimationCycle = useFiguresStore((state) => state.closeAnimationCycle)
@@ -313,6 +392,8 @@ export function AnimationPanel() {
   const setOnionSkin = useAnimationStore((state) => state.setOnionSkin)
   const onionSkinMode = useAnimationStore((state) => state.onionSkinMode)
   const setOnionSkinMode = useAnimationStore((state) => state.setOnionSkinMode)
+  const onionSkinHiddenFigureIds = useAnimationStore((state) => state.onionSkinHiddenFigureIds)
+  const setOnionSkinFigureShown = useAnimationStore((state) => state.setOnionSkinFigureShown)
   const depthOutput = useDepthStore((state) => state.videoDepth)
   const toggleDepthOutput = useDepthStore((state) => state.toggleVideoDepth)
   const fps = useAnimationStore((state) => state.fps)
@@ -332,7 +413,15 @@ export function AnimationPanel() {
   const requestAppendClip = useAnimationStore((state) => state.requestAppendClip)
   const requestAppendSavedClip = useAnimationStore((state) => state.requestAppendSavedClip)
   const requestUpdateKeyframe = useAnimationStore((state) => state.requestUpdateKeyframe)
-  const requestGoToKeyframe = useAnimationStore((state) => state.requestGoToKeyframe)
+  // A guarda temporária da bancada (2026-08-06): o "Ir para" a enche, este
+  // botão a recupera. `requestGoToKeyframe` deixou de ser chamado direto —
+  // quem despacha o comando é `goToKeyframeWithStash`, para não haver caminho
+  // que sobrescreva a cena de trabalho sem guardá-la antes.
+  const stash = useSceneStashStore((state) => state.stash)
+  // A mesma marca de "intocado" da guarda alimenta o destaque do "Regravar"
+  // (2026-08-07): se a bancada já não é o retrato que foi carregado nela, há o
+  // que gravar. Ver `updateHighlight.ts`.
+  const pristineFigures = useSceneStashStore((state) => state.pristineFigures)
   const requestThumbnails = useAnimationStore((state) => state.requestThumbnails)
   const requestExport = useAnimationStore((state) => state.requestExport)
   const cancelExport = useAnimationStore((state) => state.cancelExport)
@@ -363,10 +452,39 @@ export function AnimationPanel() {
    * tempo seriam duas chances de clicar na errada.
    */
   const [confirmingUpdateId, setConfirmingUpdateId] = useState<string | null>(null)
+  /**
+   * E o keyframe cujo "×" espera confirmação (pedido do usuário, 2026-08-06).
+   * Mesma regra de um id só do "Regravar": abrir a confirmação de outro card
+   * fecha a anterior sozinho.
+   */
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null)
+  /**
+   * E a cópia vinda do vizinho esperando confirmação (pedido do usuário,
+   * 2026-08-07). Guarda o keyframe QUE RECEBE, o que se copia e de que lado vem
+   * — é o que o diálogo precisa dizer. Mesma regra de um por vez do "Regravar"
+   * e do "×".
+   */
+  const [confirmingCopy, setConfirmingCopy] = useState<PendingCopyConfirm | null>(null)
+  /**
+   * A pose estimada esperando confirmação: o keyframe do meio cujo card foi
+   * clicado (pedido do usuário, 2026-08-07).
+   */
+  const [estimatingId, setEstimatingId] = useState<string | null>(null)
   /** O diálogo de carimbar a câmera atual numa faixa de keyframes está aberto? */
   const [applyingCamera, setApplyingCamera] = useState(false)
   /** E o de confirmar o "Limpar", que apaga a linha do tempo inteira. */
   const [clearingWorking, setClearingWorking] = useState(false)
+  /**
+   * A cópia vinda do vizinho esperando o diálogo dizer quem recebe
+   * (2026-08-06), e os bonecos DESMARCADOS na última escolha.
+   *
+   * Guardar quem está de fora, e não quem está dentro, é o que faz "todas
+   * marcadas" continuar valendo para boneco que entrou em cena depois — ele
+   * nunca esteve na lista, então nasce marcado, como o usuário pediu.
+   * Escolha de ferramenta: fora do undo e do arquivo.
+   */
+  const [pendingCopy, setPendingCopy] = useState<PendingCopy | null>(null)
+  const [excludedCopyIds, setExcludedCopyIds] = useState<string[]>([])
   /** Papéis do trecho salvo escolhido, faixa a salvar e nome do trecho (item 39). */
   const [savedRoleDrafts, setSavedRoleDrafts] = useState<string[]>([])
   const [rangeFromDraft, setRangeFromDraft] = useState(0)
@@ -389,11 +507,16 @@ export function AnimationPanel() {
   // parada além do fim; o que se mostra é sempre o instante que existe.
   const currentMs = Math.min(timeMs, totalMs)
   const startTimes = active ? keyframeStartTimesMs(active) : []
-  // Em qual keyframe a linha do tempo parou (pedido do usuário): é o que
-  // responde "onde o ⏮/⏭ me deixou". Derivado do instante, sem estado novo —
-  // vale também para arrastar a régua e para as setas de quadro, que param em
-  // cima de um keyframe do mesmo jeito.
-  const playheadIndex = keyframeIndexAtTimeMs(active, currentMs)
+  // Onde a linha do tempo está (pedido do usuário): o ÚLTIMO keyframe por onde
+  // ela passou. Derivado do instante, sem estado novo — vale para o ⏮/⏭, para
+  // arrastar a régua e para as setas de quadro.
+  //
+  // Era o `keyframeIndexAtTimeMs`, que só acende o card quando o playhead cai
+  // EXATAMENTE em cima de um keyframe: andando de quadro em quadro no meio de um
+  // trecho, o painel ficava sem marca nenhuma, e perder a referência de onde se
+  // estava foi a queixa do usuário (2026-08-06; DECISOES.md #133). O âncora é o
+  // mesmo que o papel-cebola usa para saber de quem desenhar os vizinhos.
+  const playheadIndex = active ? anchorKeyframeIndex(active, currentMs) : -1
   const groups = active ? keyframeGroups(active) : []
   const exporting = exportPhase === 'running'
   // Qual keyframe está esperando a confirmação de "Regravar": o diálogo precisa
@@ -406,6 +529,78 @@ export function AnimationPanel() {
       : -1
   const confirmingUpdate =
     confirmingIndex >= 0 && confirmingUpdateId ? { id: confirmingUpdateId, index: confirmingIndex } : null
+  // Mesma leitura para o "×": o diálogo precisa do número e do instante, e um
+  // keyframe que sumiu da lista cai fora sozinho.
+  const confirmingRemoveIndex =
+    active && confirmingRemoveId
+      ? active.keyframes.findIndex((keyframe) => keyframe.id === confirmingRemoveId)
+      : -1
+  const confirmingRemove =
+    confirmingRemoveIndex >= 0 && confirmingRemoveId
+      ? { id: confirmingRemoveId, index: confirmingRemoveIndex }
+      : null
+  // E para a cópia que espera confirmação. Além de sumir com o keyframe
+  // removido, cai fora quando o vizinho de onde a cópia viria deixa de existir —
+  // confirmar uma cópia sem origem não faria nada, e o diálogo estaria mentindo.
+  const copyConfirmIndex =
+    active && confirmingCopy
+      ? active.keyframes.findIndex((keyframe) => keyframe.id === confirmingCopy.keyframeId)
+      : -1
+  const confirmingCopyTarget =
+    active && confirmingCopy && copyConfirmIndex >= 0 &&
+    active.keyframes[copyConfirmIndex + confirmingCopy.offset]
+      ? { ...confirmingCopy, index: copyConfirmIndex }
+      : null
+
+  // A pose estimada precisa dos DOIS vizinhos: sem uma das pontas não há
+  // caminho a dividir, e o keyframe que perdeu um vizinho enquanto o diálogo
+  // esperava cai fora sozinho.
+  const estimatingIndex =
+    active && estimatingId
+      ? active.keyframes.findIndex((keyframe) => keyframe.id === estimatingId)
+      : -1
+  const estimating =
+    active && estimatingIndex > 0 && estimatingIndex < active.keyframes.length - 1
+      ? { id: estimatingId as string, index: estimatingIndex }
+      : null
+  // Quem a estimativa alcança: os bonecos presentes nos TRÊS keyframes. É a
+  // lista das caixas — e é ela, não a contagem de bonecos da cena, que decide
+  // se há o que escolher (uma cena de três com um só estimável não tem).
+  const estimableFigures =
+    active && estimating
+      ? estimableKeyframeFigures(
+          active.keyframes[estimating.index],
+          active.keyframes[estimating.index - 1],
+          active.keyframes[estimating.index + 1],
+        )
+      : []
+  const estimableInitialIds = estimableFigures
+    .filter((figure) => !excludedCopyIds.includes(figure.id))
+    .map((figure) => figure.id)
+
+  // O destaque do "Regravar" (`updateHighlight.ts`): a bancada ainda é o retrato
+  // que foi carregado nela? A marca de "intocado" da guarda (#127) já responde
+  // isso por referência do array de bonecos — não há estado novo aqui.
+  const benchPristine = pristineFigures !== null && pristineFigures === figures
+
+  // A cópia esperando escolha: o keyframe que recebe, o vizinho de onde vem e o
+  // elenco comum aos dois — que é o que o diálogo mostra em caixas. Um keyframe
+  // removido enquanto o diálogo esperava cai fora sozinho, sem estado a limpar.
+  const pendingCopyIndex =
+    active && pendingCopy
+      ? active.keyframes.findIndex((keyframe) => keyframe.id === pendingCopy.keyframeId)
+      : -1
+  const pendingCopyTarget = active && pendingCopyIndex >= 0 ? active.keyframes[pendingCopyIndex] : null
+  const pendingCopySource =
+    active && pendingCopyTarget && pendingCopy
+      ? (active.keyframes[pendingCopyIndex + pendingCopy.offset] ?? null)
+      : null
+  const pendingCopyFigures =
+    pendingCopyTarget && pendingCopySource ? sharedKeyframeFigures(pendingCopyTarget, pendingCopySource) : []
+  // Todas marcadas, menos as que a última escolha deixou de fora.
+  const pendingCopyInitialIds = pendingCopyFigures
+    .filter((figure) => !excludedCopyIds.includes(figure.id))
+    .map((figure) => figure.id)
 
   // A câmera do keyframe é uma câmera em perspectiva (posição, alvo e lente);
   // em ortográfica não há lente que interpolar, então a captura fica de fora.
@@ -475,6 +670,90 @@ export function AnimationPanel() {
           ? 'panels.animation.startByCapturing'
           : null
 
+  /**
+   * Copiar do vizinho — câmera, pose ou colocação. Dois caminhos, e a escolha
+   * entre eles é sobre haver ou não o que ESCOLHER:
+   *
+   * - com dois bonecos ou mais, pose e colocação vão para o diálogo de caixas
+   *   (2026-08-06), que já é uma confirmação — quem marca as caixas e clica em
+   *   "Copiar" não precisa de um aviso antes dizendo que vai copiar;
+   * - o resto (a câmera sempre, e pose/colocação com um boneco só em cena) vai
+   *   para o modal de confirmação (2026-08-07): não há nada a marcar, mas há o
+   *   que perder — e são botões pequenos, colados, oito por card.
+   */
+  const requestCopy = (kind: PendingCopyConfirm['kind'], keyframeId: string, offset: -1 | 1) => {
+    if (!active) return
+    if (kind !== 'camera' && figureCount >= 2) {
+      setPendingCopy({ kind, keyframeId, offset })
+      return
+    }
+    setConfirmingCopy({ kind, keyframeId, offset })
+  }
+
+  const applyCopy = (copy: PendingCopyConfirm, figureIds?: string[]) => {
+    if (!active) return
+    if (copy.kind === 'camera') copyAnimationKeyframeCamera(active.id, copy.keyframeId, copy.offset)
+    else if (copy.kind === 'pose')
+      copyAnimationKeyframeFigures(active.id, copy.keyframeId, copy.offset, figureIds)
+    else copyAnimationKeyframePlacement(active.id, copy.keyframeId, copy.offset, figureIds)
+    // E a bancada vai JUNTO, para o keyframe já atualizado (pedido do usuário,
+    // 2026-08-07): copiar é um ajuste daquele keyframe, e ver o resultado é
+    // parte do gesto — antes disto a cópia acontecia fora da tela, e conferir
+    // exigia um "Ir para" à mão logo depois. É o mesmo caminho daquele botão, e
+    // por isso herda tudo dele: a cena que se estava montando vai para a guarda,
+    // e a marca do item 40 passa a este card.
+    //
+    // A ordem importa: a cópia escreve no keyframe ANTES do carregamento, senão
+    // a bancada receberia o retrato velho.
+    const index = active.keyframes.findIndex((keyframe) => keyframe.id === copy.keyframeId)
+    if (index >= 0) goToKeyframeWithStash(copy.keyframeId, startTimes[index])
+  }
+
+  /**
+   * A pose estimada do card (pedido do usuário, 2026-08-07): a média entre o
+   * keyframe anterior e o seguinte vai para a BANCADA, com o enquadramento
+   * deste keyframe — conferir em 3D, ajustar, e só então "Regravar". A cena que
+   * estava na tela vai para a guarda, como em todo "Ir para".
+   */
+  const applyEstimate = (index: number, figureIds?: string[]) => {
+    if (!active) return
+    const target = active.keyframes[index]
+    const previous = active.keyframes[index - 1]
+    const next = active.keyframes[index + 1]
+    if (!target || !previous || !next) return
+    applyEstimatedPoseToWorkbench(
+      target.id,
+      averageKeyframeFigures(target, previous, next, figureIds),
+      target.camera,
+    )
+  }
+
+  /**
+   * Duplicar e ir para a CÓPIA (pedido do usuário, 2026-08-06): é ela que se
+   * ajusta em seguida — duplicar é o jeito de criar o próximo keyframe partindo
+   * deste —, e sem o "Ir para" os indicadores do painel e da régua continuavam
+   * apontando para outro card, ou para nenhum.
+   *
+   * O instante da cópia é lido da lista JÁ atualizada, e não somado à mão: o
+   * `set` do zustand é síncrono, então `getState()` logo depois já tem a lista
+   * nova, e a aritmética de "duração do trecho que chega" não precisa ser
+   * refeita aqui.
+   *
+   * **São dois passos de undo**, e é o certo: duplicar é uma edição da linha do
+   * tempo, carregar o retrato é uma edição da cena. O primeiro Ctrl+Z devolve a
+   * bancada, o segundo tira a cópia.
+   */
+  const handleDuplicate = (keyframeId: string) => {
+    if (!active) return
+    const copyId = duplicateAnimationKeyframe(active.id, keyframeId)
+    if (!copyId) return
+    const updated = findWorkingAnimation(useFiguresStore.getState().animations)
+    if (!updated) return
+    const at = updated.keyframes.findIndex((keyframe) => keyframe.id === copyId)
+    if (at < 0) return
+    goToKeyframeWithStash(copyId, keyframeStartTimesMs(updated)[at])
+  }
+
   const handleSaveToLibrary = () => {
     if (saveAnimationToLibrary(libraryNameDraft)) setLibraryNameDraft('')
   }
@@ -507,7 +786,7 @@ export function AnimationPanel() {
     const json = serializeAnimationFile(active)
     await writeFileToDirectoryOrDownload(
       null,
-      `${slugifySceneName(active.name)}.json`,
+      withExportTimestamp(`${slugifySceneName(active.name)}.json`),
       new Blob([json], { type: 'application/json' }),
     )
   }
@@ -575,6 +854,28 @@ export function AnimationPanel() {
         {blockedReasonKey && (
           <p className="animation-panel__hint animation-panel__capture-hint">{t(blockedReasonKey)}</p>
         )}
+
+        {/* Guarda temporária da bancada (pedido do usuário, 2026-08-06): "Ir
+            para" sobrescreve a cena que se estava montando, e recuperá-la
+            exigia lembrar do Ctrl+Z no meio de um ajuste. Fica AQUI, na barra
+            grudada, e não junto dos cards: numa lista de vinte keyframes um
+            botão no rodapé some da tela justamente quando se precisa dele.
+            Sempre visível, desabilitado enquanto não há o que recuperar — um
+            botão que só aparece depois do primeiro "Ir para" não se descobre. */}
+        <button
+          type="button"
+          className="panel-action animation-panel__restore"
+          onClick={restoreStash}
+          disabled={!stash}
+          title={t('panels.animation.restoreStashHint')}
+        >
+          {t('panels.animation.restoreStash')}
+        </button>
+        {!stash && (
+          <p className="animation-panel__hint animation-panel__capture-hint">
+            {t('panels.animation.restoreStashEmpty')}
+          </p>
+        )}
       </div>
 
       {/* Papel-cebola (item 31): fica logo acima da lista porque é dela que ele
@@ -612,6 +913,30 @@ export function AnimationPanel() {
             </select>
           </label>
           <p className="animation-panel__hint">{t('panels.animation.onionSkinHint')}</p>
+
+          {/* De QUAIS bonecos sai o fantasma (pedido do usuário, 2026-08-06).
+              Numa cena de várias pessoas, os fantasmas de todo mundo em volta
+              lavam a tela e escondem o movimento que se está lendo. Só aparece
+              com dois bonecos ou mais: com um só, a caixa seria uma linha a
+              mais para não decidir nada, logo acima da lista de keyframes. */}
+          {figureCount > 1 && (
+            <fieldset className="animation-panel__clip-figures">
+              <legend>{t('panels.animation.onionSkinFigures')}</legend>
+              {figures.map((figure) => (
+                <label key={figure.id} className="animation-panel__clip-figure">
+                  <input
+                    type="checkbox"
+                    checked={!onionSkinHiddenFigureIds.includes(figure.id)}
+                    onChange={(event) => setOnionSkinFigureShown(figure.id, event.target.checked)}
+                  />
+                  {figure.name}
+                </label>
+              ))}
+              {figures.every((figure) => onionSkinHiddenFigureIds.includes(figure.id)) && (
+                <p className="animation-panel__hint">{t('panels.animation.onionSkinNoFigures')}</p>
+              )}
+            </fieldset>
+          )}
         </>
       )}
 
@@ -625,6 +950,24 @@ export function AnimationPanel() {
             const startsGroup = label !== '' && label !== previousLabel
             const group = startsGroup ? groups.find((candidate) => candidate.startIndex === index) : undefined
             const groupCollapsed = label !== '' && collapsedGroups[label] === true
+            // O "Regravar" deste card pede atenção? (2026-08-07, `updateHighlight.ts`)
+            const updatePending = shouldHighlightUpdate({
+              keyframeId: keyframe.id,
+              visitedKeyframeId,
+              benchPristine,
+            })
+            // A pose estimada precisa dos dois vizinhos — nas pontas não há
+            // caminho a dividir — e de pelo menos um boneco presente nos três:
+            // sem ninguém a estimar, o botão não teria o que fazer.
+            const canEstimate =
+              index > 0 &&
+              index < active.keyframes.length - 1 &&
+              !exporting &&
+              estimableKeyframeFigures(
+                keyframe,
+                active.keyframes[index - 1],
+                active.keyframes[index + 1],
+              ).length > 0
 
             return (
               <Fragment key={keyframe.id}>
@@ -767,16 +1110,27 @@ export function AnimationPanel() {
                 <div className="animation-panel__keyframe-row">
                   <button
                     type="button"
-                    onClick={() => requestGoToKeyframe(keyframe.id, startTimes[index])}
+                    onClick={() => goToKeyframeWithStash(keyframe.id, startTimes[index])}
                     title={t('panels.animation.goTo')}
                   >
                     {t('panels.animation.goTo')}
                   </button>
+                  {/* O destaque (2026-08-07) avisa que a cena e este card se
+                      separaram — ou porque a bancada mudou depois de carregá-lo,
+                      ou porque ele acabou de receber uma cópia do vizinho. A
+                      regra está em `updateHighlight.ts`; aqui só se pendura a
+                      classe e se troca a dica, porque o rótulo do botão não pode
+                      mudar (é por ele que se acha o botão). */}
                   <button
                     type="button"
+                    className={updatePending ? 'animation-panel__update--pending' : undefined}
                     onClick={() => setConfirmingUpdateId(keyframe.id)}
                     disabled={!canCapture}
-                    title={t('panels.animation.update')}
+                    title={
+                      updatePending
+                        ? t('panels.animation.updatePendingHint')
+                        : t('panels.animation.update')
+                    }
                   >
                     {t('panels.animation.update')}
                   </button>
@@ -784,11 +1138,16 @@ export function AnimationPanel() {
 
                 {/* Copiar a câmera do vizinho: é o gesto de segurar o
                     enquadramento num trecho e deixar só os bonecos se moverem.
-                    A pose deste keyframe não é tocada. */}
+                    A pose deste keyframe não é tocada.
+
+                    Passa pelo modal desde 2026-08-07 (pedido do usuário), pela
+                    mesma razão do "Regravar" e do "×": joga fora o
+                    enquadramento guardado no keyframe, só o Ctrl+Z devolve, e
+                    os dois lados ficam colados na mesma fileira. */}
                 <div className="animation-panel__keyframe-row">
                   <button
                     type="button"
-                    onClick={() => copyAnimationKeyframeCamera(active.id, keyframe.id, -1)}
+                    onClick={() => requestCopy('camera', keyframe.id, -1)}
                     disabled={index === 0 || exporting}
                     aria-label={t('panels.animation.copyCameraPrevHint')}
                     title={t('panels.animation.copyCameraPrevHint')}
@@ -797,7 +1156,7 @@ export function AnimationPanel() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => copyAnimationKeyframeCamera(active.id, keyframe.id, 1)}
+                    onClick={() => requestCopy('camera', keyframe.id, 1)}
                     disabled={index === active.keyframes.length - 1 || exporting}
                     aria-label={t('panels.animation.copyCameraNextHint')}
                     title={t('panels.animation.copyCameraNextHint')}
@@ -811,7 +1170,7 @@ export function AnimationPanel() {
                 <div className="animation-panel__keyframe-row">
                   <button
                     type="button"
-                    onClick={() => copyAnimationKeyframeFigures(active.id, keyframe.id, -1)}
+                    onClick={() => requestCopy('pose', keyframe.id, -1)}
                     disabled={index === 0 || exporting}
                     aria-label={t('panels.animation.copyPosePrevHint')}
                     title={t('panels.animation.copyPosePrevHint')}
@@ -820,12 +1179,59 @@ export function AnimationPanel() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => copyAnimationKeyframeFigures(active.id, keyframe.id, 1)}
+                    onClick={() => requestCopy('pose', keyframe.id, 1)}
                     disabled={index === active.keyframes.length - 1 || exporting}
                     aria-label={t('panels.animation.copyPoseNextHint')}
                     title={t('panels.animation.copyPoseNextHint')}
                   >
                     {t('panels.animation.copyPoseNext')}
+                  </button>
+                </div>
+
+                {/* Pedido do usuário (2026-08-06): o terceiro par de setas, e o
+                    mais fino dos três — traz do vizinho só a COLOCAÇÃO no plano
+                    (X/Z), deixando pose, giro e a altura de um salto (Y) onde
+                    estão. É o gesto de tirar a deriva de quem escorrega alguns
+                    centímetros entre dois keyframes. */}
+                <div className="animation-panel__keyframe-row">
+                  <button
+                    type="button"
+                    onClick={() => requestCopy('placement', keyframe.id, -1)}
+                    disabled={index === 0 || exporting}
+                    aria-label={t('panels.animation.copyPlacementPrevHint')}
+                    title={t('panels.animation.copyPlacementPrevHint')}
+                  >
+                    {t('panels.animation.copyPlacementPrev')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestCopy('placement', keyframe.id, 1)}
+                    disabled={index === active.keyframes.length - 1 || exporting}
+                    aria-label={t('panels.animation.copyPlacementNextHint')}
+                    title={t('panels.animation.copyPlacementNextHint')}
+                  >
+                    {t('panels.animation.copyPlacementNext')}
+                  </button>
+                </div>
+
+                {/* Pose estimada (pedido do usuário, 2026-08-07): o meio do
+                    caminho entre os dois vizinhos, para preencher um quadro do
+                    meio sem posar tudo à mão. Linha sozinha, e não um quinto
+                    par: não é uma escolha entre dois lados — é UMA ação, e a
+                    fileira inteira é dela.
+
+                    A estimativa vai para a BANCADA, não para o keyframe
+                    (decisão do usuário): dá para conferir em 3D e ajustar, e é
+                    o "Regravar" que a grava — que, aliás, já vai estar
+                    piscando. */}
+                <div className="animation-panel__keyframe-row">
+                  <button
+                    type="button"
+                    onClick={() => setEstimatingId(keyframe.id)}
+                    disabled={!canEstimate}
+                    title={t('panels.animation.estimatePoseHint')}
+                  >
+                    {t('panels.animation.estimatePose')}
                   </button>
                 </div>
 
@@ -850,16 +1256,22 @@ export function AnimationPanel() {
                   <button
                     type="button"
                     className="animation-panel__duplicate"
-                    onClick={() => duplicateAnimationKeyframe(active.id, keyframe.id)}
+                    onClick={() => handleDuplicate(keyframe.id)}
                     disabled={exporting}
                     aria-label={t('panels.animation.duplicateKeyframe')}
                     title={t('panels.animation.duplicateKeyframeHint')}
                   >
                     {t('panels.animation.duplicate')}
                   </button>
+                  {/* Apagar confirma em MODAL (pedido do usuário, 2026-08-06):
+                      é a única ação do card que joga fora a pose e a câmera
+                      gravadas, e o × fica na mesma linha de quatro botões
+                      pequenos onde o clique erra. Mesmo caminho do "Regravar"
+                      (#100): o botão fica sempre visível, o diálogo é que é
+                      renderizado condicionalmente, fora da lista. */}
                   <button
                     type="button"
-                    onClick={() => removeAnimationKeyframe(active.id, keyframe.id)}
+                    onClick={() => setConfirmingRemoveId(keyframe.id)}
                     aria-label={t('panels.animation.removeKeyframe')}
                   >
                     ×
@@ -1475,8 +1887,142 @@ export function AnimationPanel() {
           onConfirm={() => {
             requestUpdateKeyframe(confirmingUpdate.id)
             setConfirmingUpdateId(null)
+            // Gravado: o keyframe passou a guardar exatamente o que está na
+            // bancada, que volta a valer como retrato intocado — e o destaque,
+            // que só lê essa marca, se apaga.
+            markWorkbenchRecorded()
           }}
           onCancel={() => setConfirmingUpdateId(null)}
+        />
+      )}
+
+      {/* Quem recebe a cópia vinda do vizinho (pedido do usuário, 2026-08-06).
+          A lista é o elenco COMUM aos dois keyframes: marcar quem não está nos
+          dois seria uma caixa que não faz nada. */}
+      {pendingCopyTarget && pendingCopy && (
+        <CopyFiguresDialog
+          detail={t('panels.animation.keyframeLabel', {
+            index: pendingCopyIndex + 1,
+            time: formatSeconds(startTimes[pendingCopyIndex]),
+          })}
+          summary={t(COPY_HINT_KEYS[pendingCopy.kind][pendingCopy.offset === -1 ? 'previous' : 'next'])}
+          figures={pendingCopyFigures}
+          initialIds={pendingCopyInitialIds}
+          onConfirm={(figureIds) => {
+            // A escolha vale para as cópias seguintes da sessão: guarda-se quem
+            // ficou DE FORA, entre os que estavam à vista. Quem não foi listado
+            // agora mantém o estado que já tinha.
+            const listed = pendingCopyFigures.map((figure) => figure.id)
+            setExcludedCopyIds([
+              ...excludedCopyIds.filter((id) => !listed.includes(id)),
+              ...listed.filter((id) => !figureIds.includes(id)),
+            ])
+            applyCopy(pendingCopy, figureIds)
+            setPendingCopy(null)
+          }}
+          onCancel={() => setPendingCopy(null)}
+        />
+      )}
+
+      {/* Copiar do vizinho quando não há elenco a escolher (pedido do usuário:
+          a câmera em 2026-08-07, a pose e a colocação no mesmo dia). O molde é o
+          `ConfirmDialog` do "Regravar", com o número do keyframe QUE RECEBE e o
+          lado de onde a cópia vem: os pares ficam colados na fileira, e trocar
+          um pelo outro é exatamente o engano que a confirmação pega. */}
+      {active && confirmingCopyTarget && (
+        <ConfirmDialog
+          title={t(COPY_CONFIRM_KEYS[confirmingCopyTarget.kind].title)}
+          detail={t('panels.animation.keyframeLabel', {
+            index: confirmingCopyTarget.index + 1,
+            time: formatSeconds(startTimes[confirmingCopyTarget.index]),
+          })}
+          message={t(
+            COPY_CONFIRM_KEYS[confirmingCopyTarget.kind][
+              confirmingCopyTarget.offset === -1 ? 'previous' : 'next'
+            ],
+          )}
+          confirmLabel={t(COPY_CONFIRM_KEYS[confirmingCopyTarget.kind].confirm)}
+          onConfirm={() => {
+            applyCopy(confirmingCopyTarget)
+            setConfirmingCopy(null)
+          }}
+          onCancel={() => setConfirmingCopy(null)}
+        />
+      )}
+
+      {/* A pose estimada (pedido do usuário, 2026-08-07). O detalhe diz o
+          keyframe que se está estimando; a mensagem, que quem muda é a BANCADA
+          e que a cena atual vai para a guarda — é o oposto do que os outros
+          diálogos deste painel fazem, e não dizê-lo seria deixar o usuário
+          achando que o keyframe já mudou. */}
+      {active && estimating && estimableFigures.length < 2 && (
+        <ConfirmDialog
+          title={t('panels.animation.estimatePoseTitle')}
+          detail={t('panels.animation.keyframeLabel', {
+            index: estimating.index + 1,
+            time: formatSeconds(startTimes[estimating.index]),
+          })}
+          message={t('panels.animation.estimatePoseConfirmHint')}
+          confirmLabel={t('panels.animation.estimatePoseConfirm')}
+          onConfirm={() => {
+            applyEstimate(estimating.index)
+            setEstimatingId(null)
+          }}
+          onCancel={() => setEstimatingId(null)}
+        />
+      )}
+
+      {/* Com dois estimáveis ou mais, a pergunta deixa de ser "confirma?" e passa
+          a ser "em quem?" (pedido do usuário, 2026-08-07) — e aí é a MESMA caixa
+          da cópia entre vizinhos, com outro título. Numa cena de duas pessoas,
+          estimar o quadro do meio de uma não pode arrastar a outra junto.
+
+          A memória de quem ficou de fora é COMPARTILHADA com as cópias, de
+          propósito: é a mesma pergunta sobre o mesmo elenco no mesmo card
+          ("quem eu estou acertando agora"), e duas memórias independentes para
+          botões vizinhos seriam duas respostas para uma pergunta só. Nada fica
+          escondido — as caixas estão à vista ao confirmar. */}
+      {active && estimating && estimableFigures.length >= 2 && (
+        <CopyFiguresDialog
+          title={t('panels.animation.estimatePoseTitle')}
+          confirmLabel={t('panels.animation.estimatePoseConfirm')}
+          detail={t('panels.animation.keyframeLabel', {
+            index: estimating.index + 1,
+            time: formatSeconds(startTimes[estimating.index]),
+          })}
+          summary={t('panels.animation.estimatePoseConfirmHint')}
+          figures={estimableFigures}
+          initialIds={estimableInitialIds}
+          onConfirm={(figureIds) => {
+            const listed = estimableFigures.map((figure) => figure.id)
+            setExcludedCopyIds([
+              ...excludedCopyIds.filter((id) => !listed.includes(id)),
+              ...listed.filter((id) => !figureIds.includes(id)),
+            ])
+            applyEstimate(estimating.index, figureIds)
+            setEstimatingId(null)
+          }}
+          onCancel={() => setEstimatingId(null)}
+        />
+      )}
+
+      {/* E a de apagar (pedido do usuário, 2026-08-06), pela mesma razão e no
+          mesmo molde: o "×" joga fora a pose e a câmera gravadas no keyframe, e
+          fica encostado em três outros botões pequenos. */}
+      {active && confirmingRemove && (
+        <ConfirmDialog
+          title={t('panels.animation.removeTitle')}
+          detail={t('panels.animation.keyframeLabel', {
+            index: confirmingRemove.index + 1,
+            time: formatSeconds(startTimes[confirmingRemove.index]),
+          })}
+          message={t('panels.animation.removeConfirmHint')}
+          confirmLabel={t('panels.animation.removeConfirm')}
+          onConfirm={() => {
+            removeAnimationKeyframe(active.id, confirmingRemove.id)
+            setConfirmingRemoveId(null)
+          }}
+          onCancel={() => setConfirmingRemoveId(null)}
         />
       )}
 

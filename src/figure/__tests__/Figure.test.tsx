@@ -489,4 +489,28 @@ describe('Figure — registro de refs de junta', () => {
     expect(registered.get(ROOT_PIVOT_REF_NAME)).toBe(innerRootGroup.instance)
     expect(registered.get(ROOT_PIVOT_REF_NAME)).not.toBe(registered.get('root'))
   })
+
+  /**
+   * O React reexecuta um `ref` sempre que a IDENTIDADE do callback muda: chama o
+   * anterior com `null` e o novo com o objeto. Com uma seta inline no `ref` de
+   * cada junta, uma pose nova custava 64 registros por boneco — e cada registro é
+   * um `setState` no `Viewport`, que re-renderiza o boneco, que registra de
+   * novo… O `ref` estável é o que corta o laço (DECISOES.md #132).
+   */
+  it('não reexecuta o ref das juntas quando a pose muda', async () => {
+    const registros: string[] = []
+    const anota = (name: string, object: unknown) => registros.push(`${name}:${object ? 'on' : 'off'}`)
+
+    const renderer = await ReactThreeTestRenderer.create(
+      <Figure figure={makeFigure()} onJointRef={anota} />,
+    )
+    const aoMontar = registros.length
+    expect(aoMontar).toBeGreaterThan(0)
+
+    await renderer.update(
+      <Figure figure={makeFigure({ pose: { 'elbow.L': { x: 45, y: 0, z: 0 } } })} onJointRef={anota} />,
+    )
+
+    expect(registros).toHaveLength(aoMontar)
+  })
 })

@@ -77,7 +77,30 @@ export const OVERLAY_NAMES = {
    * não pode aparecer na própria foto, e o modo visão-câmera também o esconde.
    */
   sceneCamera: 'scene-camera-gizmo',
+  /**
+   * Linhas de gesto (item 9). Entram aqui por decisão do usuário: somem sempre
+   * no MP4 e nas miniaturas, e no PNG obedecem à chave "ocultar grade/gizmos"
+   * do painel de instantâneo — quem quiser a folha impressa COM a linha de ação
+   * desliga a chave, e quem quiser a figura limpa não mexe em nada.
+   */
+  gestureLines: 'scene-gesture-lines',
 } as const
+
+/**
+ * Cores das linhas de gesto (item 9). Escolhidas FORA da paleta já ocupada: o
+ * gizmo de transformação usa vermelho/verde/azul puros nos eixos e a junta
+ * selecionada acende em amarelo — magenta e ciano claro não colidem com
+ * nenhum dos dois, e ambos se separam do cinza do ambiente nos três fundos.
+ */
+export const GESTURE_ACTION_COLOR = '#ff3d9a'
+export const GESTURE_TRANSVERSE_COLOR = '#3dd6ff'
+
+/**
+ * Raio do tubo das linhas de gesto, em metros. Fino o bastante para não virar
+ * um cano sobre o boneco, grosso o bastante para ler a 100% de zoom — e tubo,
+ * não `line`, porque `lineBasicMaterial` ignora espessura em WebGL.
+ */
+export const GESTURE_LINE_RADIUS_M = 0.008
 
 export const OVERLAY_NAME_LIST: readonly string[] = Object.values(OVERLAY_NAMES)
 

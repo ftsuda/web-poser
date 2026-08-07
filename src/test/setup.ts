@@ -1,12 +1,10 @@
 import '@testing-library/jest-dom/vitest'
-import { beforeEach } from 'vitest'
-import { resetJointLimitOverrides } from '../figure/skeleton'
+import './setup-comum'
 
+/**
+ * Setup do projeto `interface` (PLANO.md item 23): o que só faz sentido com
+ * jsdom montado — os matchers de DOM do jest-dom e o aviso ao React de que
+ * estamos num ambiente de `act`. O reset de limites articulares, que vale
+ * também para o projeto `unidade`, mora no `setup-comum.ts` importado acima.
+ */
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
-
-// Os limites customizados por workspace (DECISOES.md #29) são estado global do
-// módulo `skeleton.ts` — sem este reset, um teste que instala limites vaza para
-// os seguintes.
-beforeEach(() => {
-  resetJointLimitOverrides()
-})

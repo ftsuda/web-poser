@@ -21,6 +21,7 @@ import {
   POSE_PRESET_LABEL_KEYS,
 } from './posePresetLabels'
 import { ROOT_JOINT_NAME, getJoint, getJointAxes, type Axis } from '../figure/skeleton'
+import { withExportTimestamp } from '../persistence/exportTimestamp'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { parseFigurePoseFile, serializeFigurePoseFile } from '../persistence/figurePoseFile'
 import { matchesPoseFilter } from './poseFilter'
@@ -31,10 +32,23 @@ import { useUIStore, type GizmoMode } from '../store/uiStore'
 import { UNDO_BATCH_POINTER_PROPS } from '../store/undoBatch'
 import { CollapsiblePanel } from './CollapsiblePanel'
 import { CollapsibleSection } from './CollapsibleSection'
+import { LookAtFieldset } from './LookAtFieldset'
 import { ReferencePhotoControls } from './ReferencePhotoControls'
 import { PropProperties } from './PropsSection'
 
 const POSITION_AXES: readonly Axis[] = ['x', 'y', 'z']
+
+/**
+ * Passos dos botões de ajuste fino ao lado de cada slider de rotação — os
+ * mesmos do módulo de poses (itens 51 e 61), trazidos para a bancada a pedido
+ * do usuário. Slider é impreciso no último grau em qualquer aparelho, e o ⟲ do
+ * meio devolve SÓ aquele eixo ao valor inicial.
+ */
+const FINE_DELTAS = [-5, -1, 1, 5] as const
+
+function formatDelta(delta: number): string {
+  return delta > 0 ? `+${delta}` : `${delta}`
+}
 
 /**
  * Faixa dos sliders de rotação do `root` (fase 9, item 13). Diferente das
@@ -60,6 +74,14 @@ interface AxisSliderProps {
   locked?: boolean
   onToggleLock?: () => void
   lockLabel?: string
+  /**
+   * Ajuste fino do eixo: recebe o valor JÁ somado do passo e grampeado na
+   * faixa do slider. Ausente esconde a linha inteira — é o que mantém o
+   * componente utilizável por quem não quiser os botões.
+   */
+  onFineChange?: (value: number) => void
+  /** ⟲ do meio da linha: devolve SÓ este eixo ao valor inicial. */
+  onAxisReset?: () => void
 }
 
 /**
@@ -81,11 +103,30 @@ function AxisSlider({
   locked,
   onToggleLock,
   lockLabel,
+  onFineChange,
+  onAxisReset,
 }: AxisSliderProps) {
+  const { t } = useTranslation()
   const color = AXIS_COLORS[axis]
   const label = axis.toUpperCase()
 
+  /** O passo nunca sai da faixa do próprio slider — o mesmo grampeamento do arrasto. */
+  const fine = (delta: number) => onFineChange?.(Math.min(max, Math.max(min, value + delta)))
+
+  const fineButton = (delta: number) => (
+    <button
+      key={delta}
+      type="button"
+      disabled={disabled}
+      aria-label={t('panels.properties.rotationDelta', { axis: label, delta: formatDelta(delta) })}
+      onClick={() => fine(delta)}
+    >
+      {formatDelta(delta)}°
+    </button>
+  )
+
   return (
+    <div className="properties-panel__axis-block">
     <div className="properties-panel__axis-row">
       {onSelectAxis ? (
         <button
@@ -128,6 +169,25 @@ function AxisSlider({
         >
           {locked ? '\u{1F512}' : '\u{1F513}'}
         </button>
+      )}
+      </div>
+
+      {/* [−5°, −1°, ⟲, +1°, +5°] — a mesma linha do módulo de poses (itens 51 e
+          61). Desabilita junto com o slider: o store recusaria a escrita numa
+          junta travada, e um botão que não faz nada é pior do que um apagado. */}
+      {onFineChange && (
+        <div className="properties-panel__fine">
+          {FINE_DELTAS.slice(0, 2).map(fineButton)}
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={t('panels.properties.rotationReset', { axis: label })}
+            onClick={onAxisReset}
+          >
+            ⟲
+          </button>
+          {FINE_DELTAS.slice(2).map(fineButton)}
+        </div>
       )}
     </div>
   )
@@ -203,7 +263,7 @@ function PoseFileFieldset({ figure }: { figure: Figure }) {
     const json = serializeFigurePoseFile(figure)
     await writeFileToDirectoryOrDownload(
       null,
-      `${slugifySceneName(figure.name)}-pose.json`,
+      withExportTimestamp(`${slugifySceneName(figure.name)}-pose.json`),
       new Blob([json], { type: 'application/json' }),
     )
   }
@@ -286,6 +346,7 @@ function SeatOnGroundButton({ figureId }: { figureId: string }) {
 function ResetGroupFieldset({ figureId }: { figureId: string }) {
   const { t } = useTranslation()
   const resetJointGroup = useFiguresStore((state) => state.resetJointGroup)
+  const resetFigure = useFiguresStore((state) => state.resetFigure)
   const jointLocks = useFiguresStore((state) => state.jointLocks)
   const jointPins = useFiguresStore((state) => state.jointPins)
   // Grupo inteiro preso (trava ou congelado por âncora) = botão desabilitado.
@@ -293,6 +354,13 @@ function ResetGroupFieldset({ figureId }: { figureId: string }) {
     ...getLockedJoints(jointLocks, figureId),
     ...frozenJointsByPins(jointPins, figureId),
   ])
+  // "Boneco inteiro" só fica sem efeito quando NADA sobra: todas as juntas
+  // presas E a colocação ancorada. Com as juntas travadas mas a colocação
+  // livre ele ainda zera a rotação e leva o boneco à origem — desabilitá-lo aí
+  // seria mentira.
+  const nothingToReset =
+    isPlacementPinned(jointPins, figureId) &&
+    JOINT_GROUPS.every((group) => group.joints.every((jointName) => locked.has(jointName)))
 
   return (
     <fieldset aria-label={t('panels.properties.resetGroup')}>
@@ -310,6 +378,20 @@ function ResetGroupFieldset({ figureId }: { figureId: string }) {
           </button>
         ))}
       </div>
+      {/* Zerar TUDO (pedido do usuário, 2026-08-04): a pose inteira na
+          referência dos botões acima, mais a colocação — rotação zerada e o
+          boneco de volta à origem. Ação sozinha, então largura cheia (#88);
+          fora da grade porque não é "mais um grupo": é o que faz o boneco
+          voltar a ser o que era ao nascer. */}
+      <button
+        type="button"
+        className="panel-action properties-panel__reset"
+        disabled={nothingToReset}
+        title={t('panels.properties.resetFigureHint')}
+        onClick={() => resetFigure(figureId)}
+      >
+        {t('panels.properties.resetFigure')}
+      </button>
     </fieldset>
   )
 }
@@ -747,6 +829,65 @@ export function PropertiesPanel() {
               quadril, ponto confirmado com o usuário. */}
           <GizmoModeFieldset mode={gizmoMode} onSelect={setGizmoMode} />
 
+          {/* Juntas travadas (DECISOES.md #42), COLADO no gizmo (pedido do
+              usuário, 2026-08-07). Estava cinco blocos de pose abaixo, e o
+              lugar aqui se justifica pelo vizinho de baixo: os sliders de
+              colocação e rotação trazem os cadeados por eixo da raiz (item 64),
+              que são metade do que este botão solta. O gizmo é a versão
+              arrastável desses mesmos números; travar, arrastar e destravar
+              viraram uma vizinhança só.
+
+              A CONTAGEM veio junto (decisão do usuário, entre três arranjos):
+              ela e o botão foram desenhados como par — ela diz o que há, ele
+              desfaz —, e separá-los deixaria uma linha sem ação de um lado e
+              uma ação sem contexto do outro. O que ela perde é a vizinhança das
+              poses, onde explicava pose que não se aplicou inteira; continua no
+              mesmo painel, e agora ao lado das travas de que fala.
+
+              O botão fica sempre à vista e desabilita quando não há nada a
+              soltar. Ele aparecia só junto da contagem — que NÃO conta os
+              cadeados por eixo (item 64) —, então travar só eixos deixava o
+              desfazer-tudo inalcançável. A contagem continua condicional: fala
+              de juntas, e "0 juntas travadas" é linha que não informa nada. */}
+          <div className="properties-panel__locked-summary">
+            {lockedJointCount > 0 && (
+              <p className="properties-panel__hint">
+                {t('panels.properties.lockedJointCount', { count: lockedJointCount })}
+              </p>
+            )}
+            <button
+              type="button"
+              disabled={lockedJoints.length === 0}
+              title={t('panels.properties.unlockAllJointsHint')}
+              onClick={() => clearJointLocks(figure.id)}
+            >
+              {t('panels.properties.unlockAllJoints')}
+            </button>
+          </div>
+
+          {/* Mesmo resumo para as âncoras (item 62), colado no de travas
+              (pedido do usuário, 2026-08-07). São o par que congela o boneco —
+              cadeado congela os ÂNGULOS da junta, âncora congela a POSIÇÃO
+              dela —, e quem procura um está a um passo de precisar do outro:
+              liam-se juntos muito antes de estarem juntos. O efeito de uma
+              âncora (colocação e cadeia congeladas) nunca pode ficar
+              inexplicável, e aqui ele fica ao lado do campo que desabilita.
+
+              Este continua condicional inteiro, diferente do de travas: a
+              contagem de âncoras cobre TUDO o que o botão solta — não há
+              âncora por eixo —, então o botão nunca fica inalcançável, e um
+              botão desabilitado a mais seria ruído. */}
+          {pinnedJoints.length > 0 && (
+            <div className="properties-panel__locked-summary">
+              <p className="properties-panel__hint">
+                {t('panels.properties.pinnedJointCount', { count: pinnedJoints.length })}
+              </p>
+              <button type="button" onClick={() => clearJointPins(figure.id)}>
+                {t('panels.properties.unpinAllJoints')}
+              </button>
+            </div>
+          )}
+
           {/* Âncora ativa (item 62): a colocação inteira congela — desabilitar
               aqui é dizer o porquê ANTES de o campo não responder. */}
           {placementPinned && (
@@ -797,6 +938,10 @@ export function PropertiesPanel() {
                   max={ROOT_ROTATION_MAX}
                   onChange={handleRootRotationChange(axis)}
                   disabled={placementPinned || axisLocked}
+                  onFineChange={(next) => setRootRotation(figure.id, { [axis]: next })}
+                  // Na raiz o valor inicial é zero — a mesma referência do
+                  // "Zerar rotação" logo abaixo, só que eixo a eixo.
+                  onAxisReset={() => setRootRotation(figure.id, { [axis]: 0 })}
                   locked={axisLocked}
                   onToggleLock={() => toggleJointLock(figure.id, rootAxisLockToken(axis))}
                   lockLabel={t(
@@ -978,37 +1123,22 @@ export function PropertiesPanel() {
             <SymmetryFieldset figureId={figure.id} scopeJoint={null} />
           </CollapsibleSection>
 
+          {/* "Olhar para" (item 32) nos DOIS ramos, como o assentar: é ação do
+              boneco, e quem posa um cotovelo não deveria voltar à raiz só para
+              virar a cabeça.
+
+              Depois da simetria (pedido do usuário, 2026-08-07): mirar é o
+              ACABAMENTO da pose — o que se faz quando o corpo já está montado —,
+              e não uma etapa entre os números da colocação. Fica na dupla final
+              do painel, entre a simetria e o zerar, no mesmo lugar nas duas
+              vistas: mover só uma delas reordenaria o painel ao trocar de
+              junta, que é justamente o que o #83 consertou. */}
+          <LookAtFieldset figureId={figure.id} />
+
           {/* Restaurar, na MESMA ordem das duas vistas: o resumo de travas e o
               zerar por grupo estavam em pontas opostas do painel, e a dupla
               (simetria, zerar) aparecia invertida entre a raiz e a junta —
               trocar de junta reordenava o painel. */}
-          {/* Juntas travadas (DECISOES.md #42): a contagem fica na visão da
-              raiz — é o resumo do boneco inteiro — para que o efeito de uma
-              trava nunca seja inexplicável ao aplicar uma pose. */}
-          {lockedJointCount > 0 && (
-            <div className="properties-panel__locked-summary">
-              <p className="properties-panel__hint">
-                {t('panels.properties.lockedJointCount', { count: lockedJointCount })}
-              </p>
-              <button type="button" onClick={() => clearJointLocks(figure.id)}>
-                {t('panels.properties.unlockAllJoints')}
-              </button>
-            </div>
-          )}
-
-          {/* Mesmo resumo para as âncoras (item 62): o efeito de uma âncora
-              (colocação e cadeia congeladas) nunca pode ficar inexplicável. */}
-          {pinnedJoints.length > 0 && (
-            <div className="properties-panel__locked-summary">
-              <p className="properties-panel__hint">
-                {t('panels.properties.pinnedJointCount', { count: pinnedJoints.length })}
-              </p>
-              <button type="button" onClick={() => clearJointPins(figure.id)}>
-                {t('panels.properties.unpinAllJoints')}
-              </button>
-            </div>
-          )}
-
           <ResetGroupFieldset figureId={figure.id} />
 
           {/* Tirar a pose DAQUI e levá-la para outro lugar: a biblioteca,
@@ -1179,6 +1309,17 @@ export function PropertiesPanel() {
                   activeAxis={activeAxis}
                   onSelectAxis={setActiveAxis}
                   activeAxisTitle={t('panels.properties.makeActiveAxis', { axis: axis.toUpperCase() })}
+                  onFineChange={(next) =>
+                    setJointRotation(figure.id, selectedJointName, { [axis]: next })
+                  }
+                  // O ⟲ da junta usa a MESMA referência do "Zerar junta" e do
+                  // zerar por grupo — a pose "Em pé", não zero cru: há eixos
+                  // cujo neutro do modelo não é zero (DECISOES.md #25).
+                  onAxisReset={() =>
+                    setJointRotation(figure.id, selectedJointName, {
+                      [axis]: resolvePosePreset('standing')[selectedJointName]?.[axis] ?? 0,
+                    })
+                  }
                   // Travada ou congelada por âncora: o store recusaria a
                   // escrita de qualquer jeito — desabilitar é dizer isso
                   // ANTES do usuário arrastar e ver o slider voltar sozinho.
@@ -1226,6 +1367,10 @@ export function PropertiesPanel() {
             {/* Simetria parcial (DECISOES.md #34): daqui para baixo, nos dois lados. */}
             <SymmetryFieldset figureId={figure.id} scopeJoint={selectedJointName} />
           </CollapsibleSection>
+
+          {/* Mesma posição da vista da raiz (2026-08-07): simetria, olhar
+              para, zerar. */}
+          <LookAtFieldset figureId={figure.id} />
 
           <ResetGroupFieldset figureId={figure.id} />
         </>

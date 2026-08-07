@@ -15,9 +15,11 @@ import { useDepthStore } from '../../store/depthStore'
 import { useFiguresStore } from '../../store/figuresStore'
 import { useUIStore } from '../../store/uiStore'
 import { useKeyframeThumbnailStore } from '../../store/keyframeThumbnailStore'
+import { useSceneStashStore } from '../../store/sceneStashStore'
 import { AnimationPanel } from '../AnimationPanel'
 import type { CameraViewState } from '../../scene/cameraMove'
-import { WORKING_ANIMATION_ID } from '../../animation/animation'
+import { WORKING_ANIMATION_ID, findWorkingAnimation } from '../../animation/animation'
+import { applyKeyframeToWorkbench } from '../../animation/sceneStashActions'
 
 const camera: CameraViewState = { position: [0, 1.6, 4], target: [0, 1, 0], up: [0, 1, 0], focalMm: 35 }
 
@@ -277,20 +279,24 @@ describe('AnimationPanel', () => {
     expect(depois).toEqual([antes[1], antes[0]])
   })
 
+  /** Desde 2026-08-06 o "×" passa pelo modal de confirmação (pedido do usuário). */
   it('remover um keyframe tira só ele da lista', async () => {
     const user = userEvent.setup()
     const id = comAnimacao(2)
     await renderAnimationPanel()
 
     await user.click(screen.getAllByRole('button', { name: 'Remover keyframe' })[0])
+    await user.click(screen.getByRole('button', { name: 'Remover' }))
 
     expect(useFiguresStore.getState().animations.find((a) => a.id === id)!.keyframes).toHaveLength(1)
   })
 
-  it('copia a câmera do keyframe vizinho sem mexer na pose', async () => {
-    const user = userEvent.setup()
-    const id = comAnimacao(2)
-    // Segundo keyframe com outra câmera, para a cópia ter o que mudar.
+  /**
+   * Desde 2026-08-07 a cópia de câmera passa pelo modal (pedido do usuário), no
+   * molde do "Regravar" (#69) e do "×": ela joga fora a câmera guardada no
+   * keyframe e o Ctrl+Z é a única saída, num card com oito botões pequenos.
+   */
+  function comCameraDiferenteNoSegundo(id: string) {
     act(() => {
       useFiguresStore.getState().updateAnimationKeyframe(id, 'k2', {
         position: [9, 9, 9],
@@ -299,14 +305,77 @@ describe('AnimationPanel', () => {
         focalMm: 85,
       })
     })
+  }
+
+  it('copia a câmera do keyframe vizinho, depois de confirmar, sem mexer na pose', async () => {
+    const user = userEvent.setup()
+    const id = comAnimacao(2)
+    // Segundo keyframe com outra câmera, para a cópia ter o que mudar.
+    comCameraDiferenteNoSegundo(id)
     await renderAnimationPanel()
 
     const antes = useFiguresStore.getState().animations.find((a) => a.id === id)!.keyframes[1]
     await user.click(screen.getAllByRole('button', { name: /Copiar a câmera do keyframe anterior/ })[1])
 
+    // Nada mudou ainda: o clique só abre o diálogo.
+    expect(useFiguresStore.getState().animations.find((a) => a.id === id)!.keyframes[1].camera).toEqual(
+      antes.camera,
+    )
+
+    const dialogo = screen.getByRole('dialog')
+    await user.click(within(dialogo).getByRole('button', { name: 'Copiar câmera' }))
+
     const depois = useFiguresStore.getState().animations.find((a) => a.id === id)!.keyframes[1]
     expect(depois.camera).toEqual(camera)
     expect(depois.figures).toBe(antes.figures)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('cancelar o diálogo deixa a câmera do keyframe como estava', async () => {
+    const user = userEvent.setup()
+    const id = comAnimacao(2)
+    comCameraDiferenteNoSegundo(id)
+    await renderAnimationPanel()
+
+    const antes = useFiguresStore.getState().animations.find((a) => a.id === id)!.keyframes[1]
+    await user.click(screen.getAllByRole('button', { name: /Copiar a câmera do keyframe anterior/ })[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+    expect(useFiguresStore.getState().animations.find((a) => a.id === id)!.keyframes[1].camera).toEqual(
+      antes.camera,
+    )
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  /**
+   * O card que originou o clique sai de vista: o diálogo tem de dizer QUAL
+   * keyframe recebe e de QUAL lado vem a câmera — os dois botões ficam colados,
+   * e confundir um com o outro é o erro que a confirmação existe para pegar.
+   */
+  it('o diálogo diz qual keyframe recebe e de que lado vem a câmera', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: /Copiar a câmera do keyframe seguinte/ })[1])
+
+    const dialogo = screen.getByRole('dialog')
+    expect(within(dialogo).getByText(/Keyframe 2/)).toBeInTheDocument()
+    expect(within(dialogo).getByText(/seguinte/i)).toBeInTheDocument()
+  })
+
+  it('abrir a confirmação de outro card fecha a anterior — um diálogo por vez', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: /Copiar a câmera do keyframe anterior/ })[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getAllByRole('button', { name: /Copiar a câmera do keyframe anterior/ })[2])
+
+    const dialogos = screen.getAllByRole('dialog')
+    expect(dialogos).toHaveLength(1)
+    expect(within(dialogos[0]).getByText(/Keyframe 3/)).toBeInTheDocument()
   })
 
   it('nas pontas não há vizinho de onde copiar a câmera', async () => {
@@ -610,7 +679,9 @@ describe('AnimationPanel — pausa, pose do vizinho e ciclo', () => {
     const anteriores = screen.getAllByRole('button', { name: /Copiar a pose do keyframe anterior/ })
     expect(anteriores[0]).toBeDisabled()
 
+    // Desde 2026-08-07 passa pelo modal, como a câmera (pedido do usuário).
     await user.click(anteriores[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copiar' }))
 
     const { keyframes } = useFiguresStore.getState().animations.find((a) => a.id === id)!
     expect(keyframes[1].figures).toBe(keyframes[0].figures)
@@ -1141,15 +1212,17 @@ describe('AnimationPanel — keyframe na bancada', () => {
   })
 
   /**
-   * Marca do PLAYHEAD (pedido do usuário): saber em qual keyframe o ⏮/⏭ da
-   * barra parou. A barra põe o instante exato do keyframe em `timeMs` (travado
-   * nos testes da `TimelineBar`); o que se confere aqui é a leitura desse
-   * instante — que vale igual para arrastar a régua e para as setas de quadro.
+   * Marca do PLAYHEAD (pedido do usuário): saber onde a linha do tempo está. A
+   * barra põe o instante em `timeMs` (travado nos testes da `TimelineBar`); o
+   * que se confere aqui é a leitura desse instante — que vale igual para o
+   * ⏮/⏭, para arrastar a régua e para as setas de quadro.
    */
   const comPlayhead = () =>
     Array.from(document.querySelectorAll('.animation-panel__keyframe')).findIndex((card) =>
       card.classList.contains('animation-panel__keyframe--playhead'),
     )
+
+  const TITULO_PLAYHEAD = 'A linha do tempo está neste keyframe ou no trecho que sai dele'
 
   it('marca o card em que a linha do tempo parou', async () => {
     comAnimacao(3)
@@ -1157,7 +1230,7 @@ describe('AnimationPanel — keyframe na bancada', () => {
     await renderAnimationPanel()
 
     expect(comPlayhead()).toBe(1)
-    expect(screen.getByTitle('A linha do tempo parou neste keyframe')).toBeInTheDocument()
+    expect(screen.getByTitle(TITULO_PLAYHEAD)).toBeInTheDocument()
 
     act(() => {
       useAnimationStore.getState().setTimeMs(2000)
@@ -1165,14 +1238,25 @@ describe('AnimationPanel — keyframe na bancada', () => {
     expect(comPlayhead()).toBe(2)
   })
 
-  /** No meio de um trecho não há keyframe sob o playhead. */
-  it('entre dois keyframes, nenhum card fica marcado pelo playhead', async () => {
+  /**
+   * No meio de um trecho a marca fica no ÚLTIMO keyframe por onde se passou
+   * (pedido do usuário, 2026-08-06). Antes ela sumia — e andar de quadro em
+   * quadro deixava o painel sem referência nenhuma de onde se estava.
+   */
+  it('entre dois keyframes, marca o último por onde a linha do tempo passou', async () => {
     comAnimacao(3)
     useAnimationStore.setState({ timeMs: 1500 })
     await renderAnimationPanel()
 
-    expect(comPlayhead()).toBe(-1)
-    expect(screen.queryByTitle('A linha do tempo parou neste keyframe')).not.toBeInTheDocument()
+    expect(comPlayhead()).toBe(1)
+    expect(screen.getByTitle(TITULO_PLAYHEAD)).toBeInTheDocument()
+
+    // Um quadro antes do keyframe 2 a marca ainda é do 1: ela só anda quando a
+    // régua efetivamente cruza o instante do keyframe seguinte.
+    act(() => {
+      useAnimationStore.getState().setTimeMs(999)
+    })
+    expect(comPlayhead()).toBe(0)
   })
 
   /**
@@ -1283,7 +1367,7 @@ describe('AnimationPanel — exportar e importar JSON', () => {
     await user.click(screen.getByRole('button', { name: 'Exportar JSON' }))
 
     const [, filename, blob] = vi.mocked(writeFileToDirectoryOrDownload).mock.calls[0]
-    expect(filename).toBe('Corrida.json')
+    expect(filename).toMatch(/^Corrida_\d{4}-\d{2}-\d{2}-\d{4}\.json$/)
     expect((blob as Blob).type).toBe('application/json')
   })
 
@@ -1676,5 +1760,1001 @@ describe('AnimationPanel — saída em profundidade', () => {
     // A escolha do PNG e a vista da tela seguem intocadas.
     expect(useDepthStore.getState().snapshotDepth).toBe(false)
     expect(useDepthStore.getState().previewEnabled).toBe(false)
+  })
+})
+
+/**
+ * Guarda temporária da bancada (pedido do usuário, 2026-08-06): clicar "Ir
+ * para" sobrescreve a cena que se estava montando, e antes disso a única saída
+ * era lembrar do Ctrl+Z. O botão fica na barra grudada no topo, junto do
+ * "Capturar" — numa lista longa de keyframes, enterrado no rodapé ele não
+ * serviria para nada.
+ */
+describe('AnimationPanel — recuperar a cena guardada', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useSceneStashStore.setState(useSceneStashStore.getInitialState())
+    abrirPainel()
+  })
+
+  const recuperar = () => screen.getByRole('button', { name: 'Recuperar cena guardada' })
+
+  it('sem nada guardado, o botão fica desabilitado e diz por quê', async () => {
+    comAnimacao(2)
+    await renderAnimationPanel()
+
+    expect(recuperar()).toBeDisabled()
+    expect(
+      screen.getByText('Nada guardado ainda — o "Ir para" de um keyframe guarda a cena que está na tela.'),
+    ).toBeInTheDocument()
+  })
+
+  it('"Ir para" guarda a cena da tela e libera o botão', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Ir para' })[1])
+
+    expect(useSceneStashStore.getState().stash?.figures).toHaveLength(1)
+    expect(recuperar()).toBeEnabled()
+  })
+
+  it('recuperar devolve a cena guardada à bancada', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    const id = useFiguresStore.getState().figures[0].id
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Ir para' })[1])
+    // O que o `AnimationPlayer` faria fora do jsdom: a bancada vira outra coisa.
+    act(() => {
+      useFiguresStore.getState().setJointRotation(id, 'hip.L', { x: 0.5 })
+    })
+
+    await user.click(recuperar())
+
+    expect(useFiguresStore.getState().figures[0].pose['hip.L'].x).toBeCloseTo(0)
+  })
+
+  /**
+   * A proteção pedida pelo usuário: percorrer keyframes não sobrescreve a
+   * guarda. Quem aplica o retrato é o `AnimationPlayer`, que não existe em
+   * jsdom — o `applyKeyframeToWorkbench` abaixo faz o papel dele, que é
+   * exatamente a função que o player chama.
+   */
+  it('percorrer keyframes não sobrescreve a cena guardada', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    const id = useFiguresStore.getState().figures[0].id
+    act(() => {
+      useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: -30 })
+    })
+    await renderAnimationPanel()
+
+    const keyframes = () => findWorkingAnimation(useFiguresStore.getState().animations)!.keyframes
+    for (const index of [0, 1, 2]) {
+      await user.click(screen.getAllByRole('button', { name: 'Ir para' })[index])
+      act(() => {
+        applyKeyframeToWorkbench(keyframes()[index])
+      })
+    }
+
+    expect(useSceneStashStore.getState().stash?.figures[0].pose['elbow.L'].x).toBe(-30)
+  })
+
+  /**
+   * Pedido do usuário: o keyframe escolhido continua destacado no painel (e na
+   * régua, que lê o mesmo `visitedKeyframeId`) depois de recuperar — é contra
+   * ele que o botão alterna.
+   */
+  it('recuperar não larga o destaque do keyframe visitado', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Ir para' })[1])
+    await user.click(recuperar())
+
+    expect(useAnimationStore.getState().visitedKeyframeId).toBe('k2')
+    const cards = Array.from(document.querySelectorAll('.animation-panel__keyframe'))
+    expect(cards.findIndex((card) => card.getAttribute('aria-current') === 'true')).toBe(1)
+  })
+})
+
+/**
+ * Três facilidades do card pedidas pelo usuário em 2026-08-06: copiar a
+ * COLOCAÇÃO do vizinho (o terceiro par de setas), confirmar antes de apagar e
+ * duplicar já indo para a cópia.
+ */
+describe('AnimationPanel — colocação, apagar e duplicar', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useSceneStashStore.setState(useSceneStashStore.getInitialState())
+    abrirPainel()
+  })
+
+  /** Três keyframes com o boneco andando na diagonal e subindo. */
+  function comCaminhada(): string {
+    const figureId = useFiguresStore.getState().addFigure()!
+    for (const passo of [0, 1, 2]) {
+      useFiguresStore.getState().setPosition(figureId, [passo, passo * 0.5, -passo])
+      useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    }
+    useFiguresStore.getState().renameAnimation(WORKING_ANIMATION_ID, 'Corrida')
+    return figureId
+  }
+
+  const keyframes = () => findWorkingAnimation(useFiguresStore.getState().animations)!.keyframes
+
+  it('copia a posição no plano do keyframe anterior, e só ela', async () => {
+    const user = userEvent.setup()
+    comCaminhada()
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: /Copiar a posição no plano do keyframe anterior/ })[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copiar' }))
+
+    // X e Z do vizinho de cima; o Y (a altura do salto) fica onde estava.
+    expect(keyframes()[1].figures[0].position).toEqual([0, 0.5, -0])
+  })
+
+  it('copia a posição no plano do keyframe seguinte', async () => {
+    const user = userEvent.setup()
+    comCaminhada()
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: /Copiar a posição no plano do keyframe seguinte/ })[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copiar' }))
+
+    expect(keyframes()[1].figures[0].position).toEqual([2, 0.5, -2])
+  })
+
+  /** Nas pontas não há vizinho de onde copiar. */
+  it('as setas de colocação desabilitam nas pontas', async () => {
+    comCaminhada()
+    await renderAnimationPanel()
+
+    expect(
+      screen.getAllByRole('button', { name: /Copiar a posição no plano do keyframe anterior/ })[0],
+    ).toBeDisabled()
+    expect(
+      screen.getAllByRole('button', { name: /Copiar a posição no plano do keyframe seguinte/ })[2],
+    ).toBeDisabled()
+  })
+
+  it('apagar um keyframe pede confirmação em modal', async () => {
+    const user = userEvent.setup()
+    comCaminhada()
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Remover keyframe' })[1])
+
+    // Nada foi apagado ainda, e o aviso está na tela.
+    expect(keyframes()).toHaveLength(3)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Remover' }))
+    expect(keyframes().map((keyframe) => keyframe.id)).toEqual(['k1', 'k3'])
+  })
+
+  it('cancelar a confirmação não apaga nada', async () => {
+    const user = userEvent.setup()
+    comCaminhada()
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Remover keyframe' })[1])
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(keyframes()).toHaveLength(3)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  /**
+   * Duplicar simula um "Ir para" na CÓPIA (decisão do usuário): é ela que se
+   * ajusta em seguida, e os indicadores do painel e da régua caem no card novo.
+   */
+  it('duplicar leva os indicadores para a cópia', async () => {
+    const user = userEvent.setup()
+    comCaminhada()
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Duplicar keyframe' })[0])
+
+    const lista = keyframes()
+    expect(lista.map((keyframe) => keyframe.id)).toEqual(['k1', 'k4', 'k2', 'k3'])
+    expect(useAnimationStore.getState().visitedKeyframeId).toBe('k4')
+    // E o playhead no instante da cópia, que é o do trecho que chega nela.
+    expect(useAnimationStore.getState().timeMs).toBe(lista[1].durationMs)
+    expect(useAnimationStore.getState().pendingCommand).toEqual({ type: 'goToKeyframe', keyframeId: 'k4' })
+  })
+
+  /** O "Ir para" da duplicação guarda a bancada, como qualquer outro. */
+  it('duplicar guarda a cena de trabalho', async () => {
+    const user = userEvent.setup()
+    const figureId = comCaminhada()
+    act(() => {
+      useFiguresStore.getState().setJointRotation(figureId, 'elbow.L', { x: -30 })
+    })
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: 'Duplicar keyframe' })[0])
+
+    expect(useSceneStashStore.getState().stash?.figures[0].pose['elbow.L'].x).toBe(-30)
+  })
+})
+
+/**
+ * Quem recebe a cópia vinda do vizinho (pedido do usuário, 2026-08-06). Numa
+ * cena de duas ou mais pessoas, acertar a deriva de UMA arrastava as outras
+ * junto: agora um diálogo de caixas escolhe.
+ */
+describe('AnimationPanel — escolher quem recebe a cópia', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useSceneStashStore.setState(useSceneStashStore.getInitialState())
+    abrirPainel()
+  })
+
+  /** Dois bonecos, dois keyframes: no segundo os dois andaram e dobraram o braço. */
+  function comDupla(): [string, string] {
+    const a = useFiguresStore.getState().addFigure()!
+    const b = useFiguresStore.getState().addFigure()!
+    // Bonecos novos nascem separados no eixo X: a partida é explícita aqui para
+    // o teste falar da cópia, e não do afastamento automático.
+    for (const id of [a, b]) useFiguresStore.getState().setPosition(id, [0, 0, 0])
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    for (const id of [a, b]) {
+      useFiguresStore.getState().setPosition(id, [3, 0, 3])
+      useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: -90 })
+    }
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().renameAnimation(WORKING_ANIMATION_ID, 'Corrida')
+    return [a, b]
+  }
+
+  const keyframes = () => findWorkingAnimation(useFiguresStore.getState().animations)!.keyframes
+  const copiarPoseDoAnterior = async (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(screen.getAllByRole('button', { name: /Copiar a pose do keyframe anterior/ })[1])
+
+  /**
+   * Com um boneco só não há elenco a escolher — mas desde 2026-08-07 há o que
+   * confirmar (pedido do usuário): o caminho direto passou a abrir o modal de
+   * confirmação, o mesmo da câmera. Com dois ou mais, o diálogo de caixas JÁ é
+   * uma confirmação, e empilhar outra antes dele seriam duas telas para uma
+   * cópia.
+   */
+  it('com um boneco em cena, confirma no modal em vez de escolher elenco', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    await renderAnimationPanel()
+
+    await copiarPoseDoAnterior(user)
+
+    const dialogo = screen.getByRole('dialog')
+    expect(within(dialogo).queryByLabelText('Figure 1')).not.toBeInTheDocument()
+    expect(keyframes()[1].figures).not.toBe(keyframes()[0].figures)
+
+    await user.click(within(dialogo).getByRole('button', { name: 'Copiar' }))
+
+    expect(keyframes()[1].figures).toBe(keyframes()[0].figures)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('cancelar a confirmação com um boneco não copia nada', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    await renderAnimationPanel()
+
+    const antes = keyframes()[1].figures
+    await copiarPoseDoAnterior(user)
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+    expect(keyframes()[1].figures).toBe(antes)
+  })
+
+  it('com dois bonecos, o diálogo de caixas continua sendo a única tela', async () => {
+    const user = userEvent.setup()
+    comDupla()
+    await renderAnimationPanel()
+
+    await copiarPoseDoAnterior(user)
+
+    expect(within(screen.getByRole('dialog')).getByLabelText('Figure 1')).toBeInTheDocument()
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  })
+
+  it('com dois bonecos, copia a pose só de quem ficou marcado', async () => {
+    const user = userEvent.setup()
+    const [a, b] = comDupla()
+    await renderAnimationPanel()
+
+    await copiarPoseDoAnterior(user)
+
+    // Nada foi copiado ainda, e as duas caixas nascem marcadas.
+    expect(keyframes()[1].figures.find((f) => f.id === a)!.pose['elbow.L'].x).toBe(-90)
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByLabelText('Figure 1')).toBeChecked()
+    expect(dialog.getByLabelText('Figure 2')).toBeChecked()
+
+    await user.click(dialog.getByLabelText('Figure 2'))
+    await user.click(dialog.getByRole('button', { name: 'Copiar' }))
+
+    expect(keyframes()[1].figures.find((f) => f.id === a)!.pose['elbow.L'].x).toBe(0)
+    expect(keyframes()[1].figures.find((f) => f.id === b)!.pose['elbow.L'].x).toBe(-90)
+  })
+
+  it('a mesma escolha vale para a colocação no plano', async () => {
+    const user = userEvent.setup()
+    const [a, b] = comDupla()
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: /Copiar a posição no plano do keyframe anterior/ })[1])
+    const dialog = within(screen.getByRole('dialog'))
+    await user.click(dialog.getByLabelText('Figure 1'))
+    await user.click(dialog.getByRole('button', { name: 'Copiar' }))
+
+    expect(keyframes()[1].figures.find((f) => f.id === a)!.position).toEqual([3, 0, 3])
+    expect(keyframes()[1].figures.find((f) => f.id === b)!.position).toEqual([0, 0, 0])
+  })
+
+  /** A escolha é lembrada: quem está acertando um figurante não remarca a cada clique. */
+  it('lembra quem ficou de fora na cópia seguinte', async () => {
+    const user = userEvent.setup()
+    comDupla()
+    await renderAnimationPanel()
+
+    await copiarPoseDoAnterior(user)
+    await user.click(within(screen.getByRole('dialog')).getByLabelText('Figure 2'))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copiar' }))
+
+    await copiarPoseDoAnterior(user)
+
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByLabelText('Figure 1')).toBeChecked()
+    expect(dialog.getByLabelText('Figure 2')).not.toBeChecked()
+  })
+
+  it('cancelar não copia nada', async () => {
+    const user = userEvent.setup()
+    const [a] = comDupla()
+    await renderAnimationPanel()
+
+    await copiarPoseDoAnterior(user)
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(keyframes()[1].figures.find((f) => f.id === a)!.pose['elbow.L'].x).toBe(-90)
+  })
+
+  it('sem nenhum boneco marcado, não dá para confirmar', async () => {
+    const user = userEvent.setup()
+    comDupla()
+    await renderAnimationPanel()
+
+    await copiarPoseDoAnterior(user)
+    const dialog = within(screen.getByRole('dialog'))
+    await user.click(dialog.getByLabelText('Figure 1'))
+    await user.click(dialog.getByLabelText('Figure 2'))
+
+    expect(dialog.getByRole('button', { name: 'Copiar' })).toBeDisabled()
+    expect(dialog.getByText('Marque ao menos um boneco.')).toBeInTheDocument()
+  })
+
+  /** Caixa que não faz nada é pior que caixa nenhuma: só entra quem está nos dois. */
+  it('lista só os bonecos presentes nos dois keyframes', async () => {
+    const user = userEvent.setup()
+    useFiguresStore.getState().addFigure()
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().addFigure()
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    await renderAnimationPanel()
+
+    await copiarPoseDoAnterior(user)
+
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByLabelText('Figure 1')).toBeInTheDocument()
+    expect(dialog.queryByLabelText('Figure 2')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * De quais bonecos sai o fantasma (pedido do usuário, 2026-08-06): numa cena de
+ * várias pessoas, os fantasmas de todo mundo em volta lavam a tela.
+ */
+describe('AnimationPanel — bonecos do papel-cebola', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    abrirPainel()
+  })
+
+  function comDoisBonecos() {
+    useFiguresStore.getState().addFigure()
+    useFiguresStore.getState().addFigure()
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+  }
+
+  const caixas = () => within(screen.getByRole('group', { name: 'Fantasmas de' }))
+
+  it('as caixas só aparecem com o papel-cebola ligado', async () => {
+    const user = userEvent.setup()
+    comDoisBonecos()
+    await renderAnimationPanel()
+
+    expect(screen.queryByRole('group', { name: 'Fantasmas de' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Papel-cebola'))
+    expect(caixas().getByLabelText('Figure 1')).toBeChecked()
+    expect(caixas().getByLabelText('Figure 2')).toBeChecked()
+  })
+
+  /** Com um boneco só, a caixa seria uma linha para não decidir nada. */
+  it('com um boneco em cena, não há o que escolher', async () => {
+    const user = userEvent.setup()
+    comAnimacao(2)
+    await renderAnimationPanel()
+
+    await user.click(screen.getByLabelText('Papel-cebola'))
+
+    expect(screen.queryByRole('group', { name: 'Fantasmas de' })).not.toBeInTheDocument()
+  })
+
+  it('desmarcar um boneco tira o fantasma dele', async () => {
+    const user = userEvent.setup()
+    comDoisBonecos()
+    const [, segundo] = useFiguresStore.getState().figures
+    await renderAnimationPanel()
+    await user.click(screen.getByLabelText('Papel-cebola'))
+
+    await user.click(caixas().getByLabelText('Figure 2'))
+
+    expect(useAnimationStore.getState().onionSkinHiddenFigureIds).toEqual([segundo.id])
+    expect(caixas().getByLabelText('Figure 1')).toBeChecked()
+    expect(caixas().getByLabelText('Figure 2')).not.toBeChecked()
+
+    // E remarcar devolve o fantasma.
+    await user.click(caixas().getByLabelText('Figure 2'))
+    expect(useAnimationStore.getState().onionSkinHiddenFigureIds).toEqual([])
+  })
+
+  it('sem nenhum marcado, diz que o papel-cebola não aparece', async () => {
+    const user = userEvent.setup()
+    comDoisBonecos()
+    await renderAnimationPanel()
+    await user.click(screen.getByLabelText('Papel-cebola'))
+
+    await user.click(caixas().getByLabelText('Figure 1'))
+    await user.click(caixas().getByLabelText('Figure 2'))
+
+    expect(screen.getByText('Nenhum boneco marcado — o papel-cebola não aparece.')).toBeInTheDocument()
+  })
+})
+
+/**
+ * Pose estimada no card (pedido do usuário, 2026-08-07): o meio do caminho
+ * entre o keyframe anterior e o seguinte, para preencher um quadro do meio sem
+ * posar tudo à mão.
+ *
+ * A estimativa vai para a BANCADA (decisão do usuário), não para o keyframe:
+ * dá para conferir em 3D e ajustar, e é o "Regravar" que a grava. Quem aplica o
+ * retrato de um keyframe é o `AnimationPlayer`, que não existe em jsdom — aqui
+ * o caminho é todo puro, e por isso o teste o alcança inteiro.
+ */
+describe('AnimationPanel — pose estimada dos vizinhos', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useSceneStashStore.setState(useSceneStashStore.getInitialState())
+    abrirPainel()
+  })
+
+  /** Três keyframes: cotovelo a 0°, a -10° e a -100°. A média dos vizinhos é -50°. */
+  function comTresPassos(): string {
+    const figureId = useFiguresStore.getState().addFigure()!
+    for (const angulo of [0, -10, -100]) {
+      useFiguresStore.getState().setJointRotation(figureId, 'elbow.L', { x: angulo })
+      useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    }
+    useFiguresStore.getState().renameAnimation(WORKING_ANIMATION_ID, 'Corrida')
+    return figureId
+  }
+
+  const keyframes = () => findWorkingAnimation(useFiguresStore.getState().animations)!.keyframes
+  const estimar = () => screen.getAllByRole('button', { name: /Pose média/ })
+
+  /** Sem os dois vizinhos não há caminho a dividir. */
+  it('o botão desabilita nas pontas e habilita no meio', async () => {
+    comTresPassos()
+    await renderAnimationPanel()
+
+    expect(estimar()[0]).toBeDisabled()
+    expect(estimar()[1]).toBeEnabled()
+    expect(estimar()[2]).toBeDisabled()
+  })
+
+  it('confirmar põe a média na bancada, com o enquadramento do keyframe', async () => {
+    const user = userEvent.setup()
+    comTresPassos()
+    act(() => {
+      useFiguresStore
+        .getState()
+        .updateAnimationKeyframe(WORKING_ANIMATION_ID, 'k2', { ...camera, focalMm: 85 })
+    })
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Gerar na bancada' }))
+
+    expect(useFiguresStore.getState().figures[0].pose['elbow.L'].x).toBeCloseTo(-50, 6)
+    expect(useFiguresStore.getState().sceneCamera.focalMm).toBe(85)
+  })
+
+  /** O keyframe é o que NÃO muda: a estimativa é uma proposta na tela. */
+  it('o keyframe continua com a pose que tinha', async () => {
+    const user = userEvent.setup()
+    comTresPassos()
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Gerar na bancada' }))
+
+    expect(keyframes()[1].figures[0].pose['elbow.L'].x).toBe(-10)
+  })
+
+  it('a cena que estava na tela vai para a guarda, e "Recuperar" a traz de volta', async () => {
+    const user = userEvent.setup()
+    const figureId = comTresPassos()
+    act(() => {
+      useFiguresStore.getState().setJointRotation(figureId, 'elbow.L', { x: -140 })
+    })
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Gerar na bancada' }))
+    expect(useSceneStashStore.getState().stash?.figures[0].pose['elbow.L'].x).toBe(-140)
+
+    await user.click(screen.getByRole('button', { name: 'Recuperar cena guardada' }))
+
+    expect(useFiguresStore.getState().figures[0].pose['elbow.L'].x).toBe(-140)
+  })
+
+  it('cancelar não toca na bancada nem na guarda', async () => {
+    const user = userEvent.setup()
+    const figureId = comTresPassos()
+    act(() => {
+      useFiguresStore.getState().setJointRotation(figureId, 'elbow.L', { x: -140 })
+    })
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+    expect(useFiguresStore.getState().figures[0].pose['elbow.L'].x).toBe(-140)
+    expect(useSceneStashStore.getState().stash).toBeNull()
+  })
+
+  it('o card estimado passa a ser o da bancada', async () => {
+    const user = userEvent.setup()
+    comTresPassos()
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Gerar na bancada' }))
+
+    expect(useAnimationStore.getState().visitedKeyframeId).toBe('k2')
+  })
+})
+
+/**
+ * O destaque do "Regravar" (pedido do usuário, 2026-08-07): o botão avisa que
+ * há algo na cena que aquele keyframe ainda não guardou. A regra pura está em
+ * `updateHighlight.ts`; aqui se confere que o painel a liga nos dois gatilhos.
+ */
+describe('AnimationPanel — destaque do "Regravar"', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useSceneStashStore.setState(useSceneStashStore.getInitialState())
+    abrirPainel()
+  })
+
+  const keyframes = () => findWorkingAnimation(useFiguresStore.getState().animations)!.keyframes
+  const regravar = () => screen.getAllByRole('button', { name: 'Regravar' })
+  const PISCA = 'animation-panel__update--pending'
+
+  /** O keyframe 2 carregado na bancada, como o `AnimationPlayer` faria. */
+  function comKeyframeNaBancada() {
+    comAnimacao(3)
+    act(() => {
+      useAnimationStore.setState({ visitedKeyframeId: 'k2' })
+      applyKeyframeToWorkbench(keyframes()[1])
+    })
+  }
+
+  it('keyframe recém-carregado não pisca — não há nada a gravar', async () => {
+    comKeyframeNaBancada()
+    await renderAnimationPanel()
+
+    expect(regravar()[1]).not.toHaveClass(PISCA)
+  })
+
+  it('mexer na cena acende o "Regravar" do card que está na bancada', async () => {
+    comKeyframeNaBancada()
+    await renderAnimationPanel()
+
+    act(() => {
+      useFiguresStore
+        .getState()
+        .setJointRotation(useFiguresStore.getState().figures[0].id, 'elbow.L', { x: -60 })
+    })
+
+    expect(regravar()[1]).toHaveClass(PISCA)
+    expect(regravar()[0]).not.toHaveClass(PISCA)
+    expect(regravar()[2]).not.toHaveClass(PISCA)
+  })
+
+  /**
+   * O destaque por CÓPIA saiu junto com a mudança de 2026-08-07 (#137.2): copiar
+   * leva a bancada para o keyframe atualizado, então os dois não divergem mais —
+   * e acender ali seria avisar sobre coisa nenhuma. Aqui se trava isso: depois de
+   * copiar e o retrato ser aplicado (o `AnimationPlayer` não existe em jsdom), o
+   * card fica em silêncio.
+   */
+  it('copiar não acende destaque nenhum — a bancada foi junto', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: /Copiar a câmera do keyframe anterior/ })[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copiar câmera' }))
+    act(() => {
+      applyKeyframeToWorkbench(keyframes()[1])
+    })
+
+    expect(regravar()[1]).not.toHaveClass(PISCA)
+    expect(regravar()[0]).not.toHaveClass(PISCA)
+  })
+
+  it('regravar o card apaga o destaque dele', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    act(() => {
+      useAnimationStore.setState({ visitedKeyframeId: 'k2' })
+      applyKeyframeToWorkbench(keyframes()[1])
+    })
+    await renderAnimationPanel()
+
+    act(() => {
+      useFiguresStore
+        .getState()
+        .setJointRotation(useFiguresStore.getState().figures[0].id, 'elbow.L', { x: -60 })
+    })
+    expect(regravar()[1]).toHaveClass(PISCA)
+
+    await user.click(regravar()[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar' }))
+
+    expect(regravar()[1]).not.toHaveClass(PISCA)
+  })
+})
+
+/**
+ * Os dois ajustes pedidos em 2026-08-07, depois de ver o card funcionando:
+ * regravar tem de APAGAR o destaque (ele continuava piscando), e a pose média
+ * tem de deixar escolher em qual boneco se aplica.
+ */
+describe('AnimationPanel — regravar apaga o destaque', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useSceneStashStore.setState(useSceneStashStore.getInitialState())
+    abrirPainel()
+  })
+
+  const keyframes = () => findWorkingAnimation(useFiguresStore.getState().animations)!.keyframes
+  const regravar = () => screen.getAllByRole('button', { name: 'Regravar' })
+  const PISCA = 'animation-panel__update--pending'
+
+  it('gravar a cena mudada apaga o destaque do card', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    act(() => {
+      useAnimationStore.setState({ visitedKeyframeId: 'k2' })
+      applyKeyframeToWorkbench(keyframes()[1])
+    })
+    await renderAnimationPanel()
+
+    act(() => {
+      useFiguresStore
+        .getState()
+        .setJointRotation(useFiguresStore.getState().figures[0].id, 'elbow.L', { x: -60 })
+    })
+    expect(regravar()[1]).toHaveClass(PISCA)
+
+    await user.click(regravar()[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar' }))
+
+    expect(regravar()[1]).not.toHaveClass(PISCA)
+  })
+
+  it('cancelar a confirmação mantém o destaque — nada foi gravado', async () => {
+    const user = userEvent.setup()
+    comAnimacao(3)
+    act(() => {
+      useAnimationStore.setState({ visitedKeyframeId: 'k2' })
+      applyKeyframeToWorkbench(keyframes()[1])
+    })
+    await renderAnimationPanel()
+
+    act(() => {
+      useFiguresStore
+        .getState()
+        .setJointRotation(useFiguresStore.getState().figures[0].id, 'elbow.L', { x: -60 })
+    })
+    await user.click(regravar()[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+    expect(regravar()[1]).toHaveClass(PISCA)
+  })
+})
+
+/**
+ * Escolher quem recebe a pose média (pedido do usuário, 2026-08-07). Mesma
+ * regra do resto do card: com elenco a escolher, o diálogo de caixas; com um
+ * boneco estimável só, a confirmação simples.
+ */
+describe('AnimationPanel — pose média com escolha de bonecos', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useSceneStashStore.setState(useSceneStashStore.getInitialState())
+    abrirPainel()
+  })
+
+  /** Dois bonecos, três keyframes: cotovelo a 0°, -10° e -100° nos dois. */
+  function comDuplaEmTresPassos(): [string, string] {
+    const a = useFiguresStore.getState().addFigure()!
+    const b = useFiguresStore.getState().addFigure()!
+    for (const angulo of [0, -10, -100]) {
+      for (const id of [a, b]) useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: angulo })
+      useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    }
+    useFiguresStore.getState().renameAnimation(WORKING_ANIMATION_ID, 'Corrida')
+    return [a, b]
+  }
+
+  const cotovelo = (id: string) =>
+    useFiguresStore.getState().figures.find((f) => f.id === id)!.pose['elbow.L'].x
+  const estimar = () => screen.getAllByRole('button', { name: /Pose média/ })
+
+  it('com dois bonecos, abre as caixas em vez da confirmação simples', async () => {
+    const user = userEvent.setup()
+    comDuplaEmTresPassos()
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+
+    const dialogo = within(screen.getByRole('dialog'))
+    expect(dialogo.getByLabelText('Figure 1')).toBeChecked()
+    expect(dialogo.getByLabelText('Figure 2')).toBeChecked()
+  })
+
+  it('só o boneco marcado recebe a média; o outro fica com a pose do keyframe', async () => {
+    const user = userEvent.setup()
+    const [a, b] = comDuplaEmTresPassos()
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+    const dialogo = within(screen.getByRole('dialog'))
+    await user.click(dialogo.getByLabelText('Figure 2'))
+    await user.click(dialogo.getByRole('button', { name: 'Gerar na bancada' }))
+
+    expect(cotovelo(a)).toBeCloseTo(-50, 6)
+    expect(cotovelo(b)).toBe(-10)
+  })
+
+  it('cancelar as caixas não mexe na bancada', async () => {
+    const user = userEvent.setup()
+    const [a] = comDuplaEmTresPassos()
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+    expect(cotovelo(a)).toBe(-100)
+    expect(useSceneStashStore.getState().stash).toBeNull()
+  })
+
+  /** A escolha é lembrada, como a das cópias: é a mesma pergunta. */
+  it('quem ficou de fora continua desmarcado na estimativa seguinte', async () => {
+    const user = userEvent.setup()
+    comDuplaEmTresPassos()
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+    await user.click(within(screen.getByRole('dialog')).getByLabelText('Figure 2'))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Gerar na bancada' }))
+
+    await user.click(estimar()[1])
+
+    expect(within(screen.getByRole('dialog')).getByLabelText('Figure 2')).not.toBeChecked()
+  })
+
+  /**
+   * Boneco que falta num dos vizinhos não pode virar caixa: a estimativa não o
+   * alcança, e uma caixa que não faz nada é pior que caixa nenhuma.
+   */
+  it('só entram nas caixas os bonecos que estão nos três keyframes', async () => {
+    const user = userEvent.setup()
+    // Dois bonecos desde o começo; o TERCEIRO entra em cena depois do primeiro
+    // keyframe, e sem ele lá não há de onde partir.
+    const a = useFiguresStore.getState().addFigure()!
+    const b = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    const c = useFiguresStore.getState().addFigure()!
+    for (const angulo of [-10, -100]) {
+      for (const id of [a, b, c]) useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: angulo })
+      useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    }
+    useFiguresStore.getState().renameAnimation(WORKING_ANIMATION_ID, 'Corrida')
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+
+    const dialogo = within(screen.getByRole('dialog'))
+    expect(dialogo.getByLabelText('Figure 1')).toBeInTheDocument()
+    expect(dialogo.getByLabelText('Figure 2')).toBeInTheDocument()
+    expect(dialogo.queryByLabelText('Figure 3')).not.toBeInTheDocument()
+  })
+
+  /**
+   * E com UM estimável só não há o que escolher: cai na confirmação simples,
+   * a mesma regra do resto do card (#137).
+   */
+  it('com um estimável só, é a confirmação simples', async () => {
+    const user = userEvent.setup()
+    const a = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    const b = useFiguresStore.getState().addFigure()!
+    for (const angulo of [-10, -100]) {
+      for (const id of [a, b]) useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: angulo })
+      useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    }
+    useFiguresStore.getState().renameAnimation(WORKING_ANIMATION_ID, 'Corrida')
+    await renderAnimationPanel()
+
+    await user.click(estimar()[1])
+
+    const dialogo = within(screen.getByRole('dialog'))
+    expect(dialogo.queryByLabelText('Figure 1')).not.toBeInTheDocument()
+    expect(dialogo.getByRole('button', { name: 'Gerar na bancada' })).toBeInTheDocument()
+  })
+})
+
+/**
+ * Copiar do vizinho leva a BANCADA junto (pedido do usuário, 2026-08-07): é o
+ * mesmo caminho do "Ir para", disparado depois da cópia. Antes disto a cópia
+ * acontecia fora da tela — o keyframe mudava e conferir exigia um "Ir para" à
+ * mão logo depois.
+ */
+describe('AnimationPanel — copiar leva a bancada para o keyframe', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+    useAnimationStore.setState(useAnimationStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
+    useSceneStashStore.setState(useSceneStashStore.getInitialState())
+    abrirPainel()
+  })
+
+  const keyframes = () => findWorkingAnimation(useFiguresStore.getState().animations)!.keyframes
+
+  /** Três keyframes com o cotovelo em ângulos diferentes. */
+  function comTresPassos(): string {
+    const figureId = useFiguresStore.getState().addFigure()!
+    for (const angulo of [0, -10, -100]) {
+      useFiguresStore.getState().setJointRotation(figureId, 'elbow.L', { x: angulo })
+      useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    }
+    useFiguresStore.getState().renameAnimation(WORKING_ANIMATION_ID, 'Corrida')
+    return figureId
+  }
+
+  it('a câmera copiada dispara o carregamento do keyframe que recebeu', async () => {
+    const user = userEvent.setup()
+    comTresPassos()
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: /Copiar a câmera do keyframe anterior/ })[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copiar câmera' }))
+
+    expect(useAnimationStore.getState().pendingCommand).toEqual({
+      type: 'goToKeyframe',
+      keyframeId: 'k2',
+    })
+    expect(useAnimationStore.getState().visitedKeyframeId).toBe('k2')
+    // A régua vai para o instante daquele keyframe, como no próprio "Ir para".
+    expect(useAnimationStore.getState().timeMs).toBe(keyframes()[0].durationMs)
+  })
+
+  it('a pose copiada também, e o retrato que chega à bancada já é o novo', async () => {
+    const user = userEvent.setup()
+    comTresPassos()
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: /Copiar a pose do keyframe anterior/ })[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copiar' }))
+
+    expect(useAnimationStore.getState().pendingCommand).toEqual({
+      type: 'goToKeyframe',
+      keyframeId: 'k2',
+    })
+    // O `AnimationPlayer` não existe em jsdom; aplicar o retrato é o que ele
+    // faria. O que chega à bancada tem de ser a pose JÁ copiada — a ordem
+    // (copiar, depois carregar) é o que garante isso.
+    act(() => {
+      applyKeyframeToWorkbench(keyframes()[1])
+    })
+    expect(useFiguresStore.getState().figures[0].pose['elbow.L'].x).toBe(0)
+  })
+
+  it('a colocação copiada segue a mesma regra', async () => {
+    const user = userEvent.setup()
+    comTresPassos()
+    await renderAnimationPanel()
+
+    await user.click(
+      screen.getAllByRole('button', { name: /Copiar a posição no plano do keyframe seguinte/ })[1],
+    )
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copiar' }))
+
+    expect(useAnimationStore.getState().visitedKeyframeId).toBe('k2')
+  })
+
+  /** Herda a guarda do "Ir para": a cena que se estava montando não se perde. */
+  it('a cena que estava na bancada vai para a guarda', async () => {
+    const user = userEvent.setup()
+    const figureId = comTresPassos()
+    act(() => {
+      useFiguresStore.getState().setJointRotation(figureId, 'elbow.L', { x: -140 })
+    })
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: /Copiar a câmera do keyframe anterior/ })[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Copiar câmera' }))
+
+    expect(useSceneStashStore.getState().stash?.figures[0].pose['elbow.L'].x).toBe(-140)
+  })
+
+  it('cancelar não copia nem mexe na bancada', async () => {
+    const user = userEvent.setup()
+    comTresPassos()
+    await renderAnimationPanel()
+
+    await user.click(screen.getAllByRole('button', { name: /Copiar a câmera do keyframe anterior/ })[1])
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+    expect(useAnimationStore.getState().pendingCommand).toBeNull()
+    expect(useAnimationStore.getState().visitedKeyframeId).toBeNull()
   })
 })

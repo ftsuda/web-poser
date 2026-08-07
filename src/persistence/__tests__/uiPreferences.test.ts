@@ -15,10 +15,12 @@ function prefs(overrides: Partial<UIPreferences> = {}): UIPreferences {
     collapsedPanels: createExpandedPanels(),
     collapsedSections: createCollapsedSections(),
     rulerVisible: false,
+    gestureLinesVisible: false,
     frameMaskSource: 'off',
     pairPoseEnabled: true,
     figureStyle: 'wooden',
     figureSilhouette: false,
+    isolateSelection: false,
     ...overrides,
   }
 }
@@ -165,5 +167,12 @@ describe('uiPreferences (fase 9, item 8)', () => {
       JSON.stringify({ version: 1, figureStyle: 'plasticina' }),
     )
     expect(loadUIPreferences().figureStyle).toBe('wooden')
+  })
+
+  it('faz round-trip do isolamento da seleção, desligado por padrão', () => {
+    expect(loadUIPreferences().isolateSelection).toBe(false)
+
+    saveUIPreferences(prefs({ isolateSelection: true }))
+    expect(loadUIPreferences().isolateSelection).toBe(true)
   })
 })

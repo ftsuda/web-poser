@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { sampleAnimation, sampleAnimationOutput, splitCameraView } from '../animationSampler'
+import { averageKeyframeFigures, sampleAnimation, sampleAnimationOutput, splitCameraView } from '../animationSampler'
 import { DEFAULT_ANIMATION_SPEED, animationOutputDurationMs, type Animation, type AnimationKeyframe } from '../animation'
 import { buildJointFrames } from '../../figure/jointFrames'
 import { blendPoses, figureBlendState } from '../../figure/poseBlend'
@@ -419,5 +419,138 @@ describe('sampleAnimationOutput — relógio do vídeo', () => {
     for (const t of [0, 250, 1000, 1999, 2000]) {
       expect(sampleAnimationOutput(a, t)).toEqual(sampleAnimation(a, t))
     }
+  })
+})
+
+/**
+ * A pose estimada do card (pedido do usuário, 2026-08-07): o meio do caminho
+ * entre o keyframe ANTERIOR e o SEGUINTE, para preencher um keyframe do meio
+ * sem posar tudo à mão. É a mesma mistura que a reprodução mostraria ali — a
+ * diferença é que aqui ela vira uma pose editável na bancada.
+ */
+describe('averageKeyframeFigures', () => {
+  /** `elbow.L` dobra em x (faixa [-150, 0]); z não é eixo dele, e seria descartado. */
+  const comCotovelo = (x: number) => {
+    const tpose = resolvePosePreset('tpose')
+    return { ...tpose, 'elbow.L': { ...tpose['elbow.L'], x } }
+  }
+
+  it('a junta fica na metade do caminho entre os dois vizinhos', () => {
+    const anterior = keyframe('k1', 1000, [figure({ pose: comCotovelo(-20) })], cameraA)
+    const alvo = keyframe('k2', 1000, [figure({ pose: comCotovelo(0) })], cameraB)
+    const seguinte = keyframe('k3', 1000, [figure({ pose: comCotovelo(-100) })], cameraA)
+
+    const media = averageKeyframeFigures(alvo, anterior, seguinte)
+
+    expect(media[0].pose['elbow.L'].x).toBeCloseTo(-60, 6)
+  })
+
+  it('a colocação também entra na média — onde o boneco pisa e o giro do corpo', () => {
+    const anterior = keyframe('k1', 1000, [figure({ position: [0, 0, 0] })], cameraA)
+    const alvo = keyframe('k2', 1000, [figure({ position: [5, 0, 5] })], cameraB)
+    const seguinte = keyframe('k3', 1000, [figure({ position: [2, 0, 4] })], cameraA)
+
+    const media = averageKeyframeFigures(alvo, anterior, seguinte)
+
+    expect(media[0].position[0]).toBeCloseTo(1, 6)
+    expect(media[0].position[2]).toBeCloseTo(2, 6)
+  })
+
+  /**
+   * O elenco é o do keyframe ALVO, e não o do vizinho: a estimativa vai para a
+   * bancada e pode acabar regravada por cima do keyframe — se ela trouxesse o
+   * elenco do vizinho, regravar apagaria do keyframe um boneco que só ele tem.
+   */
+  it('boneco que só existe no keyframe alvo continua exatamente como estava', () => {
+    const soDoAlvo = figure({ id: 'f2', name: 'Só do alvo', position: [9, 0, 9] })
+    const anterior = keyframe('k1', 1000, [figure({ position: [0, 0, 0] })], cameraA)
+    const alvo = keyframe('k2', 1000, [figure({ position: [5, 0, 0] }), soDoAlvo], cameraB)
+    const seguinte = keyframe('k3', 1000, [figure({ position: [2, 0, 0] })], cameraA)
+
+    const media = averageKeyframeFigures(alvo, anterior, seguinte)
+
+    expect(media).toHaveLength(2)
+    expect(media[1]).toBe(soDoAlvo)
+  })
+
+  it('boneco que falta em UM dos vizinhos não é estimado — não há caminho a dividir', () => {
+    const anterior = keyframe('k1', 1000, [figure({ position: [0, 0, 0] })], cameraA)
+    const alvo = keyframe('k2', 1000, [figure({ position: [5, 0, 0] })], cameraB)
+    const seguinte = keyframe('k3', 1000, [], cameraA)
+
+    const media = averageKeyframeFigures(alvo, anterior, seguinte)
+
+    expect(media[0]).toBe(alvo.figures[0])
+  })
+
+  /**
+   * Nome, cor, altura e visibilidade são identidade, não movimento: quem manda
+   * neles é o keyframe alvo, mesmo que o vizinho anterior diga outra coisa.
+   */
+  it('identidade do boneco vem do alvo, não do vizinho', () => {
+    const anterior = keyframe('k1', 1000, [figure({ name: 'Antigo', color: '#000000', height: 1.5 })], cameraA)
+    const alvo = keyframe('k2', 1000, [figure({ name: 'Herói', color: '#ffffff', height: 1.8 })], cameraB)
+    const seguinte = keyframe('k3', 1000, [figure({ name: 'Antigo', color: '#000000', height: 1.5 })], cameraA)
+
+    const media = averageKeyframeFigures(alvo, anterior, seguinte)
+
+    expect(media[0].name).toBe('Herói')
+    expect(media[0].color).toBe('#ffffff')
+    expect(media[0].height).toBe(1.8)
+  })
+
+  /** A câmera fica de fora (decisão do usuário): ela tem botões próprios no card. */
+  it('devolve só os bonecos — a câmera não é assunto da estimativa', () => {
+    const anterior = keyframe('k1', 1000, [figure()], cameraA)
+    const alvo = keyframe('k2', 1000, [figure()], cameraB)
+    const seguinte = keyframe('k3', 1000, [figure()], cameraA)
+
+    expect(Array.isArray(averageKeyframeFigures(alvo, anterior, seguinte))).toBe(true)
+  })
+})
+
+/**
+ * A escolha de quem recebe a pose média (pedido do usuário, 2026-08-07): numa
+ * cena de duas pessoas, estimar o quadro do meio de UMA não pode arrastar a
+ * outra junto — a mesma razão que deu ao vizinho o diálogo de caixas.
+ */
+describe('averageKeyframeFigures — escolha de bonecos', () => {
+  const comCotovelo = (x: number) => {
+    const tpose = resolvePosePreset('tpose')
+    return { ...tpose, 'elbow.L': { ...tpose['elbow.L'], x } }
+  }
+
+  const trio = () => {
+    const a = (x: number) => figure({ id: 'a', pose: comCotovelo(x) })
+    const b = (x: number) => figure({ id: 'b', name: 'Boneco 2', pose: comCotovelo(x) })
+    return {
+      anterior: keyframe('k1', 1000, [a(-20), b(-20)], cameraA),
+      alvo: keyframe('k2', 1000, [a(0), b(0)], cameraB),
+      seguinte: keyframe('k3', 1000, [a(-100), b(-100)], cameraA),
+    }
+  }
+
+  it('sem lista, estima todo mundo — o contrato de antes não muda', () => {
+    const { alvo, anterior, seguinte } = trio()
+
+    const media = averageKeyframeFigures(alvo, anterior, seguinte)
+
+    expect(media[0].pose['elbow.L'].x).toBeCloseTo(-60, 6)
+    expect(media[1].pose['elbow.L'].x).toBeCloseTo(-60, 6)
+  })
+
+  it('com lista, quem ficou de fora continua com a pose do keyframe', () => {
+    const { alvo, anterior, seguinte } = trio()
+
+    const media = averageKeyframeFigures(alvo, anterior, seguinte, ['a'])
+
+    expect(media[0].pose['elbow.L'].x).toBeCloseTo(-60, 6)
+    expect(media[1]).toBe(alvo.figures[1])
+  })
+
+  it('lista vazia não estima ninguém', () => {
+    const { alvo, anterior, seguinte } = trio()
+
+    expect(averageKeyframeFigures(alvo, anterior, seguinte, [])).toEqual(alvo.figures)
   })
 })

@@ -1,8 +1,12 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { findWorkingAnimation } from '../animation/animation'
+import { ConfirmDialog } from '../layout/ConfirmDialog'
+import { goToKeyframeFigures, restoreStash } from '../animation/sceneStashActions'
 import { useAnimationStore } from '../store/animationStore'
 import { useFiguresStore } from '../store/figuresStore'
 import { usePosesShellStore } from '../store/posesShellStore'
+import { useSceneStashStore } from '../store/sceneStashStore'
 
 /**
  * Aba "Keyframes": gestão completa da linha do tempo de trabalho (decisão do
@@ -15,19 +19,30 @@ import { usePosesShellStore } from '../store/posesShellStore'
 export function PosesKeyframesTab() {
   const { t } = useTranslation()
   const animations = useFiguresStore((state) => state.animations)
-  const loadFiguresFromKeyframe = useFiguresStore((state) => state.loadFiguresFromKeyframe)
+  const figures = useFiguresStore((state) => state.figures)
   const updateAnimationKeyframe = useFiguresStore((state) => state.updateAnimationKeyframe)
   const moveAnimationKeyframe = useFiguresStore((state) => state.moveAnimationKeyframe)
   const removeAnimationKeyframe = useFiguresStore((state) => state.removeAnimationKeyframe)
   const currentKeyframeId = usePosesShellStore((state) => state.currentKeyframeId)
   const setCurrentKeyframeId = usePosesShellStore((state) => state.setCurrentKeyframeId)
+  const stash = useSceneStashStore((state) => state.stash)
   const onionSkin = useAnimationStore((state) => state.onionSkin)
   const onionSkinMode = useAnimationStore((state) => state.onionSkinMode)
   const setOnionSkin = useAnimationStore((state) => state.setOnionSkin)
   const setOnionSkinMode = useAnimationStore((state) => state.setOnionSkinMode)
+  const onionSkinHiddenFigureIds = useAnimationStore((state) => state.onionSkinHiddenFigureIds)
+  const setOnionSkinFigureShown = useAnimationStore((state) => state.setOnionSkinFigureShown)
+
+  /** Keyframe cujo ✕ espera confirmação — um por vez, como no desktop. */
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null)
 
   const working = findWorkingAnimation(animations)
   const keyframes = working?.keyframes ?? []
+  // O diálogo precisa do NÚMERO do keyframe, e o card que originou o toque sai
+  // de vista. Um keyframe que sumiu da lista cai fora sozinho.
+  const confirmingRemoveIndex = confirmingRemoveId
+    ? keyframes.findIndex((keyframe) => keyframe.id === confirmingRemoveId)
+    : -1
 
   // O estado dos checkboxes é DERIVADO do par (ligado, modo) do
   // `animationStore` — nenhum estado novo: o desktop continua dono do modelo.
@@ -45,6 +60,20 @@ export function PosesKeyframesTab() {
 
   return (
     <div className="poses-tab">
+      {/* Recuperar a cena guardada pelo último "Ir para" (2026-08-06). Fica no
+          TOPO da aba, e não junto dos cards: a lista rola, e o botão tem de
+          estar sempre à mão. A marca do keyframe corrente não se larga — é
+          contra ele que o botão alterna. */}
+      <button
+        type="button"
+        className="panel-action poses-tab__restore"
+        onClick={restoreStash}
+        disabled={stash === null}
+        title={t('poses.keyframes.restoreStashHint')}
+      >
+        {t('poses.keyframes.restoreStash')}
+      </button>
+
       {keyframes.length === 0 ? (
         <p className="poses-tab__empty">{t('poses.keyframes.empty')}</p>
       ) : (
@@ -65,7 +94,11 @@ export function PosesKeyframesTab() {
                   aria-label={t('poses.keyframes.goTo', { index: index + 1 })}
                   title={t('poses.keyframes.goTo', { index: index + 1 })}
                   onClick={() => {
-                    loadFiguresFromKeyframe(keyframe.figures)
+                    // Guarda a bancada ANTES de sobrescrevê-la (2026-08-06) —
+                    // aqui não há Ctrl+Z ao alcance do polegar. E só guarda se
+                    // ela mudou desde o último "Ir para": percorrer keyframes
+                    // não pode apagar a cena original.
+                    goToKeyframeFigures(keyframe.figures)
                     setCurrentKeyframeId(keyframe.id)
                   }}
                 >
@@ -100,12 +133,15 @@ export function PosesKeyframesTab() {
                 >
                   ↓
                 </button>
+                {/* Apagar confirma em MODAL (pedido do usuário, 2026-08-06):
+                    aqui o ✕ é um alvo de dedo entre outros quatro, e o Ctrl+Z
+                    não está ao alcance do polegar. */}
                 <button
                   type="button"
                   aria-label={t('poses.keyframes.remove', { index: index + 1 })}
                   title={t('poses.keyframes.remove', { index: index + 1 })}
                   disabled={!working}
-                  onClick={() => working && removeAnimationKeyframe(working.id, keyframe.id)}
+                  onClick={() => setConfirmingRemoveId(keyframe.id)}
                 >
                   ✕
                 </button>
@@ -138,6 +174,40 @@ export function PosesKeyframesTab() {
           <span>{t('poses.keyframes.onionModes.next')}</span>
         </label>
       </div>
+
+      {/* De quais bonecos sai o fantasma (pedido do usuário, 2026-08-06) — a
+          mesma escolha do painel de Animação, lendo e escrevendo no mesmo
+          `animationStore`: as duas cascas contam a mesma história. Só aparece
+          com o papel-cebola ligado e dois bonecos ou mais. */}
+      {onionSkin && figures.length > 1 && (
+        <div className="poses-onion" role="group" aria-label={t('poses.keyframes.onionFigures')}>
+          <span className="poses-onion__label">{t('poses.keyframes.onionFigures')}</span>
+          {figures.map((figure) => (
+            <label key={figure.id} className="poses-tab__toggle">
+              <input
+                type="checkbox"
+                checked={!onionSkinHiddenFigureIds.includes(figure.id)}
+                onChange={(event) => setOnionSkinFigureShown(figure.id, event.target.checked)}
+              />
+              <span>{figure.name}</span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      {working && confirmingRemoveIndex >= 0 && confirmingRemoveId && (
+        <ConfirmDialog
+          title={t('poses.keyframes.removeTitle')}
+          detail={t('poses.keyframes.item', { index: confirmingRemoveIndex + 1 })}
+          message={t('poses.keyframes.removeConfirmHint')}
+          confirmLabel={t('poses.keyframes.removeConfirm')}
+          onConfirm={() => {
+            removeAnimationKeyframe(working.id, confirmingRemoveId)
+            setConfirmingRemoveId(null)
+          }}
+          onCancel={() => setConfirmingRemoveId(null)}
+        />
+      )}
     </div>
   )
 }

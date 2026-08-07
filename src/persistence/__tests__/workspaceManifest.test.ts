@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import type { SceneSnapshot } from '../../store/figuresStore'
 import { WORKSPACE_MANIFEST_VERSION, buildWorkspaceManifest, parseWorkspaceManifest } from '../workspaceManifest'
+import { DEFAULT_LIGHT } from '../../scene/sceneLight'
 
 const emptyData = {
   figures: [],
   nextFigureSeq: 1,
   props: [],
   nextPropSeq: 1,
-  environment: { background: 'medium' as const, grid: true },
+  environment: { background: 'medium' as const, grid: true, ...DEFAULT_LIGHT },
   cameraBookmarks: [],
   nextCameraBookmarkSeq: 1,
   nextSnapshotNumber: 1,

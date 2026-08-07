@@ -2,13 +2,20 @@ import { useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { slugifySceneName } from '../snapshot/snapshotNaming'
 import { POSES_AUTOSAVE_KEY, loadWorkspaceFromLocalStorage } from '../persistence/autosave'
+import { withExportTimestamp } from '../persistence/exportTimestamp'
 import { isFileSystemAccessAvailable, pickFile, pickMultipleFiles, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { parseSceneFile, serializeSceneFile } from '../persistence/sceneFile'
 import { loadWorkspaceFromDirectory, loadWorkspaceFromFiles, saveWorkspaceToDirectory } from '../persistence/workspaceFolder'
 import { GROUND_MODES, type GroundMode } from '../scene/depthMap'
+import {
+  LIGHT_AZIMUTH_RANGE,
+  LIGHT_ELEVATION_RANGE,
+  LIGHT_INTENSITY_RANGE,
+} from '../scene/sceneLight'
 import { useAnimationStore } from '../store/animationStore'
 import { useDepthStore } from '../store/depthStore'
 import { useFiguresStore } from '../store/figuresStore'
+import { UNDO_BATCH_POINTER_PROPS } from '../store/undoBatch'
 import { importErrorKey } from './fileFeedback'
 import { CollapsiblePanel } from './CollapsiblePanel'
 import { CollapsibleSection } from './CollapsibleSection'
@@ -42,6 +49,8 @@ export function ScenesPanel() {
   const nextCameraBookmarkSeq = useFiguresStore((state) => state.nextCameraBookmarkSeq)
   const nextSnapshotNumber = useFiguresStore((state) => state.nextSnapshotNumber)
   const sceneCamera = useFiguresStore((state) => state.sceneCamera)
+  const setLight = useFiguresStore((state) => state.setLight)
+  const resetLight = useFiguresStore((state) => state.resetLight)
   const saveSceneSnapshot = useFiguresStore((state) => state.saveSceneSnapshot)
   const loadSceneSnapshot = useFiguresStore((state) => state.loadSceneSnapshot)
   const removeSceneSnapshot = useFiguresStore((state) => state.removeSceneSnapshot)
@@ -140,7 +149,7 @@ export function ScenesPanel() {
       nextSnapshotNumber,
       sceneCamera,
     })
-    const filename = `${slugifySceneName(sceneName)}.json`
+    const filename = withExportTimestamp(`${slugifySceneName(sceneName)}.json`)
     await writeFileToDirectoryOrDownload(null, filename, new Blob([json], { type: 'application/json' }))
   }
 
@@ -442,6 +451,63 @@ export function ScenesPanel() {
                 ))}
               </select>
             </label>
+          </fieldset>
+
+          {/* A luz da cena (item 16). Aqui, e não na Toolbar com a régua e a
+              silhueta, porque não é preferência de tela: de onde a sombra cai
+              é decisão de desenho, entra no undo e viaja no arquivo da cena.
+              Ângulos, nunca coordenadas — girar a luz em torno do assunto é o
+              gesto real; três campos X/Y/Z exigiriam pensar em vetores. */}
+          <fieldset className="scenes-panel__settings">
+            <legend>{t('panels.scenes.light')}</legend>
+
+            <label htmlFor="light-azimuth" className="scenes-panel__field">
+              {t('panels.scenes.lightAzimuth', { value: Math.round(environment.lightAzimuth) })}
+              <input
+                id="light-azimuth"
+                type="range"
+                min={LIGHT_AZIMUTH_RANGE.min}
+                max={LIGHT_AZIMUTH_RANGE.max}
+                step={1}
+                value={environment.lightAzimuth}
+                onChange={(event) => setLight({ lightAzimuth: Number(event.target.value) })}
+                {...UNDO_BATCH_POINTER_PROPS}
+              />
+            </label>
+
+            <label htmlFor="light-elevation" className="scenes-panel__field">
+              {t('panels.scenes.lightElevation', { value: Math.round(environment.lightElevation) })}
+              <input
+                id="light-elevation"
+                type="range"
+                min={LIGHT_ELEVATION_RANGE.min}
+                max={LIGHT_ELEVATION_RANGE.max}
+                step={1}
+                value={environment.lightElevation}
+                onChange={(event) => setLight({ lightElevation: Number(event.target.value) })}
+                {...UNDO_BATCH_POINTER_PROPS}
+              />
+            </label>
+
+            <label htmlFor="light-intensity" className="scenes-panel__field">
+              {t('panels.scenes.lightIntensity', { value: environment.lightIntensity.toFixed(1) })}
+              <input
+                id="light-intensity"
+                type="range"
+                min={LIGHT_INTENSITY_RANGE.min}
+                max={LIGHT_INTENSITY_RANGE.max}
+                step={0.1}
+                value={environment.lightIntensity}
+                onChange={(event) => setLight({ lightIntensity: Number(event.target.value) })}
+                {...UNDO_BATCH_POINTER_PROPS}
+              />
+            </label>
+
+            <p className="scenes-panel__hint">{t('panels.scenes.lightHint')}</p>
+
+            <button type="button" className="panel-action" onClick={resetLight}>
+              {t('panels.scenes.lightReset')}
+            </button>
           </fieldset>
         </CollapsibleSection>
 

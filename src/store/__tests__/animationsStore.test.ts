@@ -895,6 +895,75 @@ describe('figuresStore — copiar pose do vizinho e duplicar keyframe', () => {
     expect(animacao(id).keyframes).toBe(antes)
   })
 
+  /**
+   * Cópia PARCIAL (pedido do usuário, 2026-08-06): com dois bonecos ou mais, o
+   * diálogo de caixas escolhe quem recebe o retrato do vizinho.
+   */
+  it('copia a pose só dos bonecos escolhidos', () => {
+    const a = useFiguresStore.getState().addFigure()!
+    const b = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().setJointRotation(a, 'elbow.L', { x: -90 })
+    useFiguresStore.getState().setJointRotation(b, 'elbow.L', { x: -90 })
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().setJointRotation(a, 'elbow.L', { x: -20 })
+    useFiguresStore.getState().setJointRotation(b, 'elbow.L', { x: -20 })
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    const id = WORKING_ANIMATION_ID
+
+    useFiguresStore.getState().copyAnimationKeyframeFigures(id, 'k2', -1, [a])
+
+    const segundo = animacao(id).keyframes[1]
+    expect(segundo.figures.find((f) => f.id === a)!.pose['elbow.L'].x).toBe(-90)
+    // O que não foi marcado fica exatamente como estava.
+    expect(segundo.figures.find((f) => f.id === b)!.pose['elbow.L'].x).toBe(-20)
+  })
+
+  it('copia a posição no plano só dos bonecos escolhidos', () => {
+    const a = useFiguresStore.getState().addFigure()!
+    const b = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().setPosition(a, [0, 0, 0])
+    useFiguresStore.getState().setPosition(b, [0, 0, 0])
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().setPosition(a, [3, 0, 3])
+    useFiguresStore.getState().setPosition(b, [3, 0, 3])
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    const id = WORKING_ANIMATION_ID
+
+    useFiguresStore.getState().copyAnimationKeyframePlacement(id, 'k2', -1, [b])
+
+    const segundo = animacao(id).keyframes[1]
+    expect(segundo.figures.find((f) => f.id === a)!.position).toEqual([3, 0, 3])
+    expect(segundo.figures.find((f) => f.id === b)!.position).toEqual([0, 0, 0])
+  })
+
+  /** Lista vazia é escolha de não copiar nada — e não "copiar tudo". */
+  it('com a lista vazia, nenhuma das duas cópias mexe em nada', () => {
+    const figureId = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().setPosition(figureId, [3, 0, 3])
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    const antes = animacao(WORKING_ANIMATION_ID).keyframes
+
+    useFiguresStore.getState().copyAnimationKeyframeFigures(WORKING_ANIMATION_ID, 'k2', -1, [])
+    useFiguresStore.getState().copyAnimationKeyframePlacement(WORKING_ANIMATION_ID, 'k2', -1, [])
+
+    expect(animacao(WORKING_ANIMATION_ID).keyframes).toBe(antes)
+  })
+
+  /** A cópia parcial nunca muda o ELENCO: quem não está nos dois não entra nem sai. */
+  it('a cópia escolhida não traz nem leva boneco', () => {
+    const a = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    const b = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+
+    useFiguresStore.getState().copyAnimationKeyframeFigures(WORKING_ANIMATION_ID, 'k2', -1, [a, b])
+
+    const { keyframes } = animacao(WORKING_ANIMATION_ID)
+    expect(keyframes[0].figures.map((f) => f.id)).toEqual([a])
+    expect(keyframes[1].figures.map((f) => f.id)).toEqual([a, b])
+  })
+
   it('duplicar põe a cópia logo depois, com o mesmo retrato, câmera e duração', () => {
     const id = comTres()
     useFiguresStore.getState().setAnimationKeyframeDuration(id, 'k2', 400)
@@ -924,6 +993,105 @@ describe('figuresStore — copiar pose do vizinho e duplicar keyframe', () => {
     expect(useFiguresStore.getState().duplicateAnimationKeyframe(id, 'k99')).toBeNull()
     expect(useFiguresStore.getState().duplicateAnimationKeyframe('nao-existe', 'k1')).toBeNull()
     expect(animacao(id).keyframes).toBe(antes)
+  })
+})
+
+/**
+ * Copiar a COLOCAÇÃO do vizinho (pedido do usuário, 2026-08-06) — o terceiro
+ * par de setas do card, ao lado de "Câm ↑↓" e "Pose ↑↓". Só X e Z: onde o
+ * boneco pisa. A pose, o giro e o Y (a altura de um salto) ficam onde estão.
+ */
+describe('figuresStore — copiar a posição no plano do vizinho', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
+  })
+
+  /** Três keyframes, o boneco andando na diagonal e subindo. */
+  function comTres(): string {
+    const figureId = useFiguresStore.getState().addFigure()!
+    for (const passo of [0, 1, 2]) {
+      useFiguresStore.getState().setPosition(figureId, [passo, passo * 0.5, -passo])
+      useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    }
+    return WORKING_ANIMATION_ID
+  }
+
+  it('traz X e Z do keyframe anterior, e deixa o Y onde está', () => {
+    const id = comTres()
+
+    useFiguresStore.getState().copyAnimationKeyframePlacement(id, 'k2', -1)
+
+    const { keyframes } = animacao(id)
+    expect(keyframes[1].figures[0].position).toEqual([0, 0.5, -0])
+  })
+
+  it('traz também do keyframe seguinte', () => {
+    const id = comTres()
+
+    useFiguresStore.getState().copyAnimationKeyframePlacement(id, 'k2', 1)
+
+    expect(animacao(id).keyframes[1].figures[0].position).toEqual([2, 0.5, -2])
+  })
+
+  /** Só a colocação: pose, giro, câmera e duração são de quem recebe. */
+  it('não toca na pose, no giro, na câmera nem na duração', () => {
+    const id = comTres()
+    const figureId = useFiguresStore.getState().figures[0].id
+    useFiguresStore.getState().setJointRotation(figureId, 'elbow.L', { x: -90 })
+    useFiguresStore.getState().setRootRotation(figureId, { y: 45 })
+    useFiguresStore.getState().updateAnimationKeyframe(id, 'k2', camera)
+    useFiguresStore.getState().setAnimationKeyframeDuration(id, 'k2', 2500)
+    const antes = animacao(id).keyframes[1]
+
+    useFiguresStore.getState().copyAnimationKeyframePlacement(id, 'k2', -1)
+
+    const depois = animacao(id).keyframes[1]
+    expect(depois.figures[0].pose['elbow.L']).toEqual(antes.figures[0].pose['elbow.L'])
+    expect(depois.figures[0].rotation).toEqual(antes.figures[0].rotation)
+    expect(depois.camera).toBe(antes.camera)
+    expect(depois.durationMs).toBe(2500)
+  })
+
+  /** Boneco que só existe num dos dois lados fica exatamente onde estava. */
+  it('boneco sem par no vizinho não se move', () => {
+    const primeiro = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().setPosition(primeiro, [5, 0, 5])
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    const id = WORKING_ANIMATION_ID
+    const segundo = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().setPosition(segundo, [9, 0, 9])
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+
+    useFiguresStore.getState().copyAnimationKeyframePlacement(id, 'k2', -1)
+
+    const segundoKeyframe = animacao(id).keyframes[1]
+    expect(segundoKeyframe.figures.find((f) => f.id === segundo)!.position).toEqual([9, 0, 9])
+  })
+
+  it('nas pontas, e com ids inexistentes, não faz nada', () => {
+    const id = comTres()
+    const antes = animacao(id).keyframes
+
+    useFiguresStore.getState().copyAnimationKeyframePlacement(id, 'k1', -1)
+    useFiguresStore.getState().copyAnimationKeyframePlacement(id, 'k3', 1)
+    useFiguresStore.getState().copyAnimationKeyframePlacement(id, 'k99', 1)
+    useFiguresStore.getState().copyAnimationKeyframePlacement('nao-existe', 'k1', 1)
+
+    expect(animacao(id).keyframes).toBe(antes)
+  })
+
+  /** Vizinhos já no mesmo ponto do plano: nada muda, e o undo não ganha passo. */
+  it('sem diferença de colocação, não empilha undo', () => {
+    const figureId = useFiguresStore.getState().addFigure()!
+    useFiguresStore.getState().setPosition(figureId, [1, 0, 1])
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    const antes = animacao(WORKING_ANIMATION_ID).keyframes
+
+    useFiguresStore.getState().copyAnimationKeyframePlacement(WORKING_ANIMATION_ID, 'k2', -1)
+
+    expect(animacao(WORKING_ANIMATION_ID).keyframes).toBe(antes)
   })
 })
 
@@ -1012,6 +1180,43 @@ describe('figuresStore — grupos rotulados de keyframes', () => {
     // Separado por um keyframe sem grupo: vira outro grupo, com sufixo.
     useFiguresStore.getState().setAnimationKeyframeLabel(id, 'k4', 'Andando')
     expect(animacao(id).keyframes[3].label).toBe('Andando 2')
+  })
+
+  /**
+   * O defeito relatado pelo usuário em 2026-08-07: com o mesmo nome em dois
+   * blocos separados, TODA tentativa de usá-lo virava "Andando 2" — inclusive a
+   * de emendar os dois, que é o conserto. Agora quem manda é o vizinho.
+   */
+  it('rotular o keyframe do meio emenda os dois blocos num grupo só', () => {
+    const id = comKeyframes(3)
+    useFiguresStore.getState().setAnimationKeyframeLabel(id, 'k1', 'Andando')
+    // O terceiro nasce separado, com sufixo — não encosta em ninguém.
+    useFiguresStore.getState().setAnimationKeyframeLabel(id, 'k3', 'Andando')
+    expect(animacao(id).keyframes[2].label).toBe('Andando 2')
+
+    // Corrigindo à mão: o do meio entra no grupo, e o de baixo agora encosta.
+    useFiguresStore.getState().setAnimationKeyframeLabel(id, 'k2', 'Andando')
+    useFiguresStore.getState().setAnimationKeyframeLabel(id, 'k3', 'Andando')
+
+    expect(animacao(id).keyframes.map((k) => k.label)).toEqual(['Andando', 'Andando', 'Andando'])
+  })
+
+  /**
+   * O caso mais fácil de cair na separação: as setas ↑↓ movem um keyframe sem
+   * rótulo para dentro do grupo. Rotulá-lo tem de emendar o que a seta partiu.
+   */
+  it('keyframe sem grupo movido para dentro dele volta ao grupo ao ser rotulado', () => {
+    const id = comKeyframes(3)
+    useFiguresStore.getState().setAnimationKeyframeLabel(id, 'k1', 'Andando')
+    useFiguresStore.getState().setAnimationKeyframeLabel(id, 'k2', 'Andando')
+
+    // O k3, sem rótulo, sobe para o meio do grupo.
+    useFiguresStore.getState().moveAnimationKeyframe(id, 'k3', -1)
+    expect(animacao(id).keyframes.map((k) => k.label)).toEqual(['Andando', undefined, 'Andando'])
+
+    useFiguresStore.getState().setAnimationKeyframeLabel(id, 'k3', 'Andando')
+
+    expect(animacao(id).keyframes.map((k) => k.label)).toEqual(['Andando', 'Andando', 'Andando'])
   })
 
   /** Cortar um trecho no meio de um grupo não pode parti-lo em dois. */

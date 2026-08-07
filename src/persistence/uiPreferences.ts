@@ -117,6 +117,8 @@ export interface UIPreferences {
    * ganho, já que a régua não é conteúdo da composição.
    */
   rulerVisible: boolean
+  /** Linhas de gesto sobre o boneco selecionado (item 9): linha de ação + ombros/quadris. */
+  gestureLinesVisible: boolean
   /**
    * Qual saída a máscara de enquadramento está mostrando — nenhuma, a do
    * instantâneo (PNG) ou a da animação (MP4). Mesmo raciocínio da régua: é
@@ -149,6 +151,13 @@ export interface UIPreferences {
    * bonecos ao mesmo tempo.
    */
   figureSilhouette: boolean
+  /**
+   * Isolar a seleção: só o boneco selecionado responde ao clique no viewport
+   * (`figureSelection.ts`). Estado de FERRAMENTA, como a régua e a máscara —
+   * fora do undo e fora do arquivo da cena. É preferência de tela porque
+   * descreve como se está trabalhando agora, e não o que a cena contém.
+   */
+  isolateSelection: boolean
 }
 
 /** Padrão de fábrica: tudo expandido menos o animador, régua e máscara desligadas, par automático ligado, manequim de madeira. */
@@ -159,10 +168,12 @@ function createDefaults(): UIPreferences {
     collapsedPanels,
     collapsedSections: createCollapsedSections(),
     rulerVisible: false,
+    gestureLinesVisible: false,
     frameMaskSource: 'off',
     pairPoseEnabled: true,
     figureStyle: DEFAULT_FIGURE_STYLE,
     figureSilhouette: false,
+    isolateSelection: false,
   }
 }
 
@@ -212,12 +223,14 @@ export function loadUIPreferences(): UIPreferences {
     if (typeof storedSections[key] === 'boolean') preferences.collapsedSections[key] = storedSections[key]
   }
   if (source.rulerVisible === true) preferences.rulerVisible = true
+  if (source.gestureLinesVisible === true) preferences.gestureLinesVisible = true
   if (isFrameMaskSource(source.frameMaskSource)) preferences.frameMaskSource = source.frameMaskSource
   // Lê os dois valores, e não só `true`: o padrão aqui é ligado, então aceitar
   // apenas `true` faria o desligamento gravado ser ignorado a cada sessão.
   if (typeof source.pairPoseEnabled === 'boolean') preferences.pairPoseEnabled = source.pairPoseEnabled
   if (isFigureStyle(source.figureStyle)) preferences.figureStyle = source.figureStyle
   if (source.figureSilhouette === true) preferences.figureSilhouette = true
+  if (source.isolateSelection === true) preferences.isolateSelection = true
   return preferences
 }
 

@@ -8,13 +8,14 @@ import { WORKSPACE_AUTOSAVE_KEY, saveWorkspaceToLocalStorage } from '../../persi
 import { useAnimationStore } from '../../store/animationStore'
 import { useFiguresStore } from '../../store/figuresStore'
 import { usePosesShellStore } from '../../store/posesShellStore'
+import { useSceneStashStore } from '../../store/sceneStashStore'
 
 vi.mock('../../persistence/fileIO', () => ({
   writeFileToDirectoryOrDownload: vi.fn().mockResolvedValue(undefined),
   pickFile: vi.fn(),
 }))
 
-import { pickFile } from '../../persistence/fileIO'
+import { pickFile, writeFileToDirectoryOrDownload } from '../../persistence/fileIO'
 import { PosesPanel } from '../PosesPanel'
 
 async function renderPanel() {
@@ -39,10 +40,12 @@ function captureKeyframe(): string {
 }
 
 beforeEach(() => {
+  vi.mocked(writeFileToDirectoryOrDownload).mockClear()
   useFiguresStore.setState(useFiguresStore.getInitialState())
   useFiguresStore.temporal.getState().clear()
   usePosesShellStore.setState(usePosesShellStore.getInitialState())
   useAnimationStore.setState(useAnimationStore.getInitialState())
+  useSceneStashStore.setState(useSceneStashStore.getInitialState())
 })
 
 describe('PosesPanel — abas', () => {
@@ -95,6 +98,43 @@ describe('aba Bonecos', () => {
     await renderPanel()
 
     expect(screen.queryByRole('combobox', { name: 'Pose de partida' })).not.toBeInTheDocument()
+  })
+
+  /**
+   * "Apoiar no chão" existia só no desktop (item 33): depois de dobrar um
+   * joelho o boneco flutua ou afunda, e no celular acertar isso à mão é pior
+   * ainda. Mexe só na ALTURA — X/Z são encenação.
+   */
+  it('apoia o boneco no chão sem tirá-lo do lugar', async () => {
+    const user = userEvent.setup()
+    const id = addFigureAndSelect()
+    useFiguresStore.getState().setPosition(id, [1, 0.8, -2])
+    usePosesShellStore.getState().setActiveTab('figures')
+    await renderPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Apoiar no chão' }))
+
+    const figure = useFiguresStore.getState().figures.find((candidate) => candidate.id === id)!
+    expect(figure.position[1]).toBeCloseTo(0, 3)
+    expect(figure.position[0]).toBe(1)
+    expect(figure.position[2]).toBe(-2)
+  })
+
+  it('com a colocação ancorada, apoiar aparece desabilitado (item 62)', async () => {
+    const id = addFigureAndSelect()
+    useFiguresStore.getState().toggleJointPin(id, 'wrist.L')
+    usePosesShellStore.getState().setActiveTab('figures')
+    await renderPanel()
+
+    expect(screen.getByRole('button', { name: 'Apoiar no chão' })).toBeDisabled()
+  })
+
+  it('sem boneco em edição, o botão de apoiar não aparece', async () => {
+    useFiguresStore.getState().addFigure()
+    usePosesShellStore.getState().setActiveTab('figures')
+    await renderPanel()
+
+    expect(screen.queryByRole('button', { name: 'Apoiar no chão' })).not.toBeInTheDocument()
   })
 
   it('alterna "mostrar só o boneco em edição" (filtro de tela, não o visible do boneco)', async () => {
@@ -438,9 +478,28 @@ describe('aba Keyframes', () => {
     working = findWorkingAnimation(useFiguresStore.getState().animations)!
     expect(working.keyframes[0].camera).toEqual(cameraBefore)
 
+    // Apagar passa pelo modal de confirmação (pedido do usuário, 2026-08-06).
     await user.click(screen.getByRole('button', { name: 'Remover o keyframe 2' }))
+    await user.click(screen.getByRole('button', { name: 'Remover' }))
     working = findWorkingAnimation(useFiguresStore.getState().animations)!
     expect(working.keyframes).toHaveLength(1)
+  })
+
+  /** O ✕ é pequeno e o dedo erra: aqui a confirmação vale ainda mais. */
+  it('cancelar a confirmação de apagar não tira o keyframe', async () => {
+    const user = userEvent.setup()
+    addFigureAndSelect()
+    captureKeyframe()
+    captureKeyframe()
+    usePosesShellStore.getState().setActiveTab('keyframes')
+    await renderPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Remover o keyframe 1' }))
+    expect(findWorkingAnimation(useFiguresStore.getState().animations)!.keyframes).toHaveLength(2)
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(findWorkingAnimation(useFiguresStore.getState().animations)!.keyframes).toHaveLength(2)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('"ir para" carrega o retrato na bancada e marca o keyframe corrente', async () => {
@@ -455,6 +514,79 @@ describe('aba Keyframes', () => {
     await user.click(screen.getByRole('button', { name: 'Ir para o keyframe 1' }))
     expect(useFiguresStore.getState().figures[0].pose['elbow.L'].x).not.toBe(-90)
     expect(usePosesShellStore.getState().currentKeyframeId).not.toBe(secondId)
+  })
+
+  /**
+   * A mesma guarda temporária do painel de Animação (2026-08-06): o "Ir para"
+   * da casca de toque também sobrescreve a bancada, e aqui não há Ctrl+Z ao
+   * alcance do polegar.
+   */
+  it('"ir para" guarda a cena da tela, e o botão a recupera', async () => {
+    const user = userEvent.setup()
+    const id = addFigureAndSelect()
+    const firstId = captureKeyframe()
+    useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: -90 })
+    usePosesShellStore.getState().setActiveTab('keyframes')
+    await renderPanel()
+
+    expect(screen.getByRole('button', { name: 'Recuperar cena guardada' })).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Ir para o keyframe 1' }))
+    expect(useFiguresStore.getState().figures[0].pose['elbow.L'].x).not.toBe(-90)
+
+    await user.click(screen.getByRole('button', { name: 'Recuperar cena guardada' }))
+    expect(useFiguresStore.getState().figures[0].pose['elbow.L'].x).toBe(-90)
+    // O keyframe escolhido segue marcado — é contra ele que o botão alterna.
+    expect(usePosesShellStore.getState().currentKeyframeId).toBe(firstId)
+  })
+
+  /**
+   * A proteção pedida pelo usuário: percorrer keyframes não pode apagar a cena
+   * original — só se guarda o que mudou desde o último "Ir para".
+   */
+  it('percorrer keyframes não sobrescreve a cena guardada', async () => {
+    const user = userEvent.setup()
+    const id = addFigureAndSelect()
+    useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: -90 })
+    captureKeyframe()
+    useFiguresStore.getState().setJointRotation(id, 'elbow.L', { x: -30 })
+    captureKeyframe()
+    // A bancada é a cena original do usuário: cotovelo em -30.
+    usePosesShellStore.getState().setActiveTab('keyframes')
+    await renderPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Ir para o keyframe 1' }))
+    await user.click(screen.getByRole('button', { name: 'Ir para o keyframe 2' }))
+    await user.click(screen.getByRole('button', { name: 'Ir para o keyframe 1' }))
+
+    // A guarda continua com a cena de antes do primeiro "Ir para".
+    expect(useSceneStashStore.getState().stash?.figures[0].pose['elbow.L'].x).toBe(-30)
+
+    await user.click(screen.getByRole('button', { name: 'Recuperar cena guardada' }))
+    expect(useFiguresStore.getState().figures[0].pose['elbow.L'].x).toBe(-30)
+  })
+
+  /**
+   * A mesma escolha do painel de Animação, no mesmo `animationStore`: as duas
+   * cascas contam a mesma história sobre o que o papel-cebola mostra.
+   */
+  it('escolhe de quais bonecos sai o fantasma', async () => {
+    const user = userEvent.setup()
+    addFigureAndSelect()
+    const segundo = useFiguresStore.getState().addFigure()!
+    captureKeyframe()
+    captureKeyframe()
+    usePosesShellStore.getState().setActiveTab('keyframes')
+    await renderPanel()
+
+    // Só com o papel-cebola ligado — desligado, as caixas não têm o que dizer.
+    expect(screen.queryByRole('group', { name: 'Fantasmas de' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Anterior'))
+    const caixas = within(screen.getByRole('group', { name: 'Fantasmas de' }))
+    await user.click(caixas.getByLabelText('Figure 2'))
+
+    expect(useAnimationStore.getState().onionSkinHiddenFigureIds).toEqual([segundo])
   })
 
   it('papel-cebola por dois checkboxes: o modo é inferido da combinação', async () => {
@@ -501,6 +633,28 @@ describe('aba Arquivo', () => {
     await renderPanel()
 
     expect(screen.getByRole('button', { name: 'Exportar JSON' })).toBeEnabled()
+  })
+
+  /**
+   * Carimbo de hora no nome do arquivo exportado (pedido do usuário,
+   * 2026-08-07, ver `exportTimestamp.ts`). Aqui vale duplamente: no celular a
+   * exportação cai na pasta de downloads, onde o navegador renomeia repetido
+   * para `(1)`, `(2)` — nome nenhum diz de quando é.
+   */
+  it('o nome do arquivo exportado leva o carimbo de data e hora', async () => {
+    addFigureAndSelect()
+    captureKeyframe()
+    usePosesShellStore.getState().setActiveTab('file')
+    const user = userEvent.setup()
+    await renderPanel()
+
+    await user.click(screen.getByRole('button', { name: 'Exportar JSON' }))
+
+    await vi.waitFor(() => {
+      expect(vi.mocked(writeFileToDirectoryOrDownload)).toHaveBeenCalledTimes(1)
+    })
+    const [, filename] = vi.mocked(writeFileToDirectoryOrDownload).mock.calls[0]
+    expect(filename).toMatch(/_\d{4}-\d{2}-\d{2}-\d{4}\.json$/)
   })
 
   it('traz a sessão do desktop após confirmação e zera o keyframe corrente (item 54)', async () => {

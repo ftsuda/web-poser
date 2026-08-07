@@ -4,6 +4,7 @@ import { controlPointCount } from '../../props/propGeometry'
 import { DEFAULT_PROP_COLOR, DEFAULT_PROP_SIZE, type SceneProp } from '../../props/sceneProp'
 import { parseSceneFile, serializeSceneFile } from '../sceneFile'
 import { propFromExtras, propToExtras, sceneFromExtras, sceneToExtras, type SceneWorkingState } from '../sceneSerialization'
+import { DEFAULT_LIGHT } from '../../scene/sceneLight'
 
 function makeProp(overrides: Partial<SceneProp> = {}): SceneProp {
   return {
@@ -30,7 +31,7 @@ function makeScene(props: SceneProp[]): SceneWorkingState {
     nextFigureSeq: 1,
     props,
     nextPropSeq: props.length + 1,
-    environment: { background: 'medium', grid: true },
+    environment: { background: 'medium', grid: true, ...DEFAULT_LIGHT },
     cameraBookmarks: [],
     nextCameraBookmarkSeq: 1,
     nextSnapshotNumber: 1,

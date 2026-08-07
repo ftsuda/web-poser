@@ -11,6 +11,7 @@ import {
 } from '../animation/animation'
 import { sampleAnimation, sampleAnimationOutput } from '../animation/animationSampler'
 import { frameTimeline } from '../animation/frameTimeline'
+import { applyKeyframeToWorkbench } from '../animation/sceneStashActions'
 import {
   createMp4Sink,
   exportFrames,
@@ -168,15 +169,11 @@ export function AnimationPlayer() {
         if (!animation) break
         const keyframe = animation.keyframes.find((candidate) => candidate.id === pendingCommand.keyframeId)
         if (!keyframe) break
-        // A câmera do keyframe vira a câmera de cena DE VERDADE (store, não só
-        // o objeto vivo): ir para um keyframe é para poder ajustá-lo, e o
-        // ajuste parte do que está gravado.
-        figuresState.setSceneCamera(keyframe.camera)
-        useCameraStore.getState().setFocalLengthQuietly(keyframe.camera.focalMm)
-        // Ir para um keyframe é para PODER AJUSTÁ-LO: a cena de trabalho passa
-        // a ser aquele retrato de verdade, e a pré-visualização sai da frente.
-        useAnimationStore.getState().setPreview(null)
-        figuresState.loadFiguresFromKeyframe(keyframe.figures)
+        // A aplicação inteira mora em `sceneStashActions` (2026-08-06): nada
+        // dela depende do canvas, e aqui dentro ficaria sem teste — inclusive a
+        // marca de "bancada intocada", que é o que protege a cena guardada de
+        // ser sobrescrita ao percorrer keyframes.
+        applyKeyframeToWorkbench(keyframe)
         break
       }
 

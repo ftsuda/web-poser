@@ -443,6 +443,13 @@
   min-height: 36px;
 }
 
+/* Recuperar a cena guardada pelo último "Ir para" (2026-08-06) — no topo da
+   aba, porque a lista de keyframes rola e o botão tem de estar sempre à mão. */
+.poses-tab__restore:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 /* Lista de keyframes */
 .poses-keyframes {
   margin: 0;

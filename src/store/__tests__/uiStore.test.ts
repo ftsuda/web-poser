@@ -105,3 +105,28 @@ describe('uiStore — modo silhueta (item 8)', () => {
     expect(gravado.figureStyle).toBe('stick')
   })
 })
+
+describe('uiStore — isolar a seleção', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useUIStore.setState(useUIStore.getInitialState())
+  })
+
+  it('nasce desligado e alterna, gravando a preferência (estado de ferramenta)', () => {
+    expect(useUIStore.getState().isolateSelection).toBe(false)
+
+    useUIStore.getState().toggleIsolateSelection()
+
+    expect(useUIStore.getState().isolateSelection).toBe(true)
+    expect(JSON.parse(localStorage.getItem('webposer:ui:v1') ?? '{}').isolateSelection).toBe(true)
+  })
+
+  it('gravar o isolamento não apaga as outras preferências do mesmo bloco', () => {
+    useUIStore.getState().toggleRuler()
+    useUIStore.getState().toggleIsolateSelection()
+
+    const gravado = JSON.parse(localStorage.getItem('webposer:ui:v1') ?? '{}')
+    expect(gravado.isolateSelection).toBe(true)
+    expect(gravado.rulerVisible).toBe(true)
+  })
+})

@@ -9,6 +9,7 @@ import {
 } from '../sceneFile'
 import type { SceneWorkingState } from '../sceneSerialization'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
+import { DEFAULT_LIGHT } from '../../scene/sceneLight'
 
 const figureA: Figure = {
   id: 'figure-1',
@@ -37,7 +38,7 @@ const scene: SceneWorkingState = {
   nextFigureSeq: 2,
   props: [],
   nextPropSeq: 1,
-  environment: { background: 'dark', grid: false },
+  environment: { background: 'dark', grid: false, ...DEFAULT_LIGHT },
   cameraBookmarks: [bookmark],
   nextCameraBookmarkSeq: 2,
   nextSnapshotNumber: 3,
@@ -56,7 +57,7 @@ describe('sceneFile — cena completa', () => {
       nextFigureSeq: 1,
       props: [],
       nextPropSeq: 1,
-      environment: { background: 'medium', grid: true },
+      environment: { background: 'medium', grid: true, ...DEFAULT_LIGHT },
       cameraBookmarks: [],
       nextCameraBookmarkSeq: 1,
       nextSnapshotNumber: 1,

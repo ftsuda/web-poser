@@ -21,6 +21,7 @@ import type { JointRotation } from '../figure/skeleton'
 import { readRotation, sanitizeFigure, toVec3 } from '../figure/figureFormat'
 import { DEFAULT_SCENE_CAMERA, type CameraViewState } from '../scene/cameraMove'
 import { clampFocalLength } from '../scene/lens'
+import { DEFAULT_LIGHT, lightFromUnknown, type LightSettings } from '../scene/sceneLight'
 import type { BackgroundTone, CameraBookmark, CameraProjection, EnvironmentSettings, Figure } from '../store/figuresStore'
 import { controlPointCount } from '../props/propGeometry'
 import {
@@ -152,7 +153,11 @@ export interface SceneWorkingState {
 }
 
 const DEFAULT_BACKGROUND: BackgroundTone = 'medium'
-const DEFAULT_ENVIRONMENT: EnvironmentSettings = { background: DEFAULT_BACKGROUND, grid: true }
+const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
+  background: DEFAULT_BACKGROUND,
+  grid: true,
+  ...DEFAULT_LIGHT,
+}
 const VALID_BACKGROUNDS: readonly BackgroundTone[] = ['light', 'medium', 'dark']
 const VALID_PROJECTIONS: readonly CameraProjection[] = ['perspective', 'orthographic']
 
@@ -343,7 +348,10 @@ function environmentFromExtras(extras: unknown): EnvironmentSettings {
     ? (source.background as BackgroundTone)
     : DEFAULT_ENVIRONMENT.background
   const grid = typeof source.grid === 'boolean' ? source.grid : DEFAULT_ENVIRONMENT.grid
-  return { background, grid }
+  // A luz (item 16) entrou SEM subir `SCENE_EXTRAS_VERSION`, pelo precedente da
+  // persistência aditiva: arquivo antigo não tem os três campos e cai no padrão,
+  // que por construção é a luz fixa de antes — abre com a mesma sombra.
+  return { background, grid, ...lightFromUnknown(source as Partial<LightSettings>) }
 }
 
 /** Monta o bloco serializável da cena (o antigo `extras` do tempo do glTF) a partir do estado de uma cena de trabalho. */

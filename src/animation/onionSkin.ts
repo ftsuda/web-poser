@@ -1,4 +1,5 @@
-import { keyframeStartTimesMs, type Animation, type AnimationKeyframe } from './animation'
+import { anchorKeyframeIndex, type Animation, type AnimationKeyframe } from './animation'
+import type { Figure } from '../store/figuresStore'
 
 /**
  * Papel-cebola (PLANO.md > propostas, item 31): ver o keyframe **anterior** e o
@@ -37,6 +38,12 @@ export interface OnionSkinFrame {
   index: number
   /** O keyframe em si, por referência: o fantasma é uma leitura, não uma cópia. */
   keyframe: AnimationKeyframe
+  /**
+   * Os bonecos a desenhar: os do keyframe, menos os desmarcados no painel
+   * (pedido do usuário, 2026-08-06). Numa cena de várias pessoas, o fantasma de
+   * todo mundo em volta lava a tela e esconde o movimento que se está lendo.
+   */
+  figures: Figure[]
 }
 
 /**
@@ -56,28 +63,6 @@ export const ONION_SKIN_COLORS: Record<OnionSkinRole, string> = {
 export const ONION_SKIN_OPACITY = 0.3
 
 /**
- * Índice do keyframe que o instante `timeMs` "ocupa" — o ÂNCORA, de quem os
- * fantasmas são vizinhos.
- *
- * Com o playhead exatamente sobre um keyframe (o caso normal: é o que "Ir para"
- * faz), o âncora é ele. Entre dois, é o de trás — o trecho em curso é o que
- * chega até o próximo, então quem está "sendo trabalhado" é o de onde se saiu.
- *
- * Devolve -1 sem keyframe nenhum.
- */
-export function anchorKeyframeIndex(animation: Animation, timeMs: number): number {
-  const startTimes = keyframeStartTimesMs(animation)
-  if (startTimes.length === 0) return -1
-
-  let anchor = 0
-  for (let index = 0; index < startTimes.length; index += 1) {
-    if (startTimes[index] <= timeMs) anchor = index
-    else break
-  }
-  return anchor
-}
-
-/**
  * Os fantasmas a desenhar para o instante dado: o keyframe anterior ao âncora e
  * o seguinte, conforme o `mode` e quando existem.
  *
@@ -94,18 +79,32 @@ export function onionSkinFrames(
   animation: Animation | null,
   timeMs: number,
   mode: OnionSkinMode = 'both',
+  hiddenFigureIds: readonly string[] = [],
 ): OnionSkinFrame[] {
   if (!animation || animation.keyframes.length < 2) return []
 
   const anchor = anchorKeyframeIndex(animation, timeMs)
   if (anchor < 0) return []
 
+  // A escolha de bonecos NÃO mexe em quem é vizinho de quem: ela só decide
+  // quem, dentro do fantasma, aparece. Um fantasma que não desenharia ninguém
+  // some da lista — fantasma vazio não é fantasma.
+  const hidden = new Set(hiddenFigureIds)
+  const shown = (keyframe: AnimationKeyframe) =>
+    keyframe.figures.filter((figure) => !hidden.has(figure.id))
+
   const frames: OnionSkinFrame[] = []
   const previous = animation.keyframes[anchor - 1]
-  if (previous && mode !== 'next') frames.push({ role: 'previous', index: anchor - 1, keyframe: previous })
+  if (previous && mode !== 'next') {
+    const figures = shown(previous)
+    if (figures.length > 0) frames.push({ role: 'previous', index: anchor - 1, keyframe: previous, figures })
+  }
 
   const next = animation.keyframes[anchor + 1]
-  if (next && mode !== 'previous') frames.push({ role: 'next', index: anchor + 1, keyframe: next })
+  if (next && mode !== 'previous') {
+    const figures = shown(next)
+    if (figures.length > 0) frames.push({ role: 'next', index: anchor + 1, keyframe: next, figures })
+  }
 
   return frames
 }

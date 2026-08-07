@@ -86,6 +86,21 @@ export interface AnimationUIState {
    */
   onionSkinMode: OnionSkinMode
   /**
+   * Quais bonecos NÃO ganham fantasma (pedido do usuário, 2026-08-06). Numa
+   * cena de várias pessoas, os fantasmas de todo mundo em volta lavam a tela e
+   * escondem justamente o movimento que se está lendo.
+   *
+   * Guarda quem está de FORA, e não quem está dentro, para "todos marcados"
+   * continuar valendo para boneco que entra em cena depois — ele nunca esteve
+   * na lista, então nasce marcado. Mesma escolha do diálogo de cópia entre
+   * keyframes (#128).
+   *
+   * Estado de FERRAMENTA, como o `onionSkin` e o modo: fora do undo e do
+   * arquivo. Vale para as duas cascas — é o mesmo modelo que o módulo de poses
+   * lê.
+   */
+  onionSkinHiddenFigureIds: string[]
+  /**
    * Qual keyframe está NA BANCADA (item 40): o último carregado na cena de
    * trabalho pelo "Ir para". O painel destaca o card dele e a régua marca o
    * instante — é a informação que falta na hora de clicar "Regravar" no card
@@ -134,6 +149,8 @@ export interface AnimationUIState {
   setRepeat: (repeat: boolean) => void
   setOnionSkin: (onionSkin: boolean) => void
   setOnionSkinMode: (mode: OnionSkinMode) => void
+  /** Marca/desmarca um boneco na lista de quem ganha fantasma. */
+  setOnionSkinFigureShown: (figureId: string, shown: boolean) => void
   setFps: (fps: number) => void
   selectAspect: (key: OutputAspectKey) => void
   selectQuality: (key: OutputQualityKey) => void
@@ -171,6 +188,7 @@ export const useAnimationStore = create<AnimationUIState>((set, get) => ({
   repeat: false,
   onionSkin: false,
   onionSkinMode: 'both',
+  onionSkinHiddenFigureIds: [],
   visitedKeyframeId: null,
   fps: DEFAULT_FPS,
   aspectKey: DEFAULT_OUTPUT_ASPECT,
@@ -205,6 +223,15 @@ export const useAnimationStore = create<AnimationUIState>((set, get) => ({
   setOnionSkin: (onionSkin) => set({ onionSkin }),
 
   setOnionSkinMode: (onionSkinMode) => set({ onionSkinMode }),
+
+  setOnionSkinFigureShown: (figureId, shown) =>
+    set((state) => ({
+      onionSkinHiddenFigureIds: shown
+        ? state.onionSkinHiddenFigureIds.filter((id) => id !== figureId)
+        : state.onionSkinHiddenFigureIds.includes(figureId)
+          ? state.onionSkinHiddenFigureIds
+          : [...state.onionSkinHiddenFigureIds, figureId],
+    })),
 
   setFps: (fps) => set({ fps: clampFps(fps) }),
 

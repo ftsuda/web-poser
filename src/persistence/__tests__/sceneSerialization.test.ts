@@ -14,6 +14,7 @@ import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import { MAX_FOCAL_MM } from '../../scene/lens'
 import { DEFAULT_FIGURE_COLOR } from '../../store/figuresStore'
 import type { CameraBookmark, Figure } from '../../store/figuresStore'
+import { DEFAULT_LIGHT } from '../../scene/sceneLight'
 
 const sampleFigure: Figure = {
   id: 'figure-1',
@@ -45,7 +46,7 @@ const sampleScene: SceneWorkingState = {
   nextFigureSeq: 2,
   props: [],
   nextPropSeq: 1,
-  environment: { background: 'dark', grid: false },
+  environment: { background: 'dark', grid: false, ...DEFAULT_LIGHT },
   cameraBookmarks: [sampleBookmark],
   nextCameraBookmarkSeq: 2,
   nextSnapshotNumber: 7,
@@ -197,7 +198,7 @@ describe('sceneSerialization — cena completa', () => {
     expect(restored.name).toBe('Cena 1')
     expect(restored.figures).toEqual([])
     expect(restored.nextFigureSeq).toBe(1)
-    expect(restored.environment).toEqual({ background: 'medium', grid: true })
+    expect(restored.environment).toEqual({ background: 'medium', grid: true, ...DEFAULT_LIGHT })
     expect(restored.cameraBookmarks).toEqual([])
     expect(restored.nextCameraBookmarkSeq).toBe(1)
     expect(restored.nextSnapshotNumber).toBe(1)

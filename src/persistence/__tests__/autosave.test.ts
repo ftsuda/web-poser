@@ -7,8 +7,9 @@ import { getJoint, type JointLimitOverrides } from '../../figure/skeleton'
 import { DEFAULT_SCENE_CAMERA } from '../../scene/cameraMove'
 import type { SceneSnapshot } from '../../store/figuresStore'
 import { loadWorkspaceFromLocalStorage, saveWorkspaceToLocalStorage } from '../autosave'
+import { DEFAULT_LIGHT } from '../../scene/sceneLight'
 
-const emptyEnvironment = { background: 'medium' as const, grid: true }
+const emptyEnvironment = { background: 'medium' as const, grid: true, ...DEFAULT_LIGHT }
 
 const baseState = {
   figures: [],

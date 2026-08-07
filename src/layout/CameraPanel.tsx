@@ -1,9 +1,11 @@
 import { useMemo, useState, type ChangeEvent, type FocusEvent, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { withExportTimestamp } from '../persistence/exportTimestamp'
 import { pickFile, writeFileToDirectoryOrDownload } from '../persistence/fileIO'
 import { parseCameraBookmarksFile, serializeCameraBookmarksFile } from '../persistence/sceneFile'
 import { AXIS_COLORS } from '../scene/axisColors'
-import { ORTHO_PRESET_NAMES, type OrthoPresetName } from '../scene/cameraPresets'
+import { ORTHO_PRESET_NAMES, type OrthoPresetName, type Vector3Tuple } from '../scene/cameraPresets'
+import { figureAimPoint, figuresAimPoint, withSceneCameraAimedAt } from '../scene/cameraAim'
 import {
   sceneCameraEulerDeg,
   withSceneCameraEulerDeg,
@@ -273,6 +275,27 @@ export function CameraPanel() {
    */
   const cameraEuler = useMemo(() => sceneCameraEulerDeg(sceneCamera), [sceneCamera])
 
+  /**
+   * Para onde cada botão de apontar mira (2026-08-06). `null` desabilita —
+   * sem boneco selecionado, ou sem ninguém visível, não há para onde girar. As
+   * contas reconstroem as juntas dos bonecos, então ficam em `useMemo`: a
+   * seleção e a pose mudam muito menos que o resto do painel.
+   */
+  const selectedFigure = figures.find((figure) => figure.id === selectedFigureId) ?? null
+  const aimFigurePoint = useMemo(
+    () => (selectedFigure ? figureAimPoint(selectedFigure) : null),
+    [selectedFigure],
+  )
+  const aimAllPoint = useMemo(() => figuresAimPoint(figures), [figures])
+
+  /**
+   * Gira a câmera de cena no lugar. Fica FORA do undo, como todo o resto da
+   * câmera de cena (ver `undoPartialize`) — é enquadramento, não conteúdo.
+   */
+  const aimAt = (point: Vector3Tuple | null) => {
+    if (point) setSceneCamera(withSceneCameraAimedAt(sceneCamera, point))
+  }
+
   const handleCameraPositionChange = (index: number) => (event: ChangeEvent<HTMLInputElement>) => {
     const value = Number(event.target.value)
     if (!Number.isFinite(value)) return
@@ -334,7 +357,11 @@ export function CameraPanel() {
 
   const handleExportBookmarks = async () => {
     const json = serializeCameraBookmarksFile(cameraBookmarks)
-    await writeFileToDirectoryOrDownload(null, 'camera-bookmarks.json', new Blob([json], { type: 'application/json' }))
+    await writeFileToDirectoryOrDownload(
+      null,
+      withExportTimestamp('camera-bookmarks.json'),
+      new Blob([json], { type: 'application/json' }),
+    )
   }
 
   const handleImportBookmarks = async () => {
@@ -456,6 +483,31 @@ export function CameraPanel() {
             <span className="properties-panel__value">{Math.round(cameraEuler[axis])}°</span>
           </div>
         ))}
+
+        {/* Apontar para o assunto (pedido do usuário, 2026-08-06). Fica AQUI,
+            e não no bloco de enquadramento: aquele escolhe plano e ângulo e
+            RECOLOCA a câmera inteira, estes dois só giram — são a versão
+            automática dos três sliders logo acima, e o ponto de vista
+            escolhido fica onde está. Dois botões entre os quais se escolhe:
+            `.panel-actions`, pela convenção do #88. */}
+        <div className="panel-actions">
+          <button
+            type="button"
+            onClick={() => aimAt(aimFigurePoint)}
+            disabled={aimFigurePoint === null}
+            title={t('panels.camera.aimAtFigureHint')}
+          >
+            {t('panels.camera.aimAtFigure')}
+          </button>
+          <button
+            type="button"
+            onClick={() => aimAt(aimAllPoint)}
+            disabled={aimAllPoint === null}
+            title={t('panels.camera.aimAtAllHint')}
+          >
+            {t('panels.camera.aimAtAll')}
+          </button>
+        </div>
       </fieldset>
 
 

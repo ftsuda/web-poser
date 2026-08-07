@@ -28,6 +28,7 @@ import { OVERLAY_NAMES } from './constants'
 export function OnionSkin() {
   const enabled = useAnimationStore((state) => state.onionSkin)
   const mode = useAnimationStore((state) => state.onionSkinMode)
+  const hiddenFigureIds = useAnimationStore((state) => state.onionSkinHiddenFigureIds)
   const playing = useAnimationStore((state) => state.playing)
   const exportPhase = useAnimationStore((state) => state.exportPhase)
   const timeMs = useAnimationStore((state) => state.timeMs)
@@ -38,7 +39,10 @@ export function OnionSkin() {
   const figureStyle = useUIStore((state) => state.figureStyle)
 
   const busy = playing || exportPhase === 'running'
-  const frames = enabled && !busy ? onionSkinFrames(findWorkingAnimation(animations), timeMs, mode) : []
+  const frames =
+    enabled && !busy
+      ? onionSkinFrames(findWorkingAnimation(animations), timeMs, mode, hiddenFigureIds)
+      : []
 
   if (frames.length === 0) return null
 
@@ -46,7 +50,7 @@ export function OnionSkin() {
     <group name={OVERLAY_NAMES.onionSkin}>
       {frames.map((frame) => (
         <Fragment key={`${frame.role}-${frame.index}`}>
-          {frame.keyframe.figures.map((figure) => (
+          {frame.figures.map((figure) => (
             <Figure
               key={figure.id}
               figure={figure}

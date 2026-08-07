@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useAnimationStore } from '../../store/animationStore'
 import { useFiguresStore } from '../../store/figuresStore'
+import { useSceneStashStore } from '../../store/sceneStashStore'
 import { useUIStore } from '../../store/uiStore'
 import { TimelineBar } from '../TimelineBar'
 import { WORKING_ANIMATION_ID } from '../../animation/animation'
@@ -26,7 +27,9 @@ function comAnimacao(count: number) {
 describe('TimelineBar', () => {
   beforeEach(() => {
     useFiguresStore.setState(useFiguresStore.getInitialState())
+    useFiguresStore.temporal.getState().clear()
     useAnimationStore.setState(useAnimationStore.getInitialState())
+    useSceneStashStore.setState(useSceneStashStore.getInitialState())
     // A barra NASCE RECOLHIDA (como o painel de Animação): estes testes são
     // sobre o conteúdo, então ela começa aberta aqui.
     useUIStore.setState((state) => ({ collapsedPanels: { ...state.collapsedPanels, timeline: false } }))
@@ -147,6 +150,157 @@ describe('TimelineBar', () => {
     expect(useAnimationStore.getState().timeMs).toBe(480)
   })
 
+  /**
+   * As setas levam o quadro para a BANCADA, e não para a pré-visualização
+   * (decisão do usuário, 2026-08-06; DECISOES.md #133). A pré-visualização é o
+   * que "travava a edição no quadro desejado": ela é desenhada NO LUGAR da cena
+   * de trabalho, então tudo o que se editava acontecia invisível atrás dela.
+   *
+   * A regra é a que separa PROCURAR de PARAR: a régua e o ⏮/⏭ continuam só
+   * mostrando; as setas de quadro põem a cena para trabalhar.
+   */
+  it('a seta de quadro põe a pose do instante na cena de trabalho, sem pré-visualização', async () => {
+    const user = userEvent.setup()
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().setJointRotation(id, 'hip.L', { x: 20 })
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().setJointRotation(id, 'hip.L', { x: 0 })
+    useAnimationStore.setState({ timeMs: 480, fps: 25, preview: { figures: [], camera } })
+    await renderTimelineBar()
+
+    await user.click(screen.getByRole('button', { name: /Um quadro para frente/ }))
+
+    expect(useAnimationStore.getState().preview).toBeNull()
+    expect(useAnimationStore.getState().pendingCommand).toBeNull()
+    // 520 de 1000: 52% do caminho entre 0 e 20 graus.
+    expect(useFiguresStore.getState().figures[0].pose['hip.L'].x).toBeCloseTo(10.4)
+  })
+
+  /** Andar não é editar: a cena que se estava montando fica na guarda (#127). */
+  it('a primeira seta de quadro guarda a cena que estava na bancada', async () => {
+    const user = userEvent.setup()
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().setJointRotation(id, 'shoulder.L', { x: 25 })
+    useAnimationStore.setState({ timeMs: 480, fps: 25 })
+    await renderTimelineBar()
+
+    await user.click(screen.getByRole('button', { name: /Um quadro para frente/ }))
+
+    expect(useSceneStashStore.getState().stash?.figures[0].pose['shoulder.L'].x).toBeCloseTo(25)
+  })
+
+  /**
+   * Arrastar a régua é PROCURAR: enquanto o dedo está nela, a pré-visualização
+   * mostra o instante e a bancada fica intocada — o arrasto emite dezenas de
+   * instantes por segundo, e escrever a cena a cada um seria absurdo.
+   */
+  it('arrastar a régua só mostra: a bancada não se move', async () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().setJointRotation(id, 'hip.L', { x: 20 })
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    const bancadaAntes = useFiguresStore.getState().figures
+    await renderTimelineBar()
+
+    await act(async () => {
+      fireEvent.change(screen.getByRole('slider'), { target: { value: '400' } })
+    })
+
+    expect(useAnimationStore.getState().pendingCommand).toEqual({ type: 'seek' })
+    expect(useFiguresStore.getState().figures).toBe(bancadaAntes)
+  })
+
+  /**
+   * E SOLTAR é parar: o instante em que a régua ficou vai para a bancada. Sem
+   * isto a pré-visualização sobrevivia ao arrasto, e daí em diante toda edição
+   * de pose acontecia invisível atrás dela (DECISOES.md #134).
+   */
+  it('soltar a régua leva o instante para a bancada', async () => {
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().setJointRotation(id, 'hip.L', { x: 20 })
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().setJointRotation(id, 'hip.L', { x: 0 })
+    await renderTimelineBar()
+
+    const regua = screen.getByRole('slider')
+    await act(async () => {
+      fireEvent.change(regua, { target: { value: '500' } })
+    })
+    await act(async () => {
+      fireEvent.pointerUp(regua)
+    })
+
+    expect(useAnimationStore.getState().preview).toBeNull()
+    expect(useFiguresStore.getState().figures[0].pose['hip.L'].x).toBeCloseTo(10)
+  })
+
+  /** A régua também anda pelo teclado, com o foco nela: mesmo gesto, sem ponteiro. */
+  it('soltar a tecla na régua também leva o instante para a bancada', async () => {
+    useFiguresStore.getState().addFigure()
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    await renderTimelineBar()
+
+    const regua = screen.getByRole('slider')
+    await act(async () => {
+      fireEvent.change(regua, { target: { value: '700' } })
+    })
+    await act(async () => {
+      fireEvent.keyUp(regua, { key: 'ArrowRight' })
+    })
+
+    expect(useAnimationStore.getState().preview).toBeNull()
+    expect(useAnimationStore.getState().timeMs).toBe(700)
+  })
+
+  /**
+   * O ⏮/⏭ fica na MESMA fileira das setas de quadro. Dois botões vizinhos com
+   * efeitos opostos sobre a cena — um deixando editar, o outro não — era
+   * exatamente o que fazia a bancada "travar" sem explicação.
+   */
+  it('o ⏭ leva o keyframe para a bancada, como as setas de quadro', async () => {
+    const user = userEvent.setup()
+    const id = useFiguresStore.getState().addFigure() as string
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().setJointRotation(id, 'hip.L', { x: 20 })
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useAnimationStore.setState({ preview: { figures: [], camera } })
+    await renderTimelineBar()
+
+    await user.click(screen.getByRole('button', { name: 'Próximo keyframe' }))
+
+    expect(useAnimationStore.getState().preview).toBeNull()
+    expect(useAnimationStore.getState().timeMs).toBe(1000)
+    // Em cima de um keyframe, a bancada É o retrato dele: a marca do item 40
+    // acende, e o "Regravar" passa a dizer a verdade.
+    const segundo = useFiguresStore.getState().animations[0].keyframes[1].id
+    expect(useAnimationStore.getState().visitedKeyframeId).toBe(segundo)
+  })
+
+  /**
+   * Pausar no meio é parar NAQUELE quadro para trabalhar nele. Antes, o último
+   * quadro tocado ficava na tela como pré-visualização e a cena só voltava a
+   * responder no "Parar", que zera a régua.
+   */
+  it('pausar deixa o quadro em que parou na bancada', async () => {
+    const user = userEvent.setup()
+    useFiguresStore.getState().addFigure()
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useFiguresStore.getState().addAnimationKeyframe(null, camera)
+    useAnimationStore.setState({ playing: true, timeMs: 640, preview: { figures: [], camera } })
+    await renderTimelineBar()
+
+    await user.click(screen.getByRole('button', { name: 'Pausar' }))
+
+    expect(useAnimationStore.getState().playing).toBe(false)
+    expect(useAnimationStore.getState().preview).toBeNull()
+    expect(useAnimationStore.getState().timeMs).toBe(640)
+  })
+
   it('no começo e no fim da linha do tempo as setas de quadro desabilitam', async () => {
     comAnimacao(2)
     const { unmount } = await renderTimelineBar()
@@ -204,8 +358,13 @@ describe('TimelineBar — inserir keyframe', () => {
     // As duas metades somam o trecho de 1000 ms: a animação não ficou mais longa.
     expect(keyframes[1].durationMs).toBe(600)
     expect(keyframes[2].durationMs).toBe(400)
-    // E o player é avisado para mostrar o instante do keyframe recém-criado.
-    expect(useAnimationStore.getState().pendingCommand).toEqual({ type: 'seek' })
+    // E a bancada passa a ser o keyframe recém-criado, que é o que se vai
+    // ajustar — com a marca do item 40 nele (DECISOES.md #134).
+    expect(useAnimationStore.getState().timeMs).toBe(600)
+    expect(useAnimationStore.getState().preview).toBeNull()
+    // O keyframe novo é o do MEIO: ele começa em 600, e o antigo segundo
+    // continua em 1000.
+    expect(useAnimationStore.getState().visitedKeyframeId).toBe(keyframes[1].id)
   })
 
   it('avisa quando o trecho sob o playhead tem suavização — inserir devolve as metades ao linear (item 26)', async () => {

@@ -67,6 +67,46 @@ function sampleOf(keyframe: AnimationKeyframe): AnimationSample {
 }
 
 /**
+ * A pose estimada de um keyframe do meio (pedido do usuário, 2026-08-07): cada
+ * boneco no meio do caminho entre o keyframe ANTERIOR e o SEGUINTE. É o que a
+ * reprodução mostraria ali se aquele keyframe não existisse — só que virando
+ * uma pose editável, para preencher um quadro intermediário sem posar tudo à
+ * mão.
+ *
+ * **O elenco é o do keyframe ALVO**, e não o do vizinho anterior (que é a regra
+ * do `sampleAnimation`, onde o trecho pertence à partida). A diferença tem
+ * consequência: a estimativa vai para a bancada e pode acabar regravada por
+ * cima do keyframe, e com o elenco do vizinho isso APAGARIA dele um boneco que
+ * só ele tem. Quem falta em qualquer um dos dois vizinhos volta como está — sem
+ * as duas pontas não há caminho a dividir.
+ *
+ * Identidade (nome, cor, altura, visibilidade) é sempre a do alvo: a mistura
+ * responde só por onde o boneco está e como está dobrado.
+ *
+ * A câmera fica de fora, por decisão do usuário — ela tem botões próprios no
+ * card, e misturar as duas coisas num botão só tiraria a escolha.
+ */
+export function averageKeyframeFigures(
+  target: AnimationKeyframe,
+  previous: AnimationKeyframe,
+  next: AnimationKeyframe,
+  figureIds?: readonly string[],
+): Figure[] {
+  return target.figures.map((figure) => {
+    // Quem não foi escolhido fica com a pose do keyframe (pedido do usuário,
+    // 2026-08-07): numa cena de duas pessoas, estimar o quadro do meio de UMA
+    // não pode arrastar a outra junto. Sem lista, estima todo mundo.
+    if (figureIds && !figureIds.includes(figure.id)) return figure
+    const from = previous.figures.find((candidate) => candidate.id === figure.id)
+    const to = next.figures.find((candidate) => candidate.id === figure.id)
+    if (!from || !to) return figure
+
+    const blended = blendFigure(from, to, 0.5)
+    return { ...figure, position: blended.position, rotation: blended.rotation, pose: blended.pose }
+  })
+}
+
+/**
  * Estado da cena em `timeMs`. Devolve `null` só quando não há keyframe nenhum.
  *
  * Nas pontas devolve o keyframe **idêntico** (os próprios objetos, sem cópia

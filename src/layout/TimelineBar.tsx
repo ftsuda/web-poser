@@ -9,6 +9,7 @@ import {
   planKeyframeSplit,
   stepFrameMs,
 } from '../animation/animation'
+import { goToFrameWithStash } from '../animation/sceneStashActions'
 import { useAnimationStore } from '../store/animationStore'
 import { useFiguresStore } from '../store/figuresStore'
 import { useUIStore } from '../store/uiStore'
@@ -88,8 +89,22 @@ export function TimelineBar() {
   const title = t('timeline.title')
   const toggleLabel = collapsed ? t('panels.expand', { title }) : t('panels.collapse', { title })
 
+  // Arrastar é PROCURAR: enquanto o dedo está no controle, o que se vê é a
+  // pré-visualização, que não toca na cena de trabalho — é barata e o arrasto
+  // emite dezenas de instantes por segundo.
   const handleScrub = (event: ChangeEvent<HTMLInputElement>) => {
     requestSeek(Number(event.target.value))
+  }
+
+  // Soltar é PARAR: o instante em que a régua ficou vai para a bancada, e a
+  // pré-visualização sai da frente (DECISOES.md #133 e #134). Sem isto ela
+  // sobrevivia ao arrasto, e daí em diante toda edição de pose acontecia
+  // invisível atrás dela — a queixa que fechou este assunto.
+  //
+  // `keyUp` junto do ponteiro porque a régua também anda pelo teclado, com as
+  // setas e o foco nela: é o mesmo gesto, sem `pointerup` nenhum.
+  const handleScrubEnd = () => {
+    goToFrameWithStash(currentMs)
   }
 
   const handleStop = () => {
@@ -98,15 +113,25 @@ export function TimelineBar() {
     setPreview(null)
   }
 
+  // Pausar no meio da reprodução é parar NAQUELE quadro para trabalhar nele — a
+  // mesma regra das setas. Sem isto o último quadro tocado ficava na tela como
+  // pré-visualização, e a cena só voltava a responder no "Parar", que zera a
+  // régua.
+  const handlePause = () => {
+    pause()
+    goToFrameWithStash(currentMs)
+  }
+
   // Inserir corta o trecho onde a linha do tempo está: a animação continua
   // igual, e o keyframe novo é um ponto de ajuste. Navegar até ele em seguida é
-  // o passo seguinte natural — e é o que mostra na tela o que se vai editar.
+  // o passo seguinte natural — e é o que mostra na tela o que se vai editar,
+  // agora na bancada, que é onde o ajuste vai acontecer.
   const handleInsertKeyframe = () => {
     if (!active) return
     // Arredondado aqui também, e não só lá dentro: a navegação tem de parar
     // EXATAMENTE em cima do keyframe novo, não meio milissegundo ao lado.
     const cut = Math.round(currentMs)
-    if (insertAnimationKeyframeAt(active.id, cut)) requestSeek(cut)
+    if (insertAnimationKeyframeAt(active.id, cut)) goToFrameWithStash(cut)
   }
 
   return (
@@ -165,7 +190,7 @@ export function TimelineBar() {
             )}
 
             <div className="timeline-bar__transport">
-              <button type="button" onClick={playing ? pause : play} disabled={!canPlay}>
+              <button type="button" onClick={playing ? handlePause : play} disabled={!canPlay}>
                 {playing ? t('panels.animation.pause') : t('panels.animation.play')}
               </button>
               <button type="button" onClick={handleStop} disabled={!active}>
@@ -174,13 +199,20 @@ export function TimelineBar() {
 
               {/* Pular de keyframe em keyframe: parar EM CIMA de um é o gesto
                 mais repetido de quem ajusta tempo, e com o slider solto isso
-                era pontaria. */}
+                era pontaria.
+
+                Levam o keyframe para a BANCADA, como as setas de quadro: são
+                discretos, param em cima de um instante, e ficam na mesma fileira
+                — dois botões vizinhos com efeitos opostos sobre a cena era
+                exatamente o que fazia a edição "travar" sem explicação (#134).
+                Caindo em cima de um keyframe, a marca do item 40 acende nele: a
+                bancada é mesmo o retrato dele, e o "Regravar" diz a verdade. */}
               <button
                 type="button"
                 aria-label={t('timeline.previousKeyframe')}
                 title={t('timeline.previousKeyframe')}
                 disabled={previousKeyframeMs === null}
-                onClick={() => previousKeyframeMs !== null && requestSeek(previousKeyframeMs)}
+                onClick={() => previousKeyframeMs !== null && goToFrameWithStash(previousKeyframeMs)}
               >
                 ⏮
               </button>
@@ -189,19 +221,26 @@ export function TimelineBar() {
                 aria-label={t('timeline.nextKeyframe')}
                 title={t('timeline.nextKeyframe')}
                 disabled={nextKeyframeMs === null}
-                onClick={() => nextKeyframeMs !== null && requestSeek(nextKeyframeMs)}
+                onClick={() => nextKeyframeMs !== null && goToFrameWithStash(nextKeyframeMs)}
               >
                 ⏭
               </button>
 
               {/* Um quadro, e não "dez milissegundos": é a unidade em que o vídeo
-                sai, então é a unidade em que se ajusta. */}
+                sai, então é a unidade em que se ajusta.
+
+                Diferente do ⏮/⏭ e da régua acima, estes dois levam o quadro para
+                a BANCADA (decisão do usuário, 2026-08-06; DECISOES.md #133): a
+                cena passa a ser a daquele instante, editável, em vez de um
+                retrato por cima dela. É a diferença entre PROCURAR o quadro —
+                que é o que a régua faz, e por isso ela continua na
+                pré-visualização — e PARAR nele para trabalhar. */}
               <button
                 type="button"
                 aria-label={t('timeline.previousFrame', { fps })}
                 title={t('timeline.previousFrame', { fps })}
                 disabled={!canPlay || currentMs <= 0}
-                onClick={() => requestSeek(stepFrameMs(currentMs, fps, -1, totalMs))}
+                onClick={() => goToFrameWithStash(stepFrameMs(currentMs, fps, -1, totalMs))}
               >
                 ◀
               </button>
@@ -210,7 +249,7 @@ export function TimelineBar() {
                 aria-label={t('timeline.nextFrame', { fps })}
                 title={t('timeline.nextFrame', { fps })}
                 disabled={!canPlay || currentMs >= totalMs}
-                onClick={() => requestSeek(stepFrameMs(currentMs, fps, 1, totalMs))}
+                onClick={() => goToFrameWithStash(stepFrameMs(currentMs, fps, 1, totalMs))}
               >
                 ▶
               </button>
@@ -240,6 +279,9 @@ export function TimelineBar() {
               list="timeline-keyframe-marks"
               value={currentMs}
               onChange={handleScrub}
+              onPointerUp={handleScrubEnd}
+              onPointerCancel={handleScrubEnd}
+              onKeyUp={handleScrubEnd}
               disabled={!canPlay}
             />
             {/* As marcas dos keyframes: `<datalist>` é o jeito nativo de o

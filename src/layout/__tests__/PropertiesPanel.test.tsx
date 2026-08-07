@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { rootAxisLockToken } from '../../figure/jointLocks'
+import { JOINT_GROUPS } from '../../figure/jointGroups'
 import { resolvePosePreset } from '../../figure/posePresets'
+import { getJoint } from '../../figure/skeleton'
 import { AXIS_COLORS } from '../../scene/axisColors'
 import { useFiguresStore } from '../../store/figuresStore'
 import { useUIStore } from '../../store/uiStore'
@@ -810,6 +812,79 @@ describe('PropertiesPanel — biblioteca de poses e travamento (DECISOES.md #42)
     expect(screen.queryByText(/juntas travadas neste boneco/)).not.toBeInTheDocument()
   })
 
+  /**
+   * Pedido do usuário (2026-08-07): o botão passa a ficar SEMPRE à vista na
+   * visão da raiz, como já é na casca de toque. Antes ele só existia com alguma
+   * junta travada — e a contagem que o trazia não conta os cadeados por eixo da
+   * raiz (item 64), então travar só eixos deixava o desfazer-tudo inalcançável.
+   */
+  it('na raiz o "Destravar todas" fica sempre à vista, desabilitado quando não há trava', async () => {
+    await comBonecoSelecionado()
+
+    const destravar = screen.getByRole('button', { name: 'Destravar todas' })
+    expect(destravar).toBeDisabled()
+    expect(screen.queryByText(/juntas travadas neste boneco/)).not.toBeInTheDocument()
+  })
+
+  it('cadeado por eixo da raiz habilita o "Destravar todas", que também os solta', async () => {
+    const user = userEvent.setup()
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().toggleJointLock(id, rootAxisLockToken('y'))
+    })
+
+    // A contagem fala de JUNTAS e continua zerada — o eixo tem cadeado próprio.
+    expect(screen.queryByText(/juntas travadas neste boneco/)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Destravar todas' }))
+
+    expect(useFiguresStore.getState().jointLocks[id]).toBeUndefined()
+    expect(screen.getByRole('button', { name: 'Destravar todas' })).toBeDisabled()
+  })
+
+  /**
+   * Pedido do usuário (2026-08-07): o bloco de travas fica COLADO na seção do
+   * gizmo. Ele vivia cinco blocos de pose abaixo, longe dos cadeados por eixo
+   * que solta — e o gizmo é a versão arrastável dos mesmos números que os
+   * cadeados travam.
+   */
+  it('os dois resumos ficam entre o gizmo e a colocação, travas antes de âncoras', async () => {
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().toggleJointLock(id, 'elbow.L')
+      useFiguresStore.getState().toggleJointPin(id, 'knee.R')
+    })
+
+    const gizmo = screen.getByRole('group', { name: 'Gizmo' })
+    const travadas = screen.getByText('1 junta travada neste boneco.')
+    const destravar = screen.getByRole('button', { name: 'Destravar todas' })
+    const ancoradas = screen.getByText('1 junta ancorada neste boneco.')
+    const soltar = screen.getByRole('button', { name: 'Soltar todas as âncoras' })
+    const colocacao = screen.getByRole('group', { name: 'Posição (m)' })
+
+    const depoisDe = (antes: Element, depois: Element) =>
+      Boolean(antes.compareDocumentPosition(depois) & Node.DOCUMENT_POSITION_FOLLOWING)
+
+    expect(depoisDe(gizmo, travadas)).toBe(true)
+    expect(depoisDe(travadas, destravar)).toBe(true)
+    // Âncoras logo depois das travas (pedido do usuário, 2026-08-07): são o par
+    // que congela o boneco, e liam-se juntas antes de estarem juntas.
+    expect(depoisDe(destravar, ancoradas)).toBe(true)
+    expect(depoisDe(ancoradas, soltar)).toBe(true)
+    expect(depoisDe(soltar, colocacao)).toBe(true)
+  })
+
+  /** É resumo do boneco inteiro: continua fora da visão de uma junta só. */
+  it('o botão não aparece na visão de uma junta', async () => {
+    const { id } = await comBonecoSelecionado()
+    act(() => {
+      useFiguresStore.getState().toggleJointLock(id, 'elbow.L')
+      useFiguresStore.getState().selectJoint('knee.R')
+    })
+
+    expect(screen.queryByRole('button', { name: 'Destravar todas' })).not.toBeInTheDocument()
+  })
+
   it('ancora a junta selecionada (item 62): ela continua editável, o ancestral desabilita com o porquê', async () => {
     const user = userEvent.setup()
     const { id } = await comBonecoSelecionado()
@@ -1100,6 +1175,43 @@ describe('PropertiesPanel — zerar por grupo e copiar um membro (DECISOES.md #5
     expect(pose['knee.L'].x).toBe(40)
   })
 
+  it('zera o boneco INTEIRO: pose, rotação e posição, num passo só', async () => {
+    const user = userEvent.setup()
+    const id = bonecoSelecionado()
+    useFiguresStore.getState().setJointRotation(id, 'shoulder.R', { x: -55 })
+    useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: 40 })
+    useFiguresStore.getState().setRootRotation(id, { y: 45 })
+    useFiguresStore.getState().setPosition(id, [1.5, 0, -1])
+    await renderPropertiesPanel()
+
+    const grupo = screen.getByRole('group', { name: 'Zerar por grupo' })
+    await user.click(within(grupo).getByRole('button', { name: 'Boneco inteiro' }))
+
+    const figura = useFiguresStore.getState().figures.find((f) => f.id === id)!
+    expect(figura.pose['shoulder.R']).toEqual(resolvePosePreset('standing')['shoulder.R'])
+    expect(figura.pose['knee.L']).toEqual(resolvePosePreset('standing')['knee.L'])
+    expect(figura.rotation).toEqual({ x: 0, y: 0, z: 0 })
+    expect(figura.position).toEqual([0, 0, 0])
+  })
+
+  it('só desabilita zerar tudo quando não sobra NADA a zerar (juntas travadas + colocação ancorada)', async () => {
+    const id = bonecoSelecionado()
+    for (const group of JOINT_GROUPS) {
+      for (const jointName of group.joints) useFiguresStore.getState().toggleJointLock(id, jointName)
+    }
+    await renderPropertiesPanel()
+
+    // Com tudo travado mas a colocação livre, o botão ainda leva o boneco à
+    // origem e zera a rotação — desabilitá-lo aqui seria mentira.
+    const grupo = screen.getByRole('group', { name: 'Zerar por grupo' })
+    expect(within(grupo).getByRole('button', { name: 'Boneco inteiro' })).toBeEnabled()
+
+    act(() => {
+      useFiguresStore.getState().toggleJointPin(id, 'wrist.L')
+    })
+    expect(within(grupo).getByRole('button', { name: 'Boneco inteiro' })).toBeDisabled()
+  })
+
   it('grupo inteiro travado aparece desabilitado, em vez de virar botão inerte', async () => {
     const id = bonecoSelecionado()
     for (const jointName of ['neck', 'head']) useFiguresStore.getState().toggleJointLock(id, jointName)
@@ -1184,7 +1296,7 @@ describe('PropertiesPanel — pose em arquivo (.json)', () => {
     })
     const [directoryHandle, filename, blob] = vi.mocked(writeFileToDirectoryOrDownload).mock.calls[0]
     expect(directoryHandle).toBeNull()
-    expect(filename).toMatch(/-pose\.json$/)
+    expect(filename).toMatch(/-pose_\d{4}-\d{2}-\d{2}-\d{4}\.json$/)
 
     const gravado = JSON.parse(await (blob as Blob).text())
     expect(gravado.figures[0].position).toEqual([0, 0.5, 0])
@@ -1329,6 +1441,32 @@ describe('PropertiesPanel — ordem e seções', () => {
     expect(screen.queryByRole('group', { name: 'Pose em arquivo (.json)' })).not.toBeInTheDocument()
   })
 
+  /**
+   * Pedido do usuário (2026-08-07): "Olhar para" desce para depois da simetria,
+   * nas DUAS vistas. Ele ficava no meio dos números da colocação (na raiz) e
+   * logo depois do assentar (na junta) — no meio do caminho entre posar e
+   * conferir. Mover só uma das vistas quebraria a ordem comum que o #83
+   * restaurou, então as duas andam juntas.
+   */
+  it('"Olhar para" fica entre a simetria e o zerar, nas duas vistas', async () => {
+    await comBoneco()
+    expect(ordemDe(['Simetria', 'Olhar para', 'Zerar por grupo'])).toEqual([
+      'Simetria',
+      'Olhar para',
+      'Zerar por grupo',
+    ])
+
+    act(() => {
+      useFiguresStore.getState().selectJoint('elbow.L')
+    })
+
+    expect(ordemDe(['Simetria', 'Olhar para', 'Zerar por grupo'])).toEqual([
+      'Simetria',
+      'Olhar para',
+      'Zerar por grupo',
+    ])
+  })
+
   it('as duas vistas terminam na mesma ordem: simetria e depois zerar por grupo', async () => {
     const id = await comBoneco()
     expect(ordemDe(['Simetria', 'Zerar por grupo'])).toEqual(['Simetria', 'Zerar por grupo'])
@@ -1385,5 +1523,92 @@ describe('PropertiesPanel — ordem e seções', () => {
       'Zerar por grupo',
       'Guardar e copiar',
     ])
+  })
+})
+
+/**
+ * Ajuste fino por eixo, a facilidade que só existia no módulo de poses (itens
+ * 51 e 61): a linha [−5°, −1°, ⟲, +1°, +5°] embaixo de cada slider de rotação.
+ * O ⟲ devolve SÓ aquele eixo ao valor inicial — zero na raiz, a referência
+ * "Em pé" nas demais juntas, a mesma de `resetJointRotation`.
+ */
+describe('PropertiesPanel — ajuste fino por eixo (±1°/±5° e ⟲)', () => {
+  beforeEach(() => {
+    useFiguresStore.setState(useFiguresStore.getInitialState())
+    useUIStore.setState(useUIStore.getInitialState())
+    abrirSecoes()
+  })
+
+  const bonecoSelecionado = () => {
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    useFiguresStore.getState().selectFigure(id)
+    return id
+  }
+
+  it('na raiz, os botões somam graus ao eixo e o ⟲ devolve só ele ao zero', async () => {
+    const user = userEvent.setup()
+    const id = bonecoSelecionado()
+    useFiguresStore.getState().setRootRotation(id, { x: 30 })
+    await renderPropertiesPanel()
+
+    const rotacao = screen.getByRole('group', { name: 'Rotação (°)' })
+    await user.click(within(rotacao).getByRole('button', { name: 'Rotação Y +5°' }))
+    await user.click(within(rotacao).getByRole('button', { name: 'Rotação Y +1°' }))
+    expect(useFiguresStore.getState().figures[0].rotation.y).toBe(6)
+
+    await user.click(within(rotacao).getByRole('button', { name: 'Rotação Y -1°' }))
+    expect(useFiguresStore.getState().figures[0].rotation.y).toBe(5)
+
+    await user.click(
+      within(rotacao).getByRole('button', { name: 'Rotação Y: voltar ao valor inicial' }),
+    )
+    expect(useFiguresStore.getState().figures[0].rotation.y).toBe(0)
+    // Só aquele eixo: o X continua onde estava.
+    expect(useFiguresStore.getState().figures[0].rotation.x).toBe(30)
+  })
+
+  it('na junta, o passo respeita o limite articular e o ⟲ volta à referência "Em pé"', async () => {
+    const user = userEvent.setup()
+    const id = bonecoSelecionado()
+    useFiguresStore.getState().selectJoint('knee.L')
+    const limite = getJoint('knee.L').limits.x!
+    useFiguresStore.getState().setJointRotation(id, 'knee.L', { x: limite.max - 2 })
+    await renderPropertiesPanel()
+
+    const rotacao = screen.getByRole('group', { name: 'Rotação (°)' })
+    await user.click(within(rotacao).getByRole('button', { name: 'Rotação X +5°' }))
+
+    // Grampeado no limite, como o slider — nunca além.
+    expect(useFiguresStore.getState().figures[0].pose['knee.L'].x).toBe(limite.max)
+
+    await user.click(
+      within(rotacao).getByRole('button', { name: 'Rotação X: voltar ao valor inicial' }),
+    )
+    expect(useFiguresStore.getState().figures[0].pose['knee.L'].x).toBe(
+      resolvePosePreset('standing')['knee.L']?.x ?? 0,
+    )
+  })
+
+  it('junta travada desabilita os botões finos, como já desabilita o slider', async () => {
+    const id = bonecoSelecionado()
+    useFiguresStore.getState().selectJoint('knee.L')
+    useFiguresStore.getState().toggleJointLock(id, 'knee.L')
+    await renderPropertiesPanel()
+
+    const rotacao = screen.getByRole('group', { name: 'Rotação (°)' })
+    expect(within(rotacao).getByRole('button', { name: 'Rotação X +1°' })).toBeDisabled()
+    expect(
+      within(rotacao).getByRole('button', { name: 'Rotação X: voltar ao valor inicial' }),
+    ).toBeDisabled()
+  })
+
+  it('eixo travado da raiz desabilita o ajuste fino DAQUELE eixo, e só dele', async () => {
+    const id = bonecoSelecionado()
+    useFiguresStore.getState().toggleJointLock(id, rootAxisLockToken('y'))
+    await renderPropertiesPanel()
+
+    const rotacao = screen.getByRole('group', { name: 'Rotação (°)' })
+    expect(within(rotacao).getByRole('button', { name: 'Rotação Y +1°' })).toBeDisabled()
+    expect(within(rotacao).getByRole('button', { name: 'Rotação X +1°' })).toBeEnabled()
   })
 })

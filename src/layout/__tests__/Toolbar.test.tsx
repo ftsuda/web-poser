@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from '../../i18n'
+import { useCameraStore } from '../../store/cameraStore'
 import { useFiguresStore } from '../../store/figuresStore'
 import { useDepthStore } from '../../store/depthStore'
 import { useUIStore } from '../../store/uiStore'
@@ -23,6 +24,7 @@ describe('Toolbar', () => {
     useFiguresStore.temporal.getState().clear()
     useUIStore.setState(useUIStore.getInitialState())
     useDepthStore.setState(useDepthStore.getInitialState())
+    useCameraStore.setState(useCameraStore.getInitialState())
   })
 
   afterEach(async () => {
@@ -200,5 +202,61 @@ describe('Toolbar', () => {
     expect(
       silhueta.compareDocumentPosition(boneco) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+  })
+
+  /**
+   * As linhas de gesto (item 9) são apoio de TELA, como a régua: preferência
+   * gravada por aparelho, fora do undo e fora do arquivo da cena.
+   */
+  it('a chave das linhas de gesto nasce desligada e persiste como preferência', async () => {
+    const user = userEvent.setup()
+    await renderToolbar()
+
+    const chave = screen.getByLabelText('Linhas de gesto')
+    expect(chave).not.toBeChecked()
+
+    await user.click(chave)
+    expect(useUIStore.getState().gestureLinesVisible).toBe(true)
+    expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
+  })
+
+  /**
+   * Isolar a seleção: a facilidade que o módulo de poses já tinha (lá só o
+   * boneco em edição responde ao toque), trazida para a bancada. Estado de
+   * FERRAMENTA — fora do undo e fora do arquivo, como a régua.
+   */
+  it('a chave de isolar a seleção nasce desligada e alterna sem entrar no undo', async () => {
+    const user = userEvent.setup()
+    await renderToolbar()
+
+    const chave = screen.getByLabelText('Isolar seleção')
+    expect(chave).not.toBeChecked()
+
+    await user.click(chave)
+    expect(useUIStore.getState().isolateSelection).toBe(true)
+    expect(useFiguresStore.temporal.getState().pastStates).toHaveLength(0)
+  })
+
+  /**
+   * Enquadrar o boneco na CÂMERA DE TRABALHO (a mesma tecla F): o comando já
+   * existia só no teclado, e o módulo de poses tinha o botão desde o item 49.
+   */
+  it('o botão de enquadrar fica desabilitado sem boneco e pede o comando com um selecionado', async () => {
+    const user = userEvent.setup()
+    await renderToolbar()
+
+    const botao = screen.getByRole('button', { name: /Enquadrar boneco/ })
+    expect(botao).toBeDisabled()
+
+    const id = useFiguresStore.getState().addFigure('Herói') as string
+    act(() => {
+      useFiguresStore.getState().selectFigure(id)
+    })
+
+    await user.click(screen.getByRole('button', { name: /Enquadrar boneco/ }))
+
+    expect(useCameraStore.getState().pendingCommand).toEqual({ type: 'frameFigure', figureId: id })
+    // Enquadrar é da bancada: a vista volta para a de edição, nunca a de cena.
+    expect(useCameraStore.getState().viewMode).toBe('edit')
   })
 })

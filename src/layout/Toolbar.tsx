@@ -6,6 +6,7 @@ import type { FigureStyle } from '../figure/skeleton'
 import { saveWorkspaceToLocalStorage } from '../persistence/autosave'
 import { WORKSPACE_AUTOSAVE_KEY, switchShell } from '../poses/shellChoice'
 import type { FrameMaskSource } from '../scene/frameMask'
+import { useCameraStore } from '../store/cameraStore'
 import { useDepthStore } from '../store/depthStore'
 import { useFiguresStore, type BackgroundTone } from '../store/figuresStore'
 import { useUIStore } from '../store/uiStore'
@@ -21,15 +22,21 @@ export function Toolbar() {
   const autosaveStatus = useUIStore((state) => state.autosaveStatus)
   const lastSavedAt = useUIStore((state) => state.lastSavedAt)
   const rulerVisible = useUIStore((state) => state.rulerVisible)
+  const gestureLinesVisible = useUIStore((state) => state.gestureLinesVisible)
   const toggleRuler = useUIStore((state) => state.toggleRuler)
+  const toggleGestureLines = useUIStore((state) => state.toggleGestureLines)
   const frameMaskSource = useUIStore((state) => state.frameMaskSource)
   const setFrameMaskSource = useUIStore((state) => state.setFrameMaskSource)
   const figureStyle = useUIStore((state) => state.figureStyle)
   const setFigureStyle = useUIStore((state) => state.setFigureStyle)
   const figureSilhouette = useUIStore((state) => state.figureSilhouette)
   const toggleFigureSilhouette = useUIStore((state) => state.toggleFigureSilhouette)
+  const isolateSelection = useUIStore((state) => state.isolateSelection)
+  const toggleIsolateSelection = useUIStore((state) => state.toggleIsolateSelection)
   const depthPreview = useDepthStore((state) => state.previewEnabled)
   const togglePreviewDepth = useDepthStore((state) => state.togglePreview)
+  const selectedFigureId = useFiguresStore((state) => state.selectedFigureId)
+  const frameFigure = useCameraStore((state) => state.frameFigure)
 
   // O histórico do `zundo` é um store vanilla à parte do `figuresStore` — sem
   // esta assinatura os botões não saberiam quando habilitar/desabilitar.
@@ -112,6 +119,13 @@ export function Toolbar() {
           {t('toolbar.ruler')}
         </label>
 
+        {/* Linhas de gesto (item 9): mesma natureza da régua — apoio de tela,
+            ancorado no boneco selecionado, fora do undo e do arquivo. */}
+        <label className="toolbar__field toolbar__field--checkbox" title={t('toolbar.gestureLinesHint')}>
+          <input type="checkbox" checked={gestureLinesVisible} onChange={toggleGestureLines} />
+          {t('toolbar.gestureLines')}
+        </label>
+
         {/* Mapa de profundidade NA TELA (fase 13). Mesma natureza da régua e da
             casca do boneco: é modo de VISUALIZAÇÃO — fora do undo, fora do
             arquivo da cena —, e por isso mora aqui e não num painel. Ligar a
@@ -131,6 +145,18 @@ export function Toolbar() {
         <label className="toolbar__field toolbar__field--checkbox" title={t('toolbar.silhouetteHint')}>
           <input type="checkbox" checked={figureSilhouette} onChange={toggleFigureSilhouette} />
           {t('toolbar.silhouette')}
+        </label>
+
+        {/* Isolar a seleção (pedido do usuário, 2026-08-04): com a chave
+            ligada, só o boneco selecionado responde ao clique no viewport — os
+            outros continuam visíveis e desenháveis, mas o clique os atravessa.
+            É a proteção que o módulo de poses tem de nascença (item 44),
+            trazida para a bancada como ESCOLHA: aqui o mouse acerta, e trocar
+            de boneco pelo viewport é o gesto normal de quem monta cena. Mesmo
+            regime da régua — estado de ferramenta, fora do undo e do arquivo. */}
+        <label className="toolbar__field toolbar__field--checkbox" title={t('toolbar.isolateSelectionHint')}>
+          <input type="checkbox" checked={isolateSelection} onChange={toggleIsolateSelection} />
+          {t('toolbar.isolateSelection')}
         </label>
 
         {/* Casca visual do boneco (DECISOES.md #81). É modo de VISUALIZAÇÃO: não
@@ -159,6 +185,21 @@ export function Toolbar() {
         </label>
 
         <div className="toolbar__actions">
+          {/* Enquadrar o boneco na CÂMERA DE TRABALHO (a de cena tem os
+              comandos dela no painel de Câmera). O comando já existia, só que
+              apenas na tecla F — e o módulo de poses tem o botão desde o item
+              49; quem trabalha com pan/zoom livres perde o boneco de vista do
+              mesmo jeito nas duas cascas. */}
+          <button
+            type="button"
+            className="toolbar__icon-button"
+            aria-label={t('toolbar.frameFigure')}
+            title={t('toolbar.frameFigureHint')}
+            disabled={!selectedFigureId}
+            onClick={() => selectedFigureId && frameFigure(selectedFigureId)}
+          >
+            &#8982;
+          </button>
           <button
             type="button"
             className="toolbar__icon-button"
